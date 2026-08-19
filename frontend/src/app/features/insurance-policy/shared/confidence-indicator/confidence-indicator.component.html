@@ -1,0 +1,26 @@
+<span
+  class="chip"
+  [class]="'chip--' + level()"
+  [class.chip--compact]="compact()"
+  [class.chip--verified]="verified()"
+  [pTooltip]="tooltipText()"
+  tooltipPosition="top"
+>
+  @if (verified()) {
+    <i class="pi pi-check-circle"></i>
+  } @else if (level() === 'low') {
+    <i class="pi pi-exclamation-triangle"></i>
+  } @else if (level() === 'medium') {
+    <i class="pi pi-info-circle"></i>
+  } @else {
+    <i class="pi pi-verified"></i>
+  }
+
+  @if (!compact()) {
+    <span class="chip__label">{{ verified() ? 'Verified' : meta().label }}</span>
+  }
+
+  @if (score() !== null && !verified()) {
+    <span class="chip__score">{{ score() }}%</span>
+  }
+</span>

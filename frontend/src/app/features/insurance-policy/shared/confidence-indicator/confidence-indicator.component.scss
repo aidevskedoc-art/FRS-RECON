@@ -1,0 +1,44 @@
+@use 'styles/mixins';
+
+.chip {
+  @include mixins.status-chip(var(--confidence-medium-fg), var(--confidence-medium-bg), var(--confidence-medium-border));
+  cursor: help;
+  font-size: var(--text-2xs);
+
+  &--high {
+    color: var(--confidence-high-fg);
+    background: var(--confidence-high-bg);
+    border-color: var(--confidence-high-border);
+  }
+
+  &--medium {
+    color: var(--confidence-medium-fg);
+    background: var(--confidence-medium-bg);
+    border-color: var(--confidence-medium-border);
+  }
+
+  &--low {
+    color: var(--confidence-low-fg);
+    background: var(--confidence-low-bg);
+    border-color: var(--confidence-low-border);
+  }
+
+  &--verified {
+    color: var(--status-info-fg);
+    background: var(--status-info-bg);
+    border-color: var(--status-info-border);
+  }
+
+  &--compact {
+    padding: var(--space-1) var(--space-2);
+  }
+
+  i {
+    font-size: 0.7rem;
+  }
+}
+
+.chip__score {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}

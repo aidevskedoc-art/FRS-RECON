@@ -1,0 +1,32 @@
+@use 'styles/mixins';
+
+:host {
+  display: block;
+  height: 100%;
+}
+
+.shell {
+  display: flex;
+  height: 100vh;
+  background: var(--surface-app);
+}
+
+.shell__main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shell__content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--space-6);
+  @include mixins.scrollbar-thin;
+}
+
+@media (max-width: 900px) {
+  .shell__content {
+    padding: var(--space-4);
+  }
+}

@@ -1,0 +1,73 @@
+<div class="upload">
+  <div
+    class="dropzone"
+    [class.dropzone--active]="isDragging()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <div class="dropzone__icon">
+      <i class="pi pi-cloud-upload"></i>
+    </div>
+    <h2>Drop Insurance Policy PDFs here</h2>
+    <p>Upload one or multiple policy documents for AI-powered extraction</p>
+
+    <div class="dropzone__actions">
+      <input #fileInput type="file" accept="application/pdf" multiple hidden (change)="onFileInput($event)" />
+      <p-button label="Browse Files" icon="pi pi-folder-open" [outlined]="true" (onClick)="fileInput.click()" />
+    </div>
+
+    <p class="dropzone__hint">Supported format: PDF</p>
+  </div>
+
+  @if (rejectedCount() > 0) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      {{ rejectedCount() }} file(s) were skipped — only PDF documents are supported.
+    </div>
+  }
+
+  @if (uploadError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (pendingFiles().length > 0) {
+    <div class="pending">
+      <div class="pending__header">
+        <h3>Ready to upload ({{ pendingFiles().length }} file{{ pendingFiles().length === 1 ? '' : 's' }}, {{ pendingSizeLabel() }})</h3>
+        <div class="pending__actions">
+          <p-button label="Clear" severity="secondary" [text]="true" [disabled]="uploading()" (onClick)="clearPending()" />
+          <p-button label="Upload" icon="pi pi-upload" [loading]="uploading()" (onClick)="upload()" />
+        </div>
+      </div>
+      <ul class="pending__list">
+        @for (file of pendingFiles(); track file.name + file.size) {
+          <li>
+            <i class="pi pi-file-pdf"></i>
+            <span class="pending__name">{{ file.name }}</span>
+            <button type="button" class="pending__remove" (click)="removePending(file)">
+              <i class="pi pi-times"></i>
+            </button>
+          </li>
+        }
+      </ul>
+    </div>
+  }
+
+  @if (justUploaded().length > 0) {
+    <div class="uploaded-section">
+      <div class="uploaded-section__header">
+        <h3>Uploaded Documents</h3>
+        <p-button label="Process All" icon="pi pi-sparkles" size="small" (onClick)="processAll()" />
+      </div>
+      <div class="uploaded-section__grid">
+        @for (doc of justUploaded(); track doc.id) {
+          <app-document-card [document]="doc" (open)="openDocument(doc)" (remove)="removeDocument(doc)" />
+        }
+      </div>
+    </div>
+  }
+</div>

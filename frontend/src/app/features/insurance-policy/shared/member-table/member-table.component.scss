@@ -1,0 +1,99 @@
+@use 'styles/mixins';
+
+.member-table__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.search {
+  position: relative;
+  flex: 1 1 240px;
+  max-width: 320px;
+
+  i {
+    position: absolute;
+    left: var(--space-3);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+    font-size: var(--text-sm);
+  }
+
+  input {
+    width: 100%;
+    padding-left: var(--space-7);
+  }
+}
+
+:host ::ng-deep {
+  .p-datatable {
+    @include mixins.card;
+    overflow: hidden;
+  }
+
+  .p-datatable-table-container {
+    @include mixins.scrollbar-thin;
+  }
+}
+
+.actions-col {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.member-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-6);
+  color: var(--text-tertiary);
+}
+
+.editing-row td {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.editing-row input,
+.editing-row .p-select,
+.editing-row .p-inputnumber {
+  width: 100%;
+  min-width: 6rem;
+}
+
+.add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  input,
+  .full-width {
+    width: 100%;
+  }
+}
+
+.add-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}

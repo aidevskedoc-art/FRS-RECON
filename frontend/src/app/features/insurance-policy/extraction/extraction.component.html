@@ -1,0 +1,123 @@
+<ng-template #fieldRow let-field>
+  <div class="field-row" [class.field-row--highlight]="highlightedPath() === field.path">
+    <div class="field-row__label-line">
+      <label [for]="field.path">{{ field.label }}</label>
+      @if (fieldMeta().get(field.path); as meta) {
+        <app-confidence-indicator [level]="meta.confidence" [score]="meta.score" [verified]="meta.verified" [compact]="true" />
+        @if (meta.sourcePage) {
+          <button type="button" class="locate-btn" (click)="locateField(field)" pTooltip="Jump to source page in PDF">
+            <i class="pi pi-map-marker"></i>
+          </button>
+        }
+      }
+    </div>
+    @switch (field.type) {
+      @case ('currency') {
+        <div class="field-row__input-wrap">
+          <span class="currency-prefix">&#8377;</span>
+          <input [id]="field.path" type="number" [value]="field.value" (change)="onFieldChange($event, field.path, field.type)" />
+        </div>
+      }
+      @case ('number') {
+        <input [id]="field.path" type="number" [value]="field.value" (change)="onFieldChange($event, field.path, field.type)" />
+      }
+      @case ('date') {
+        <input [id]="field.path" type="date" [value]="field.value" (change)="onFieldChange($event, field.path, field.type)" />
+      }
+      @default {
+        <input [id]="field.path" type="text" [value]="field.value" (change)="onFieldChange($event, field.path, field.type)" />
+      }
+    }
+  </div>
+</ng-template>
+
+<div class="extraction">
+  <div class="extraction__header">
+    <div>
+      <h2>{{ document()?.fileName }}</h2>
+      @if (result(); as r) {
+        <p>
+          {{ r.metadata.fieldsExtracted }} / {{ r.metadata.fieldsTotal }} fields extracted &middot;
+          {{ r.metadata.pagesAnalyzed }} pages analysed
+        </p>
+      }
+    </div>
+    <div class="extraction__header-actions">
+      @if (saving()) {
+        <span class="saving-pill"><i class="pi pi-spin pi-spinner"></i> Saving…</span>
+      }
+      <p-button label="Run Validation" icon="pi pi-shield" [disabled]="!result()" (onClick)="goToValidation()" />
+    </div>
+  </div>
+
+  @if (loadError(); as err) {
+    <div class="extraction__error"><i class="pi pi-times-circle"></i> {{ err }}</div>
+  }
+
+  @if (locatedField(); as label) {
+    <div class="locate-toast"><i class="pi pi-map-marker"></i> Source for "{{ label }}" — Page {{ currentPage() }}</div>
+  }
+
+  @if (!result() && !loadError()) {
+    <div class="extraction__loading">
+      <i class="pi pi-spin pi-spinner"></i>
+      <p>Loading extraction results…</p>
+    </div>
+  }
+
+  <div class="extraction__workspace" [class.extraction__workspace--hidden]="!result()">
+    <div class="pdf-panel">
+      <div class="pdf-panel__toolbar">
+        <span class="pdf-panel__title"><i class="pi pi-file-pdf"></i> Document Preview</span>
+        <span class="pdf-panel__hint">Use your browser's built-in zoom / search / page controls</span>
+      </div>
+      @if (safePdfUrl(); as url) {
+        <iframe [src]="url" class="pdf-panel__frame" title="Policy document preview"></iframe>
+      } @else {
+        <div class="pdf-panel__empty">No preview available</div>
+      }
+    </div>
+
+    <div class="data-panel">
+      <section class="data-card">
+        <h3><i class="pi pi-id-card"></i> Policy Information</h3>
+        <div class="data-card__grid">
+          @for (field of policyFields(); track field.path) {
+            <ng-container [ngTemplateOutlet]="fieldRow" [ngTemplateOutletContext]="{ $implicit: field }" />
+          }
+        </div>
+      </section>
+
+      <section class="data-card">
+        <h3><i class="pi pi-wallet"></i> Premium Information</h3>
+        <div class="data-card__grid">
+          @for (field of premiumFields(); track field.path) {
+            <ng-container [ngTemplateOutlet]="fieldRow" [ngTemplateOutletContext]="{ $implicit: field }" />
+          }
+        </div>
+      </section>
+
+      <section class="data-card" id="members-section" [class.data-card--highlight]="highlightedPath()?.startsWith('members.')">
+        <h3><i class="pi pi-users" ></i> Insured Members</h3>
+        @if (result(); as r) {
+          <app-member-table
+            [members]="r.policy.members"
+            (memberAdd)="addMember($event)"
+            (memberUpdate)="updateMember($event)"
+            (memberRemove)="removeMember($event)"
+            (memberDuplicate)="duplicateMember($event)"
+          />
+        }
+      </section>
+
+      <section class="data-card">
+        <h3><i class="pi pi-map"></i> Address Information</h3>
+        <div class="data-card__grid data-card__grid--wide">
+          @for (field of addressFields(); track field.path) {
+            <ng-container [ngTemplateOutlet]="fieldRow" [ngTemplateOutletContext]="{ $implicit: field }" />
+          }
+        </div>
+      </section>
+    </div>
+  </div>
+</div>

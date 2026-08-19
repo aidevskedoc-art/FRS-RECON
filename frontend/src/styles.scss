@@ -1,0 +1,60 @@
+// Global styles entry point.
+//
+// Load order is deliberate — see the plan's "Styling stack coexistence"
+// section. Three libraries (Bootstrap, PrimeNG, Tailwind) all ship global
+// CSS; without explicit @layer boundaries, cascade order becomes a guessing
+// game (and per the CSS Cascade Layers spec, unlayered CSS *always* beats
+// layered CSS regardless of import order — the naive "just import Tailwind
+// last" approach does not reliably make Tailwind's utilities win). So: every
+// third-party layer is named explicitly, in one authoritative order
+// declared up front, and PrimeNG is told about that same order via its own
+// `cssLayer` option in app.config.ts.
+@use './styles/tokens';
+@use './styles/theme';
+@import 'primeicons/primeicons.css';
+
+@layer bootstrap, primeng, tailwind-base, tailwind-utilities;
+
+@layer bootstrap {
+  // Bootstrap 5.3's SCSS partials aren't fully migrated to `@use` internally
+  // (some rely on `@import`'s legacy global namespace for cross-file
+  // references), so per Bootstrap's own "include parts" recipe these are
+  // `@import`ed rather than `@use`d. Grid + reboot only — the utilities
+  // partial is deliberately omitted because its class names (`.mt-4`,
+  // `.p-3`, `.d-flex`-adjacent spacing utilities) collide with Tailwind's,
+  // and Tailwind utilities are meant to be this app's spacing/layout
+  // authority in new component templates.
+  @import 'bootstrap/scss/functions';
+  @import 'bootstrap/scss/variables';
+  @import 'bootstrap/scss/variables-dark';
+  @import 'bootstrap/scss/maps';
+  @import 'bootstrap/scss/mixins';
+  @import 'bootstrap/scss/reboot';
+  @import 'bootstrap/scss/grid';
+}
+
+@import 'tailwindcss/theme.css' layer(tailwind-base);
+@import 'tailwindcss/utilities.css' layer(tailwind-utilities);
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  background: var(--surface-app);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+}

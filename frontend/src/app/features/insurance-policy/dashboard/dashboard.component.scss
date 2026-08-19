@@ -1,0 +1,161 @@
+@use 'styles/mixins';
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 1400px;
+}
+
+.dashboard__hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-7);
+  border-radius: var(--radius-lg);
+  background: var(--ai-gradient-soft);
+  border: 1px solid var(--glass-border);
+  flex-wrap: wrap;
+}
+
+.dashboard__hero-text {
+  max-width: 520px;
+
+  h2 {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-2xl);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-md);
+  }
+}
+
+.dashboard__hero-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.dashboard__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.summary-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  @include mixins.glass-card;
+  @include mixins.elevate-on-hover;
+}
+
+.summary-card__icon {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  font-size: 1.1rem;
+}
+
+.summary-card__value {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.summary-card__label {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.summary-card--blue .summary-card__icon {
+  background: var(--ai-blue-soft);
+  color: var(--ai-blue);
+}
+.summary-card--success .summary-card__icon {
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+.summary-card--warning .summary-card__icon {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+}
+.summary-card--danger .summary-card__icon {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+.summary-card--purple .summary-card__icon {
+  background: var(--ai-purple-soft);
+  color: var(--ai-purple);
+}
+.summary-card--cyan .summary-card__icon {
+  background: var(--ai-cyan-soft);
+  color: var(--ai-cyan);
+}
+
+.dashboard__section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+
+  h3 {
+    margin: 0;
+    font-size: var(--text-lg);
+    color: var(--text-primary);
+  }
+}
+
+.dashboard__link {
+  font-size: var(--text-sm);
+  color: var(--ai-blue);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.dashboard__doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-9);
+  text-align: center;
+  color: var(--text-secondary);
+  @include mixins.card;
+
+  i {
+    font-size: 2rem;
+    color: var(--text-tertiary);
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard__hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

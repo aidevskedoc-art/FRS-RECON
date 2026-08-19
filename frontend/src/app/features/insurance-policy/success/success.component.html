@@ -1,0 +1,47 @@
+@if (policy(); as p) {
+  <div class="success">
+    <div class="success__icon">
+      <i class="pi pi-check"></i>
+    </div>
+    <h2>Policy Successfully Processed</h2>
+    <p>{{ p.policyHolder.name }}'s policy has been validated and saved to the database.</p>
+
+    <div class="success__stats">
+      <div class="stat">
+        <span class="stat__label">Policy Number</span>
+        <span class="stat__value stat__value--mono">{{ p.policyNumber }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat__label">Policyholder</span>
+        <span class="stat__value">{{ p.policyHolder.name }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat__label">Insured Members</span>
+        <span class="stat__value">{{ p.members.length }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat__label">Extracted Fields</span>
+        <span class="stat__value">{{ result()?.metadata?.fieldsExtracted ?? '—' }} / {{ result()?.metadata?.fieldsTotal ?? '—' }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat__label">Database Status</span>
+        <span class="stat__value stat__value--success"><i class="pi pi-check-circle"></i> Saved</span>
+      </div>
+      <div class="stat">
+        <span class="stat__label">Processing Time</span>
+        <span class="stat__value">{{ processingTimeMs() !== null ? processingTimeMs() + ' ms' : '—' }}</span>
+      </div>
+    </div>
+
+    <div class="success__actions">
+      <p-button label="View Policy" icon="pi pi-eye" severity="secondary" [outlined]="true" [routerLink]="['/insurance-policy/documents', id(), 'extraction']" />
+      <p-button label="Generate Excel" icon="pi pi-file-excel" [routerLink]="['/insurance-policy/excel-preview']" [queryParams]="{ ids: p.id }" />
+      <p-button label="Process Another PDF" icon="pi pi-cloud-upload" severity="secondary" [outlined]="true" routerLink="/insurance-policy/upload" />
+    </div>
+  </div>
+} @else {
+  <div class="success success--missing">
+    <p>We couldn't find a saved policy for this document.</p>
+    <p-button label="Back to Dashboard" routerLink="/insurance-policy/dashboard" />
+  </div>
+}

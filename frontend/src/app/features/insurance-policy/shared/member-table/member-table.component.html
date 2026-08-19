@@ -1,0 +1,150 @@
+<div class="member-table">
+  <div class="member-table__toolbar">
+    <span class="p-input-icon-left search">
+      <i class="pi pi-search"></i>
+      <input pInputText type="text" placeholder="Search members…" (input)="onSearchInput($event, dt)" />
+    </span>
+    @if (editable()) {
+      <p-button label="Add Member" icon="pi pi-plus" size="small" (onClick)="openAddDialog()" />
+    }
+  </div>
+
+  <p-table
+    #dt
+    [value]="members()"
+    dataKey="id"
+    [paginator]="members().length > 5"
+    [rows]="5"
+    [globalFilterFields]="['name', 'relationWithPolicyHolder', 'occupation', 'gender', 'nomineeName']"
+    [sortMode]="'single'"
+    responsiveLayout="scroll"
+    styleClass="p-datatable-sm"
+  >
+    <ng-template #header>
+      <tr>
+        <th pSortableColumn="name">Name <p-sortIcon field="name" /></th>
+        <th pSortableColumn="relationWithPolicyHolder">Relation <p-sortIcon field="relationWithPolicyHolder" /></th>
+        <th pSortableColumn="age">Age <p-sortIcon field="age" /></th>
+        <th pSortableColumn="gender">Gender <p-sortIcon field="gender" /></th>
+        <th>Occupation</th>
+        <th pSortableColumn="nomineeName">Nominee <p-sortIcon field="nomineeName" /></th>
+        <th pSortableColumn="basePremium">Base Premium <p-sortIcon field="basePremium" /></th>
+        <th>Self/Parents</th>
+        @if (editable()) {
+          <th class="actions-col">Actions</th>
+        }
+      </tr>
+    </ng-template>
+
+    <ng-template #body let-member>
+      @if (editingId() === member.id) {
+        <tr class="editing-row">
+          <td><input pInputText type="text" [ngModel]="draft().name" (ngModelChange)="updateDraft({ name: $event })" /></td>
+          <td>
+            <p-select
+              [options]="relations"
+              [ngModel]="draft().relationWithPolicyHolder"
+              (ngModelChange)="updateDraft({ relationWithPolicyHolder: $event })"
+              appendTo="body"
+            />
+          </td>
+          <td><p-inputNumber [ngModel]="draft().age" (ngModelChange)="updateDraft({ age: $event })" [showButtons]="false" [min]="0" [max]="120" /></td>
+          <td>
+            <p-select [options]="genders" [ngModel]="draft().gender" (ngModelChange)="updateDraft({ gender: $event })" appendTo="body" />
+          </td>
+          <td><input pInputText type="text" [ngModel]="draft().occupation" (ngModelChange)="updateDraft({ occupation: $event })" /></td>
+          <td><input pInputText type="text" [ngModel]="draft().nomineeName" (ngModelChange)="updateDraft({ nomineeName: $event })" /></td>
+          <td><p-inputNumber [ngModel]="draft().basePremium" (ngModelChange)="updateDraft({ basePremium: $event })" mode="currency" currency="INR" locale="en-IN" [showButtons]="false" /></td>
+          <td>
+            <input pInputText type="text" [ngModel]="draft().policyTypeSelfParents" (ngModelChange)="updateDraft({ policyTypeSelfParents: $event })" />
+          </td>
+          <td class="actions-col">
+            <p-button icon="pi pi-check" severity="success" [text]="true" size="small" (onClick)="saveEdit(member.id)" pTooltip="Save" />
+            <p-button icon="pi pi-times" severity="secondary" [text]="true" size="small" (onClick)="cancelEdit()" pTooltip="Cancel" />
+          </td>
+        </tr>
+      } @else {
+        <tr>
+          <td class="member-name">{{ member.name }}</td>
+          <td><p-tag [value]="member.relationWithPolicyHolder" severity="info" /></td>
+          <td>{{ member.age }}</td>
+          <td>{{ member.gender }}</td>
+          <td>{{ member.occupation || '—' }}</td>
+          <td>{{ member.nomineeName || '—' }}</td>
+          <td>{{ member.basePremium | number: '1.0-0' }}</td>
+          <td>{{ member.policyTypeSelfParents }}</td>
+          @if (editable()) {
+            <td class="actions-col">
+              <p-button icon="pi pi-pencil" [text]="true" size="small" (onClick)="startEdit(member)" pTooltip="Edit" />
+              <p-button icon="pi pi-copy" [text]="true" size="small" (onClick)="memberDuplicate.emit(member.id)" pTooltip="Duplicate" />
+              <p-button icon="pi pi-trash" severity="danger" [text]="true" size="small" (onClick)="memberRemove.emit(member.id)" pTooltip="Remove" />
+            </td>
+          }
+        </tr>
+      }
+    </ng-template>
+
+    <ng-template #emptymessage>
+      <tr>
+        <td [attr.colspan]="editable() ? 9 : 8" class="empty">No insured members yet.</td>
+      </tr>
+    </ng-template>
+  </p-table>
+
+  <p-dialog
+    header="Add Insured Member"
+    [visible]="addDialogVisible()"
+    (visibleChange)="addDialogVisible.set($event)"
+    [modal]="true"
+    [style]="{ width: '28rem' }"
+  >
+    <div class="add-form">
+      <label>
+        <span>Name</span>
+        <input pInputText type="text" [ngModel]="newDraft().name" (ngModelChange)="updateNewDraft({ name: $event })" />
+      </label>
+      <label>
+        <span>Relation with Policyholder</span>
+        <p-select [options]="relations" [ngModel]="newDraft().relationWithPolicyHolder" (ngModelChange)="updateNewDraft({ relationWithPolicyHolder: $event })" appendTo="body" styleClass="full-width" />
+      </label>
+      <div class="add-form__row">
+        <label>
+          <span>Age</span>
+          <p-inputNumber [ngModel]="newDraft().age" (ngModelChange)="updateNewDraft({ age: $event })" [min]="0" [max]="120" />
+        </label>
+        <label>
+          <span>Gender</span>
+          <p-select [options]="genders" [ngModel]="newDraft().gender" (ngModelChange)="updateNewDraft({ gender: $event })" appendTo="body" styleClass="full-width" />
+        </label>
+      </div>
+      <label>
+        <span>Occupation</span>
+        <input pInputText type="text" [ngModel]="newDraft().occupation" (ngModelChange)="updateNewDraft({ occupation: $event })" />
+      </label>
+      <div class="add-form__row">
+        <label>
+          <span>Nominee Name</span>
+          <input pInputText type="text" [ngModel]="newDraft().nomineeName" (ngModelChange)="updateNewDraft({ nomineeName: $event })" />
+        </label>
+        <label>
+          <span>Nominee Relation</span>
+          <input pInputText type="text" [ngModel]="newDraft().nomineeRelation" (ngModelChange)="updateNewDraft({ nomineeRelation: $event })" />
+        </label>
+      </div>
+      <div class="add-form__row">
+        <label>
+          <span>Base Premium</span>
+          <p-inputNumber [ngModel]="newDraft().basePremium" (ngModelChange)="updateNewDraft({ basePremium: $event })" mode="currency" currency="INR" locale="en-IN" />
+        </label>
+        <label>
+          <span>Self/Parents Type</span>
+          <input pInputText type="text" [ngModel]="newDraft().policyTypeSelfParents" (ngModelChange)="updateNewDraft({ policyTypeSelfParents: $event })" />
+        </label>
+      </div>
+    </div>
+    <ng-template #footer>
+      <p-button label="Cancel" severity="secondary" [text]="true" (onClick)="addDialogVisible.set(false)" />
+      <p-button label="Add Member" icon="pi pi-plus" (onClick)="confirmAdd()" />
+    </ng-template>
+  </p-dialog>
+</div>

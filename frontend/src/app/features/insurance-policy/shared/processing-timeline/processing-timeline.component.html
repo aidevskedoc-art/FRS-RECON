@@ -1,0 +1,20 @@
+<ol class="timeline">
+  @for (entry of entries(); track entry.step) {
+    <li class="timeline__item" [class]="'timeline__item--' + entry.state">
+      <div class="timeline__marker">
+        @if (entry.state === 'done') {
+          <i class="pi pi-check"></i>
+        } @else {
+          <span>{{ entry.order.toString().padStart(2, '0') }}</span>
+        }
+        @if (entry.state === 'active' && !failed()) {
+          <span class="timeline__pulse"></span>
+        }
+      </div>
+      <div class="timeline__content">
+        <p class="timeline__label">{{ entry.label }}</p>
+        <p class="timeline__description">{{ entry.description }}</p>
+      </div>
+    </li>
+  }
+</ol>

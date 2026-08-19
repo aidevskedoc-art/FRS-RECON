@@ -1,0 +1,41 @@
+<header class="topbar">
+  <button type="button" class="icon-btn topbar__hamburger" (click)="sidebarStore.toggleMobile()" pTooltip="Menu">
+    <i class="pi pi-bars"></i>
+  </button>
+
+  <div class="topbar__title">
+    <h1>Insurance Policy Intelligence</h1>
+    <p>AI-powered policy extraction &amp; Excel automation</p>
+  </div>
+
+  <div class="topbar__actions">
+    <app-ai-status
+      [state]="policyDocuments.counts().inProgress > 0 ? 'active' : 'idle'"
+      [label]="policyDocuments.counts().inProgress > 0 ? policyDocuments.counts().inProgress + ' document(s) processing' : 'AI Engine Ready'"
+    />
+
+    <button type="button" class="icon-btn" (click)="themeStore.toggle()" pTooltip="Toggle theme">
+      <i class="pi" [class.pi-moon]="themeStore.mode() !== 'dark'" [class.pi-sun]="themeStore.mode() === 'dark'"></i>
+    </button>
+
+    @if (policyDocuments.counts().needsReview > 0) {
+      <p-overlaybadge [value]="policyDocuments.counts().needsReview.toString()" severity="warn">
+        <button type="button" class="icon-btn" pTooltip="Documents needing review">
+          <i class="pi pi-bell"></i>
+        </button>
+      </p-overlaybadge>
+    } @else {
+      <button type="button" class="icon-btn" pTooltip="Notifications">
+        <i class="pi pi-bell"></i>
+      </button>
+    }
+
+    <div class="topbar__profile">
+      <div class="topbar__avatar">AU</div>
+      <div class="topbar__profile-text">
+        <span class="topbar__profile-name">Audit User</span>
+        <span class="topbar__profile-role">Insurance Operations</span>
+      </div>
+    </div>
+  </div>
+</header>

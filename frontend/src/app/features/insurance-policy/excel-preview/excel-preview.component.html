@@ -1,0 +1,76 @@
+<div class="excel-preview">
+  <div class="excel-preview__header">
+    <div>
+      <h2>Excel Preview</h2>
+      <p>{{ selectedPolicies().length }} polic{{ selectedPolicies().length === 1 ? 'y' : 'ies' }} &middot; {{ rows().length }} row{{ rows().length === 1 ? '' : 's' }} (one per insured member)</p>
+    </div>
+    <p-button
+      label="Download Excel"
+      icon="pi pi-file-excel"
+      [loading]="downloading()"
+      [disabled]="rows().length === 0"
+      (onClick)="download()"
+    />
+  </div>
+
+  @if (downloadError(); as err) {
+    <div class="download-error"><i class="pi pi-times-circle"></i> {{ err }}</div>
+  }
+
+  @if (rows().length === 0) {
+    <div class="empty-state">
+      <i class="pi pi-file-excel"></i>
+      <p>No saved policies to export yet. Save a policy from the Review screen first.</p>
+      <p-button label="Go to Dashboard" routerLink="/insurance-policy/dashboard" [outlined]="true" />
+    </div>
+  } @else {
+    <div class="excel-preview__toolbar">
+      <span class="search">
+        <i class="pi pi-search"></i>
+        <input pInputText type="text" placeholder="Search rows…" (input)="onSearch($event, dt)" />
+      </span>
+      <p-multiselect
+        [options]="allColumns"
+        optionLabel="header"
+        optionValue="key"
+        [ngModel]="visibleKeys()"
+        (ngModelChange)="visibleKeys.set($event)"
+        display="chip"
+        placeholder="Columns"
+        [maxSelectedLabels]="0"
+        selectedItemsLabel="{0} columns visible"
+        styleClass="column-picker"
+      />
+    </div>
+
+    <div class="excel-preview__table-wrap">
+      <p-table
+        #dt
+        [value]="rows()"
+        [columns]="visibleColumns()"
+        dataKey="sNo"
+        [paginator]="rows().length > 10"
+        [rows]="10"
+        [globalFilterFields]="['policyholder', 'insuranceCompany', 'policyNumber', 'insuredName', 'customerId', 'receiptNumber']"
+        [scrollable]="true"
+        scrollDirection="both"
+        styleClass="p-datatable-sm excel-table"
+      >
+        <ng-template #header let-columns>
+          <tr>
+            @for (col of columns; track col.key) {
+              <th [pSortableColumn]="col.key" [style.min-width.px]="130">{{ col.header }} <p-sortIcon [field]="col.key" /></th>
+            }
+          </tr>
+        </ng-template>
+        <ng-template #body let-row let-columns="columns">
+          <tr>
+            @for (col of columns; track col.key) {
+              <td>{{ row[col.key] }}</td>
+            }
+          </tr>
+        </ng-template>
+      </p-table>
+    </div>
+  }
+</div>

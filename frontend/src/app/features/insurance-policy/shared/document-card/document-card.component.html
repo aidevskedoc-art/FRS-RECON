@@ -1,0 +1,39 @@
+<article class="doc-card" [class.doc-card--busy]="isBusy()" (click)="open.emit()">
+  <div class="doc-card__icon">
+    <i class="pi pi-file-pdf"></i>
+  </div>
+
+  <div class="doc-card__body">
+    <p class="doc-card__name" [title]="document().fileName">{{ document().fileName }}</p>
+    <div class="doc-card__meta">
+      <span>{{ fileSizeLabel() }}</span>
+      @if (document().pageCount) {
+        <span class="doc-card__dot">&middot;</span>
+        <span>{{ document().pageCount }} pages</span>
+      }
+    </div>
+    @if (document().errorMessage) {
+      <p class="doc-card__error">{{ document().errorMessage }}</p>
+    }
+  </div>
+
+  <div class="doc-card__status">
+    <span class="status-pill" [class]="'status-pill--' + meta().severity">
+      @if (isBusy()) {
+        <i class="pi pi-spin pi-spinner"></i>
+      } @else {
+        <i [class]="meta().icon"></i>
+      }
+      {{ meta().label }}
+    </span>
+  </div>
+
+  <div class="doc-card__actions" (click)="$event.stopPropagation()">
+    @if (document().status === 'Failed') {
+      <p-button icon="pi pi-refresh" severity="secondary" [text]="true" size="small" (onClick)="retry.emit()" pTooltip="Retry" />
+    }
+    @if (removable()) {
+      <p-button icon="pi pi-trash" severity="danger" [text]="true" size="small" (onClick)="remove.emit()" pTooltip="Remove" />
+    }
+  </div>
+</article>

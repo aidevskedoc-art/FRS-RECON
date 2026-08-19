@@ -1,0 +1,39 @@
+@if (sidebarStore.mobileOpen()) {
+  <div class="sidebar__backdrop" (click)="sidebarStore.closeMobile()"></div>
+}
+
+<aside class="sidebar" [class.sidebar--collapsed]="sidebarStore.collapsed()" [class.sidebar--mobile-open]="sidebarStore.mobileOpen()">
+  <div class="sidebar__brand">
+    <div class="sidebar__logo">
+      <i class="pi pi-sparkles"></i>
+    </div>
+    @if (!sidebarStore.collapsed()) {
+      <span class="sidebar__brand-text">FRS Insurance AI</span>
+    }
+  </div>
+
+  <nav class="sidebar__nav">
+    @for (item of navItems; track item.path) {
+      <a
+        class="sidebar__link"
+        [routerLink]="item.path"
+        routerLinkActive="sidebar__link--active"
+        [pTooltip]="sidebarStore.collapsed() ? item.label : ''"
+        tooltipPosition="right"
+        (click)="sidebarStore.closeMobile()"
+      >
+        <i [class]="item.icon"></i>
+        @if (!sidebarStore.collapsed()) {
+          <span>{{ item.label }}</span>
+        }
+      </a>
+    }
+  </nav>
+
+  <button type="button" class="sidebar__toggle" (click)="sidebarStore.toggle()">
+    <i [class]="sidebarStore.collapsed() ? 'pi pi-angle-right' : 'pi pi-angle-left'"></i>
+    @if (!sidebarStore.collapsed()) {
+      <span>Collapse</span>
+    }
+  </button>
+</aside>

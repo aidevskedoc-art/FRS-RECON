@@ -1,0 +1,100 @@
+<div class="history">
+  <div class="history__header">
+    <div>
+      <h2>Processing History</h2>
+      <p>{{ rows().length }} document{{ rows().length === 1 ? '' : 's' }} processed through the pipeline</p>
+    </div>
+    <p-button label="Upload New" icon="pi pi-cloud-upload" routerLink="/insurance-policy/upload" />
+  </div>
+
+  @if (selectedRows().length > 0) {
+    <div class="bulk-bar">
+      <span>{{ selectedRows().length }} selected</span>
+      <div class="bulk-bar__actions">
+        <p-button label="Review" icon="pi pi-eye" size="small" [text]="true" (onClick)="bulkReview()" />
+        <p-button label="Retry" icon="pi pi-refresh" size="small" [text]="true" (onClick)="bulkRetry()" />
+        <p-button label="Generate Excel" icon="pi pi-file-excel" size="small" [text]="true" (onClick)="bulkGenerateExcel()" />
+        <p-button label="Delete" icon="pi pi-trash" size="small" [text]="true" severity="danger" (onClick)="bulkDelete()" />
+      </div>
+    </div>
+  }
+
+  <span class="search">
+    <i class="pi pi-search"></i>
+    <input pInputText type="text" placeholder="Search by document, policy number, policyholder…" (input)="onSearch($event, dt)" />
+  </span>
+
+  <div class="history__table-wrap">
+    <p-table
+      #dt
+      [value]="rows()"
+      dataKey="documentId"
+      [selection]="selectedRows()"
+      (selectionChange)="selectedRows.set($event)"
+      [paginator]="rows().length > 10"
+      [rows]="10"
+      [globalFilterFields]="['fileName', 'policyNumber', 'policyholder']"
+      [scrollable]="true"
+      scrollDirection="both"
+      styleClass="p-datatable-sm history-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th style="width: 3rem"><p-tableHeaderCheckbox /></th>
+          <th pSortableColumn="fileName">Document <p-sortIcon field="fileName" /></th>
+          <th pSortableColumn="policyNumber">Policy Number <p-sortIcon field="policyNumber" /></th>
+          <th pSortableColumn="policyholder">Policyholder <p-sortIcon field="policyholder" /></th>
+          <th pSortableColumn="members">Members <p-sortIcon field="members" /></th>
+          <th pSortableColumn="uploadedAt">Uploaded <p-sortIcon field="uploadedAt" /></th>
+          <th pSortableColumn="processedAt">Processed <p-sortIcon field="processedAt" /></th>
+          <th pSortableColumn="status">Status <p-sortIcon field="status" /></th>
+          <th pSortableColumn="confidenceScore">Confidence <p-sortIcon field="confidenceScore" /></th>
+          <th>Excel Status</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-row>
+        <tr>
+          <td><p-tableCheckbox [value]="row" /></td>
+          <td class="doc-name" [title]="row.fileName">{{ row.fileName }}</td>
+          <td class="mono">{{ row.policyNumber || '—' }}</td>
+          <td>{{ row.policyholder || '—' }}</td>
+          <td>{{ row.members || '—' }}</td>
+          <td>{{ row.uploadedAt | date: 'mediumDate' }}</td>
+          <td>{{ row.processedAt ? (row.processedAt | date: 'mediumDate') : '—' }}</td>
+          <td>
+            <span class="status-pill" [class]="'status-pill--' + statusMetaFor(row.status).severity">
+              <i [class]="statusMetaFor(row.status).icon"></i> {{ statusMetaFor(row.status).label }}
+            </span>
+          </td>
+          <td>
+            @if (row.confidenceScore !== null) {
+              <span class="confidence-pill" [class]="'confidence-pill--' + row.confidence">{{ row.confidenceScore }}%</span>
+            } @else {
+              —
+            }
+          </td>
+          <td>
+            @if (row.excelGeneratedAt) {
+              <span class="excel-pill excel-pill--done"><i class="pi pi-check"></i> Generated</span>
+            } @else {
+              <span class="excel-pill">Not generated</span>
+            }
+          </td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="view(row)" pTooltip="View"><i class="pi pi-eye"></i></button>
+            <button type="button" class="action-icon" (click)="edit(row)" pTooltip="Edit"><i class="pi pi-pencil"></i></button>
+            <button type="button" class="action-icon" (click)="reprocess(row)" pTooltip="Reprocess"><i class="pi pi-refresh"></i></button>
+            <button type="button" class="action-icon" [disabled]="!row.policyId" (click)="downloadExcel(row)" pTooltip="Download Excel"><i class="pi pi-file-excel"></i></button>
+            <button type="button" class="action-icon action-icon--danger" (click)="deleteRow(row)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="11" class="empty">No documents processed yet.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

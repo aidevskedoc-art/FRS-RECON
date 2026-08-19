@@ -1,0 +1,94 @@
+@use 'styles/mixins';
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  cursor: pointer;
+  @include mixins.card;
+  @include mixins.elevate-on-hover;
+}
+
+.doc-card--busy {
+  border-color: var(--ai-blue-soft);
+  box-shadow: var(--shadow-glow-blue);
+}
+
+.doc-card__icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+  font-size: 1.25rem;
+}
+
+.doc-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.doc-card__name {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  @include mixins.truncate;
+}
+
+.doc-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.doc-card__dot {
+  color: var(--text-tertiary);
+}
+
+.doc-card__error {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--status-danger-fg);
+}
+
+.doc-card__status {
+  flex: none;
+}
+
+.status-pill {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+
+  &--success {
+    color: var(--status-success-fg);
+    background: var(--status-success-bg);
+    border-color: var(--status-success-border);
+  }
+  &--warning {
+    color: var(--status-warning-fg);
+    background: var(--status-warning-bg);
+    border-color: var(--status-warning-border);
+  }
+  &--danger {
+    color: var(--status-danger-fg);
+    background: var(--status-danger-bg);
+    border-color: var(--status-danger-border);
+  }
+  &--info {
+    color: var(--status-info-fg);
+    background: var(--status-info-bg);
+    border-color: var(--status-info-border);
+  }
+}
+
+.doc-card__actions {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
+}

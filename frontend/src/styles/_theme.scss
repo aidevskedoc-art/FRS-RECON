@@ -1,0 +1,62 @@
+// Dark theme token overrides. Applied both when the OS prefers dark (and the
+// user hasn't explicitly chosen light) and when the user has explicitly
+// toggled dark mode — see ThemeStore, which sets [data-theme] on <html>.
+
+@mixin dark-theme-tokens {
+  --surface-app: var(--neutral-950);
+  --surface-card: var(--neutral-900);
+  --surface-sunken: #111c33;
+  --surface-hover: #16213b;
+  --surface-overlay: var(--neutral-900);
+
+  --text-primary: var(--neutral-50);
+  --text-secondary: var(--neutral-400);
+  --text-tertiary: var(--neutral-500);
+  --text-inverse: var(--neutral-900);
+
+  --border-subtle: #1e2a45;
+  --border-default: #2a3a5c;
+
+  --ai-blue-soft: rgba(37, 99, 235, 0.16);
+  --ai-cyan-soft: rgba(6, 182, 212, 0.16);
+  --ai-purple-soft: rgba(124, 58, 237, 0.18);
+  --ai-gradient-soft: linear-gradient(135deg, var(--ai-blue-soft), var(--ai-purple-soft));
+
+  --surface-glass: rgba(15, 23, 42, 0.55);
+  --glass-border: rgba(148, 163, 184, 0.18);
+
+  --status-success-bg: rgba(15, 122, 61, 0.16);
+  --status-success-border: rgba(15, 122, 61, 0.32);
+  --status-warning-bg: rgba(146, 102, 10, 0.18);
+  --status-warning-border: rgba(146, 102, 10, 0.36);
+  --status-danger-bg: rgba(185, 28, 44, 0.18);
+  --status-danger-border: rgba(185, 28, 44, 0.36);
+  --status-info-bg: rgba(29, 78, 216, 0.18);
+  --status-info-border: rgba(29, 78, 216, 0.36);
+  --status-neutral-bg: #16213b;
+  --status-neutral-border: #2a3a5c;
+
+  --confidence-high-bg: rgba(15, 122, 61, 0.16);
+  --confidence-high-border: rgba(15, 122, 61, 0.32);
+  --confidence-medium-bg: rgba(146, 102, 10, 0.18);
+  --confidence-medium-border: rgba(146, 102, 10, 0.36);
+  --confidence-low-bg: rgba(185, 28, 44, 0.18);
+  --confidence-low-border: rgba(185, 28, 44, 0.36);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.5);
+  --shadow-glow-blue: 0 0 0 1px rgba(37, 99, 235, 0.24), 0 8px 24px rgba(37, 99, 235, 0.28);
+}
+
+// System preference — applies unless the user has explicitly chosen light.
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    @include dark-theme-tokens;
+  }
+}
+
+// Explicit user toggle always wins.
+:root[data-theme='dark'] {
+  @include dark-theme-tokens;
+}

@@ -1,0 +1,34 @@
+<div class="summary-grid">
+  <div class="summary-item">
+    <span class="summary-item__label">Policyholder</span>
+    <span class="summary-item__value">{{ policy().policyHolder.name }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-item__label">Insurance Company</span>
+    <span class="summary-item__value">{{ policy().insuranceCompany }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-item__label">Policy Number</span>
+    <span class="summary-item__value summary-item__value--mono">{{ policy().policyNumber }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-item__label">Policy Period</span>
+    <span class="summary-item__value">{{ policy().policyStartDate }} &rarr; {{ policy().policyEndDate }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-item__label">Plan Chosen</span>
+    <span class="summary-item__value">{{ policy().planChosen }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-item__label">Policy Type</span>
+    <span class="summary-item__value">{{ policy().policyType }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-item__label">Sum Insured</span>
+    <span class="summary-item__value">&#8377;{{ policy().premium.sumInsured | number: '1.0-0' }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-item__label">New / Renewal</span>
+    <span class="summary-item__value">{{ policy().newOrRenewal }}</span>
+  </div>
+</div>

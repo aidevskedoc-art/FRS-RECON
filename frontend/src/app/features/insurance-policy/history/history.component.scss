@@ -1,0 +1,157 @@
+@use 'styles/mixins';
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--ai-blue-soft);
+  color: var(--ai-blue);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
+.bulk-bar__actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.search {
+  position: relative;
+  max-width: 380px;
+
+  i {
+    position: absolute;
+    left: var(--space-3);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+    font-size: var(--text-sm);
+  }
+
+  input {
+    width: 100%;
+    padding-left: var(--space-7);
+  }
+}
+
+.history__table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  overflow: auto;
+}
+
+:host ::ng-deep .history-table {
+  .p-datatable-thead > tr > th {
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+
+  .p-datatable-tbody > tr > td {
+    white-space: nowrap;
+  }
+}
+
+.doc-name {
+  max-width: 220px;
+  @include mixins.truncate;
+}
+
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: var(--text-sm);
+}
+
+.status-pill {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+
+  &--success { color: var(--status-success-fg); background: var(--status-success-bg); border-color: var(--status-success-border); }
+  &--warning { color: var(--status-warning-fg); background: var(--status-warning-bg); border-color: var(--status-warning-border); }
+  &--danger { color: var(--status-danger-fg); background: var(--status-danger-bg); border-color: var(--status-danger-border); }
+  &--info { color: var(--status-info-fg); background: var(--status-info-bg); border-color: var(--status-info-border); }
+}
+
+.confidence-pill {
+  @include mixins.status-chip(var(--confidence-medium-fg), var(--confidence-medium-bg), var(--confidence-medium-border));
+
+  &--high { color: var(--confidence-high-fg); background: var(--confidence-high-bg); border-color: var(--confidence-high-border); }
+  &--medium { color: var(--confidence-medium-fg); background: var(--confidence-medium-bg); border-color: var(--confidence-medium-border); }
+  &--low { color: var(--confidence-low-fg); background: var(--confidence-low-bg); border-color: var(--confidence-low-border); }
+}
+
+.excel-pill {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.excel-pill--done {
+  color: var(--status-success-fg);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.actions-col {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.action-icon {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--ai-blue);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+
+.action-icon--danger:hover:not(:disabled) {
+  color: var(--status-danger-fg);
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}

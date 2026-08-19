@@ -1,0 +1,61 @@
+<div class="dashboard">
+  <div class="dashboard__hero">
+    <div class="dashboard__hero-text">
+      <h2>Welcome back</h2>
+      <p>
+        Upload an insurance policy PDF and let AI convert it into validated, structured data —
+        ready for review and Excel export.
+      </p>
+    </div>
+    <div class="dashboard__hero-actions">
+      <p-button label="Upload Policy PDF" icon="pi pi-cloud-upload" routerLink="/insurance-policy/upload" />
+      <p-button
+        label="Generate Excel"
+        icon="pi pi-file-excel"
+        severity="secondary"
+        [outlined]="true"
+        routerLink="/insurance-policy/excel-preview"
+      />
+    </div>
+  </div>
+
+  <div class="dashboard__cards">
+    @for (card of summaryCards(); track card.label) {
+      <div class="summary-card" [class]="'summary-card--' + card.accent">
+        <div class="summary-card__icon">
+          <i [class]="card.icon"></i>
+        </div>
+        <div>
+          <p class="summary-card__value">{{ card.value }}</p>
+          <p class="summary-card__label">{{ card.label }}</p>
+        </div>
+      </div>
+    }
+  </div>
+
+  <div class="dashboard__section">
+    <div class="dashboard__section-header">
+      <h3>Recent Documents</h3>
+      <a routerLink="/insurance-policy/history" class="dashboard__link">View all history <i class="pi pi-arrow-right"></i></a>
+    </div>
+
+    @if (recentDocuments().length === 0) {
+      <div class="empty-state">
+        <i class="pi pi-inbox"></i>
+        <p>No documents yet. Upload your first insurance policy PDF to get started.</p>
+        <p-button label="Upload Policy PDF" icon="pi pi-cloud-upload" routerLink="/insurance-policy/upload" />
+      </div>
+    } @else {
+      <div class="dashboard__doc-grid">
+        @for (doc of recentDocuments(); track doc.id) {
+          <app-document-card
+            [document]="doc"
+            (open)="openDocument(doc)"
+            (retry)="retryDocument(doc)"
+            (remove)="removeDocument(doc)"
+          />
+        }
+      </div>
+    }
+  </div>
+</div>

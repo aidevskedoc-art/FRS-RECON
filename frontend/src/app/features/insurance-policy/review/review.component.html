@@ -1,0 +1,84 @@
+@if (result(); as r) {
+  <div class="review">
+    <div class="review__header">
+      <h2>Final Review</h2>
+      <p>Confirm everything looks right before saving {{ r.policy.policyHolder.name }}'s policy to the database.</p>
+    </div>
+
+    <section class="review-card">
+      <h3><i class="pi pi-id-card"></i> Policy Summary</h3>
+      <app-policy-summary [policy]="r.policy" />
+    </section>
+
+    <section class="review-card">
+      <h3><i class="pi pi-wallet"></i> Premium Summary</h3>
+      <div class="premium-grid">
+        <div><span>Total Basic Premium</span><strong>&#8377;{{ r.policy.premium.totalBasicPremium | number: '1.0-0' }}</strong></div>
+        <div><span>Family Floater Discount</span><strong>&#8377;{{ r.policy.premium.familyFloaterDiscount | number: '1.0-0' }}</strong></div>
+        <div><span>Premium</span><strong>&#8377;{{ r.policy.premium.premium | number: '1.0-0' }}</strong></div>
+        <div><span>GST</span><strong>&#8377;{{ r.policy.premium.gst | number: '1.0-0' }}</strong></div>
+        <div class="premium-grid__total"><span>Total Premium</span><strong>&#8377;{{ r.policy.premium.totalPremium | number: '1.0-0' }}</strong></div>
+      </div>
+    </section>
+
+    <section class="review-card">
+      <h3><i class="pi pi-users"></i> Member Summary ({{ r.policy.members.length }})</h3>
+      <app-member-table [members]="r.policy.members" [editable]="false" />
+    </section>
+
+    <section class="review-card">
+      <h3><i class="pi pi-shield"></i> Validation Summary</h3>
+      <div class="validation-summary">
+        <div class="validation-summary__score">
+          <span>{{ validation().completenessPercent }}%</span>
+          <p>Completeness</p>
+        </div>
+        <div class="validation-summary__details">
+          <p>{{ passedChecksCount() }} / {{ validation().checks.length }} checks passed</p>
+          @if (validation().issues.length === 0) {
+            <p class="validation-summary__ok"><i class="pi pi-check-circle"></i> No outstanding issues</p>
+          } @else {
+            <p class="validation-summary__warn">
+              <i class="pi pi-exclamation-triangle"></i> {{ validation().issues.length }} field(s) flagged for review
+            </p>
+          }
+          @if (validation().isSaveBlocked) {
+            <p class="validation-summary__blocked">
+              <i class="pi pi-times-circle"></i> Critical fields missing — saving is blocked until resolved.
+            </p>
+          }
+        </div>
+      </div>
+    </section>
+
+    <div class="review__ready" [class.review__ready--blocked]="validation().isSaveBlocked">
+      <i [class]="validation().isSaveBlocked ? 'pi pi-times-circle' : 'pi pi-verified'"></i>
+      <span>{{ validation().isSaveBlocked ? 'Resolve critical issues before saving' : 'Ready to Save' }}</span>
+    </div>
+
+    @if (saveError(); as err) {
+      <div class="save-error"><i class="pi pi-times-circle"></i> {{ err }}</div>
+    }
+
+    <div class="review__footer">
+      <p-button label="Back to Validation" severity="secondary" [outlined]="true" [routerLink]="['/insurance-policy/documents', id(), 'validation']" />
+      <p-button
+        label="Save to Database"
+        icon="pi pi-database"
+        severity="secondary"
+        [disabled]="validation().isSaveBlocked || saving()"
+        [loading]="saving()"
+        (onClick)="save(false)"
+      />
+      <p-button
+        label="Save &amp; Generate Excel"
+        icon="pi pi-file-excel"
+        [disabled]="validation().isSaveBlocked || saving()"
+        [loading]="saving()"
+        (onClick)="save(true)"
+      />
+    </div>
+  </div>
+} @else {
+  <p>Loading…</p>
+}

@@ -1,0 +1,75 @@
+<div class="validation">
+  <div class="validation__header">
+    <h2>AI Validation Center</h2>
+    <p>{{ document()?.fileName }}</p>
+  </div>
+
+  <div class="validation__completeness">
+    <div class="validation__completeness-top">
+      <span>Extraction Completeness</span>
+      <strong>{{ validation().completenessPercent }}%</strong>
+    </div>
+    <p-progressbar [value]="validation().completenessPercent" [showValue]="false" />
+  </div>
+
+  <div class="validation__grid">
+    <div class="validation-card">
+      <h3><i class="pi pi-check-square"></i> Validation Checks</h3>
+      <ul class="checklist">
+        @for (check of validation().checks; track check.id) {
+          <li [class.checklist__item--fail]="!check.passed">
+            <i [class]="check.passed ? 'pi pi-check-circle' : 'pi pi-times-circle'"></i>
+            {{ check.label }}
+          </li>
+        }
+      </ul>
+    </div>
+
+    <div class="validation-card">
+      <h3><i class="pi pi-exclamation-triangle"></i> Issues Requiring Attention</h3>
+
+      @if (validation().issues.length === 0) {
+        <div class="all-clear">
+          <i class="pi pi-verified"></i>
+          <p>No issues found. This document is ready for review.</p>
+        </div>
+      } @else {
+        @if (errorIssues().length > 0) {
+          <p class="issue-group-label issue-group-label--error">Must fix before saving</p>
+          <ul class="issue-list">
+            @for (issue of errorIssues(); track issue.id) {
+              <li class="issue issue--error" (click)="reviewIssue(issue.fieldPath)">
+                <i class="pi pi-times-circle"></i>
+                <div>
+                  <p class="issue__label">{{ issue.label }}</p>
+                  <p class="issue__message">{{ issue.message }}</p>
+                </div>
+                <span class="issue__action">Review <i class="pi pi-arrow-right"></i></span>
+              </li>
+            }
+          </ul>
+        }
+        @if (warningIssues().length > 0) {
+          <p class="issue-group-label issue-group-label--warning">Worth a quick check</p>
+          <ul class="issue-list">
+            @for (issue of warningIssues(); track issue.id) {
+              <li class="issue issue--warning" (click)="reviewIssue(issue.fieldPath)">
+                <i class="pi pi-exclamation-triangle"></i>
+                <div>
+                  <p class="issue__label">{{ issue.label }}</p>
+                  <p class="issue__message">{{ issue.message }}</p>
+                </div>
+                <span class="issue__action">Review <i class="pi pi-arrow-right"></i></span>
+              </li>
+            }
+          </ul>
+        }
+      }
+    </div>
+  </div>
+
+  <div class="validation__footer">
+    <p-button label="Back to Extraction" severity="secondary" [outlined]="true" [routerLink]="['/insurance-policy/documents', id(), 'extraction']" />
+    <p-button label="Continue to Review" icon="pi pi-arrow-right" iconPos="right" (onClick)="goToReview()" />
+  </div>
+</div>

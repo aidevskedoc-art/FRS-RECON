@@ -1,0 +1,86 @@
+<div class="processing">
+  @if (loadError(); as err) {
+    <div class="processing__error">
+      <i class="pi pi-times-circle"></i>
+      <p>{{ err }}</p>
+      <p-button label="Back to Dashboard" routerLink="/insurance-policy/dashboard" [outlined]="true" />
+    </div>
+  }
+
+  @if (!isBatch() && items().length === 1) {
+    @for (item of items(); track item.doc.id) {
+      <div class="processing__single">
+        <div class="processing__header">
+          <div class="processing__scan-icon" [class.processing__scan-icon--done]="item.step === 'ReadyForReview'">
+            <i class="pi pi-sparkles"></i>
+          </div>
+          <h2>{{ item.doc.status === 'Failed' ? 'Processing Failed' : 'AI is analyzing your document' }}</h2>
+          <p>{{ item.doc.fileName }}</p>
+        </div>
+
+        @if (item.doc.status === 'Failed') {
+          <div class="processing__failed">
+            <i class="pi pi-times-circle"></i>
+            <p>{{ item.doc.errorMessage || 'Something went wrong while processing this document.' }}</p>
+            <p-button label="Back to Dashboard" routerLink="/insurance-policy/dashboard" [outlined]="true" />
+          </div>
+        } @else {
+          <div class="processing__timeline-card">
+            <app-processing-timeline [currentStep]="item.step" />
+          </div>
+
+          @if (item.step === 'ReadyForReview') {
+            <div class="processing__cta">
+              <p-button label="View Extraction Results" icon="pi pi-arrow-right" iconPos="right" (onClick)="goToExtraction(item.doc.id)" />
+            </div>
+          }
+        }
+      </div>
+    }
+  } @else {
+    <div class="processing__batch">
+      <div class="processing__batch-header">
+        <h2>Processing {{ items().length }} documents</h2>
+        <p>AI is extracting structured data from each document. This runs automatically.</p>
+      </div>
+
+      <div class="processing__batch-grid">
+        @for (item of items(); track item.doc.id) {
+          <div class="batch-card">
+            <div class="batch-card__top">
+              <i class="pi pi-file-pdf"></i>
+              <span class="batch-card__name">{{ item.doc.fileName }}</span>
+            </div>
+
+            @if (item.doc.status === 'Failed') {
+              <p class="batch-card__status batch-card__status--failed">
+                <i class="pi pi-times-circle"></i> Failed
+              </p>
+            } @else {
+              <div class="batch-card__progress">
+                <div class="batch-card__progress-fill" [style.width.%]="(stepOrder(item.step) / 7) * 100"></div>
+              </div>
+              <p class="batch-card__status">
+                @if (item.step === 'ReadyForReview') {
+                  <i class="pi pi-check-circle"></i> Ready for review
+                } @else {
+                  <i class="pi pi-spin pi-spinner"></i> {{ item.step }}
+                }
+              </p>
+            }
+
+            @if (item.step === 'ReadyForReview') {
+              <p-button label="Review" icon="pi pi-arrow-right" iconPos="right" size="small" [text]="true" (onClick)="goToExtraction(item.doc.id)" />
+            }
+          </div>
+        }
+      </div>
+
+      @if (allReady()) {
+        <div class="processing__cta">
+          <p-button label="Go to Dashboard" icon="pi pi-th-large" routerLink="/insurance-policy/dashboard" />
+        </div>
+      }
+    </div>
+  }
+</div>
