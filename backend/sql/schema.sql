@@ -108,3 +108,122 @@ ALTER TABLE policies ADD COLUMN IF NOT EXISTS source_format               VARCHA
 -- Receipt numbers run to 20 digits — must stay text so no float rounding
 -- can truncate them (the client's own spreadsheet lost the last 5 digits).
 ALTER TABLE policies ALTER COLUMN receipt_number TYPE VARCHAR(64);
+
+-- ---------------------------------------------------------------------------
+-- Upload Online: MIS data (IP / Diag payments) and bank statements.
+-- Both MIS formats' source headers are shifted from their actual data (a
+-- known export quirk); the parser corrects this before rows land here, so
+-- every column below already holds the semantically-correct value.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS online_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  upload_type       VARCHAR(16) NOT NULL,   -- 'IP_PAYMENT' | 'DIAG_PAYMENT'
+  source_format     VARCHAR(16) NOT NULL,   -- 'FORMAT_1' | 'FORMAT_2'
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS online_upload_batches_upload_type_idx ON online_upload_batches(upload_type);
+
+CREATE TABLE IF NOT EXISTS online_payment_records (
+  id                  SERIAL PRIMARY KEY,
+  batch_id            INTEGER NOT NULL REFERENCES online_upload_batches(id) ON DELETE CASCADE,
+  upload_type         VARCHAR(16) NOT NULL,
+  -- Positional fields sourced from an export we don't control the content
+  -- of (verified against only 1-2 sample rows per format) are kept generously
+  -- wide, same rationale as policies.receipt_number's widening below — a
+  -- narrower guess already truncated real diag-payment uploads once.
+  receipt_number      VARCHAR(255),
+  receipt_date        TIMESTAMP,
+  yhno                VARCHAR(255),
+  ip_no               VARCHAR(255),
+  diag_no             VARCHAR(255),
+  patient_name        VARCHAR(255),
+  transaction_ref_1   VARCHAR(255),
+  transaction_ref_2   VARCHAR(255),
+  transaction_ref_3   VARCHAR(255),  -- Format 2 only
+  payment_mode        VARCHAR(255),  -- Format 1 only
+  pay_mode             VARCHAR(255), -- Format 2 only
+  pay_type            VARCHAR(255),
+  remarks              VARCHAR(255), -- Format 1 only
+  payment_remarks      VARCHAR(255), -- Format 1 only
+  pat_type             VARCHAR(255),
+  bill_amount           NUMERIC(14,2),
+  cash_amount            NUMERIC(14,2),
+  card_amount             NUMERIC(14,2),
+  cheque_amount            NUMERIC(14,2),
+  online_upi_amount        NUMERIC(14,2),
+  discount_amount           NUMERIC(14,2), -- Format 2 only
+  diff_amount                NUMERIC(14,2), -- Format 2 only
+  user_id                     VARCHAR(255),
+  user_name                    VARCHAR(255),
+  created_at                    TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS online_payment_records_batch_id_idx ON online_payment_records(batch_id);
+CREATE INDEX IF NOT EXISTS online_payment_records_upload_type_idx ON online_payment_records(upload_type);
+
+CREATE TABLE IF NOT EXISTS bank_statement_uploads (
+  id                SERIAL PRIMARY KEY,
+  bank_name         VARCHAR(255),
+  account_no        VARCHAR(64),
+  account_branch    VARCHAR(255),
+  statement_from    DATE,
+  statement_to      DATE,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS bank_statement_records (
+  id                SERIAL PRIMARY KEY,
+  batch_id          INTEGER NOT NULL REFERENCES bank_statement_uploads(id) ON DELETE CASCADE,
+  txn_date          DATE,
+  narration         TEXT,
+  chq_ref_no        VARCHAR(64),
+  value_date        DATE,
+  withdrawal_amt    NUMERIC(14,2),
+  deposit_amt       NUMERIC(14,2),
+  closing_balance   NUMERIC(14,2)
+);
+
+CREATE INDEX IF NOT EXISTS bank_statement_records_batch_id_idx ON bank_statement_records(batch_id);
+
+-- The initial VARCHAR(32)/(64) guesses above truncated real diag-payment
+-- uploads (columns we'd only verified against 1-2 blank-heavy sample rows).
+-- Widened uniformly rather than chasing one column at a time.
+ALTER TABLE online_payment_records ALTER COLUMN receipt_number TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN yhno TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN ip_no TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN diag_no TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN transaction_ref_1 TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN transaction_ref_2 TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN transaction_ref_3 TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN payment_mode TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN pay_mode TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN pay_type TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN pat_type TYPE VARCHAR(255);
+ALTER TABLE online_payment_records ALTER COLUMN user_id TYPE VARCHAR(255);
+
+-- ---------------------------------------------------------------------------
+-- Master Data: Division & Bank A/C.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS master_division_bank_accounts (
+  id               SERIAL PRIMARY KEY,
+  division_name    VARCHAR(64) NOT NULL CHECK (division_name IN ('Hitech City', 'Somajiguda', 'Secunderabad', 'Malakpet')),
+  account_number   VARCHAR(64) NOT NULL,
+  bank_name        VARCHAR(255) NOT NULL,
+  active           BOOLEAN NOT NULL DEFAULT true,
+  created_at       TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS master_division_bank_accounts_account_number_key ON master_division_bank_accounts(account_number);
+CREATE INDEX IF NOT EXISTS master_division_bank_accounts_division_name_idx ON master_division_bank_accounts(division_name);

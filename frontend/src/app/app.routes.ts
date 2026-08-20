@@ -76,6 +76,52 @@ export const routes: Routes = [
           import('./features/insurance-policy/history/history.component').then((m) => m.HistoryComponent),
         title: 'Processing History — Insurance Policy Intelligence',
       },
+      {
+        path: 'upload-online/mis',
+        loadComponent: () =>
+          import('./features/upload-online/upload-mis/upload-mis.component').then((m) => m.UploadMisComponent),
+        title: 'Upload MIS Data — Upload Online',
+      },
+      {
+        path: 'upload-online/bank-statement',
+        loadComponent: () =>
+          import('./features/upload-online/upload-bank-statement/upload-bank-statement.component').then(
+            (m) => m.UploadBankStatementComponent,
+          ),
+        title: 'Upload Bank Statement — Upload Online',
+      },
+      {
+        path: 'upload-online/payments',
+        loadComponent: () =>
+          import('./features/upload-online/view-payments/view-payments.component').then(
+            (m) => m.ViewPaymentsComponent,
+          ),
+        title: 'IP & Diag Payments — Upload Online',
+      },
+      {
+        path: 'upload-online/payments/:batchId',
+        loadComponent: () =>
+          import('./features/upload-online/payment-batch-detail/payment-batch-detail.component').then(
+            (m) => m.PaymentBatchDetailComponent,
+          ),
+        title: 'Payment Batch — Upload Online',
+      },
+      {
+        path: 'upload-online/bank-statements',
+        loadComponent: () =>
+          import('./features/upload-online/view-bank-statements/view-bank-statements.component').then(
+            (m) => m.ViewBankStatementsComponent,
+          ),
+        title: 'Bank Statements — Upload Online',
+      },
+      {
+        path: 'master-data/division-bank-accounts',
+        loadComponent: () =>
+          import('./features/master-data/division-bank-accounts/division-bank-accounts.component').then(
+            (m) => m.DivisionBankAccountsComponent,
+          ),
+        title: 'Division & Bank A/C — Master Data',
+      },
       { path: '**', redirectTo: 'insurance-policy/dashboard' },
     ],
   },

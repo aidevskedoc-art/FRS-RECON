@@ -1,0 +1,67 @@
+<div class="view-statements">
+  <div class="view-statements__header">
+    <div>
+      <h2>Bank Statements</h2>
+      <p>{{ bankStatements.batches().length }} statement{{ bankStatements.batches().length === 1 ? '' : 's' }} uploaded</p>
+    </div>
+    <p-button label="Upload Bank Statement" icon="pi pi-cloud-upload" routerLink="/upload-online/bank-statement" />
+  </div>
+
+  <div class="view-statements__table-wrap">
+    <p-table [value]="bankStatements.batches()" dataKey="id" styleClass="p-datatable-sm statements-table">
+      <ng-template #header>
+        <tr>
+          <th></th>
+          <th>Bank</th>
+          <th>Account No</th>
+          <th>Statement Period</th>
+          <th>File Name</th>
+          <th>Rows</th>
+          <th>Uploaded At</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-batch>
+        <tr>
+          <td>
+            <button type="button" class="action-icon" (click)="toggle(batch.id)" [pTooltip]="isExpanded(batch.id) ? 'Collapse' : 'View'">
+              <i class="pi" [class.pi-chevron-down]="!isExpanded(batch.id)" [class.pi-chevron-up]="isExpanded(batch.id)"></i>
+            </button>
+          </td>
+          <td>{{ batch.bankName || '—' }}</td>
+          <td class="mono">{{ batch.accountNo || '—' }}</td>
+          <td>
+            @if (batch.statementFrom && batch.statementTo) {
+              {{ batch.statementFrom }} to {{ batch.statementTo }}
+            } @else {
+              —
+            }
+          </td>
+          <td class="file-name" [title]="batch.fileName">{{ batch.fileName }}</td>
+          <td>{{ batch.rowCount }}</td>
+          <td>{{ batch.uploadedAt | date: 'medium' }}</td>
+          <td class="actions-col">
+            <button type="button" class="action-icon action-icon--danger" (click)="deleteBatch(batch.id)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+          </td>
+        </tr>
+        @if (isExpanded(batch.id)) {
+          <tr class="detail-row">
+            <td></td>
+            <td colspan="7">
+              <div class="detail-grid">
+                <div><span>Branch</span><strong>{{ batch.accountBranch || '—' }}</strong></div>
+                <div><span>Uploaded By</span><strong>{{ batch.uploadedBy || '—' }}</strong></div>
+                <div><span>File Size</span><strong>{{ (batch.fileSizeBytes / (1024 * 1024)).toFixed(2) }} MB</strong></div>
+              </div>
+            </td>
+          </tr>
+        }
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="8" class="empty">No bank statements uploaded yet.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

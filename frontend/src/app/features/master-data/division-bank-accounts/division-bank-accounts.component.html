@@ -1,0 +1,114 @@
+<div class="division-accounts">
+  <div class="division-accounts__header">
+    <div>
+      <h2>Division & Bank A/C</h2>
+      <p>{{ masterData.accounts().length }} account{{ masterData.accounts().length === 1 ? '' : 's' }}</p>
+    </div>
+    <p-button label="Add Account" icon="pi pi-plus" (onClick)="openAdd()" />
+  </div>
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <span class="search">
+    <i class="pi pi-search"></i>
+    <input pInputText type="text" placeholder="Search division, account number, bank…" (input)="onSearchInput($event, dt)" />
+  </span>
+
+  <div class="division-accounts__table-wrap">
+    <p-table
+      #dt
+      [value]="masterData.accounts()"
+      dataKey="id"
+      [paginator]="masterData.accounts().length > 10"
+      [rows]="10"
+      [globalFilterFields]="['divisionName', 'accountNumber', 'bankName']"
+      styleClass="p-datatable-sm accounts-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th pSortableColumn="divisionName">Division <p-sortIcon field="divisionName" /></th>
+          <th pSortableColumn="accountNumber">Account Number <p-sortIcon field="accountNumber" /></th>
+          <th pSortableColumn="bankName">Bank Name <p-sortIcon field="bankName" /></th>
+          <th>Active</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-account>
+        <tr>
+          <td>{{ account.divisionName }}</td>
+          <td class="mono">{{ account.accountNumber }}</td>
+          <td>{{ account.bankName }}</td>
+          <td>
+            <button
+              type="button"
+              class="status-pill"
+              [class.status-pill--active]="account.active"
+              (click)="toggleActive(account)"
+              [pTooltip]="account.active ? 'Click to deactivate' : 'Click to activate'"
+            >
+              {{ account.active ? 'Active' : 'Inactive' }}
+            </button>
+          </td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="openEdit(account)" pTooltip="Edit"><i class="pi pi-pencil"></i></button>
+            <button type="button" class="action-icon action-icon--danger" (click)="deleteAccount(account.id)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="5" class="empty">No division bank accounts yet.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  <p-dialog
+    [header]="editingId() ? 'Edit Bank Account' : 'Add Bank Account'"
+    [visible]="dialogVisible()"
+    (visibleChange)="dialogVisible.set($event)"
+    [modal]="true"
+    [style]="{ width: '26rem' }"
+  >
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="notice notice--danger">
+          <i class="pi pi-times-circle"></i>
+          {{ err }}
+        </div>
+      }
+      <label>
+        <span>Division</span>
+        <p-select
+          [options]="divisions"
+          [ngModel]="draft().divisionName"
+          (ngModelChange)="updateDraft({ divisionName: $event })"
+          placeholder="Select division"
+          appendTo="body"
+          styleClass="full-width"
+        />
+      </label>
+      <label>
+        <span>Account Number</span>
+        <input pInputText type="text" [ngModel]="draft().accountNumber" (ngModelChange)="updateDraft({ accountNumber: $event })" />
+      </label>
+      <label>
+        <span>Bank Name</span>
+        <input pInputText type="text" [ngModel]="draft().bankName" (ngModelChange)="updateDraft({ bankName: $event })" />
+      </label>
+      <label class="form__switch">
+        <span>Active</span>
+        <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
+      </label>
+    </div>
+    <ng-template #footer>
+      <p-button label="Cancel" severity="secondary" [text]="true" [disabled]="saving()" (onClick)="dialogVisible.set(false)" />
+      <p-button [label]="editingId() ? 'Save' : 'Add Account'" icon="pi pi-check" [loading]="saving()" (onClick)="save()" />
+    </ng-template>
+  </p-dialog>
+</div>

@@ -8,6 +8,8 @@ const db = require('./db');
 const { router: documentsRouter, uploadDir } = require('./routes/documents.routes');
 const extractionRouter = require('./routes/extraction.routes');
 const policiesRouter = require('./routes/policies.routes');
+const onlineUploadRouter = require('./routes/online-upload.routes');
+const masterDataRouter = require('./routes/master-data.routes');
 
 const app = express();
 
@@ -20,6 +22,8 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/documents', documentsRouter);
 app.use('/api/documents', extractionRouter);
 app.use('/api/policies', policiesRouter);
+app.use('/api/online-upload', onlineUploadRouter);
+app.use('/api/master', masterDataRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });

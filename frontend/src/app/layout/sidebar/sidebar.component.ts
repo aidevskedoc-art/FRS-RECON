@@ -24,6 +24,21 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Processing History', icon: 'pi pi-history', path: '/insurance-policy/history' },
     ],
   },
+  {
+    label: 'Upload Online',
+    items: [
+      { label: 'Upload MIS Data', icon: 'pi pi-cloud-upload', path: '/upload-online/mis' },
+      { label: 'Upload Bank Statement', icon: 'pi pi-building-columns', path: '/upload-online/bank-statement' },
+      { label: 'View IP & Diag Payments', icon: 'pi pi-list', path: '/upload-online/payments' },
+      { label: 'View Bank Statements', icon: 'pi pi-book', path: '/upload-online/bank-statements' },
+    ],
+  },
+  {
+    label: 'Master Data',
+    items: [
+      { label: 'Division & Bank A/C', icon: 'pi pi-sitemap', path: '/master-data/division-bank-accounts' },
+    ],
+  },
 ];
 
 @Component({

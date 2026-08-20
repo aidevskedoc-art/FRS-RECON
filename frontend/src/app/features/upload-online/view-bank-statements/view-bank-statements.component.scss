@@ -1,0 +1,111 @@
+@use 'styles/mixins';
+
+.view-statements {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.view-statements__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+}
+
+.view-statements__table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  overflow: auto;
+}
+
+:host ::ng-deep .statements-table {
+  .p-datatable-thead > tr > th {
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+
+  .p-datatable-tbody > tr > td {
+    white-space: nowrap;
+  }
+}
+
+.file-name {
+  max-width: 240px;
+  @include mixins.truncate;
+}
+
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: var(--text-sm);
+}
+
+.actions-col {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.action-icon {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--ai-blue);
+  }
+}
+
+.action-icon--danger:hover {
+  color: var(--status-danger-fg);
+}
+
+.detail-row td {
+  background: var(--surface-sunken);
+  white-space: normal;
+}
+
+.detail-grid {
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-2) 0;
+
+  div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  span {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+  }
+
+  strong {
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+  }
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}

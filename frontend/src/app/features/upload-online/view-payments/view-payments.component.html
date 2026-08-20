@@ -1,0 +1,54 @@
+<div class="view-payments">
+  <div class="view-payments__header">
+    <div>
+      <h2>IP & Diag Payments</h2>
+      <p>{{ batches().length }} upload{{ batches().length === 1 ? '' : 's' }}</p>
+    </div>
+    <p-button label="Upload MIS Data" icon="pi pi-cloud-upload" routerLink="/upload-online/mis" />
+  </div>
+
+  <div class="filter-tabs">
+    <button type="button" class="filter-tab" [class.filter-tab--active]="typeFilter() === 'ALL'" (click)="setFilter('ALL')">All</button>
+    <button type="button" class="filter-tab" [class.filter-tab--active]="typeFilter() === 'IP_PAYMENT'" (click)="setFilter('IP_PAYMENT')">IP Payments</button>
+    <button type="button" class="filter-tab" [class.filter-tab--active]="typeFilter() === 'DIAG_PAYMENT'" (click)="setFilter('DIAG_PAYMENT')">Diag Payments</button>
+  </div>
+
+  <div class="view-payments__table-wrap">
+    <p-table [value]="batches()" dataKey="id" styleClass="p-datatable-sm payments-table">
+      <ng-template #header>
+        <tr>
+          <th>File Name</th>
+          <th>Upload Type</th>
+          <th>Format</th>
+          <th>Rows</th>
+          <th>Uploaded By</th>
+          <th>Uploaded At</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-batch>
+        <tr>
+          <td class="file-name" [title]="batch.fileName">{{ batch.fileName }}</td>
+          <td>
+            <span class="type-pill" [class.type-pill--diag]="batch.uploadType === 'DIAG_PAYMENT'">
+              {{ batch.uploadType === 'IP_PAYMENT' ? 'IP Payment' : 'Diag Payment' }}
+            </span>
+          </td>
+          <td>{{ batch.sourceFormat === 'FORMAT_1' ? 'Format 1' : 'Format 2' }}</td>
+          <td>{{ batch.rowCount }}</td>
+          <td>{{ batch.uploadedBy || '—' }}</td>
+          <td>{{ batch.uploadedAt | date: 'medium' }}</td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="view(batch.id)" pTooltip="View"><i class="pi pi-eye"></i></button>
+            <button type="button" class="action-icon action-icon--danger" (click)="deleteBatch(batch.id)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="7" class="empty">No MIS data uploaded yet.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>
