@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TooltipModule } from 'primeng/tooltip';
 import { SidebarStore } from './sidebar.store';
@@ -9,11 +9,21 @@ interface NavItem {
   path: string;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', icon: 'pi pi-th-large', path: '/insurance-policy/dashboard' },
-  { label: 'Upload Documents', icon: 'pi pi-cloud-upload', path: '/insurance-policy/upload' },
-  { label: 'Excel Export', icon: 'pi pi-file-excel', path: '/insurance-policy/excel-preview' },
-  { label: 'Processing History', icon: 'pi pi-history', path: '/insurance-policy/history' },
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Automation Insurance',
+    items: [
+      { label: 'Dashboard', icon: 'pi pi-th-large', path: '/insurance-policy/dashboard' },
+      { label: 'Upload Documents', icon: 'pi pi-cloud-upload', path: '/insurance-policy/upload' },
+      { label: 'Excel Export', icon: 'pi pi-file-excel', path: '/insurance-policy/excel-preview' },
+      { label: 'Processing History', icon: 'pi pi-history', path: '/insurance-policy/history' },
+    ],
+  },
 ];
 
 @Component({
@@ -27,5 +37,16 @@ const NAV_ITEMS: NavItem[] = [
 })
 export class SidebarComponent {
   protected readonly sidebarStore = inject(SidebarStore);
-  protected readonly navItems = NAV_ITEMS;
+  protected readonly navGroups = NAV_GROUPS;
+  protected readonly expandedGroups = signal<ReadonlySet<string>>(new Set());
+
+  protected toggleGroup(label: string): void {
+    const expanded = new Set(this.expandedGroups());
+    if (expanded.has(label)) {
+      expanded.delete(label);
+    } else {
+      expanded.add(label);
+    }
+    this.expandedGroups.set(expanded);
+  }
 }

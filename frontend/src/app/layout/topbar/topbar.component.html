@@ -31,11 +31,15 @@
     }
 
     <div class="topbar__profile">
-      <div class="topbar__avatar">AU</div>
+      <div class="topbar__avatar">{{ authService.userId()?.slice(0, 2)?.toUpperCase() }}</div>
       <div class="topbar__profile-text">
-        <span class="topbar__profile-name">Audit User</span>
+        <span class="topbar__profile-name">{{ authService.userId() }}</span>
         <span class="topbar__profile-role">Insurance Operations</span>
       </div>
     </div>
+
+    <button type="button" class="icon-btn" (click)="logout()" pTooltip="Sign out">
+      <i class="pi pi-sign-out"></i>
+    </button>
   </div>
 </header>

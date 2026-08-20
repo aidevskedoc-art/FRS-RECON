@@ -1,9 +1,17 @@
 import { Routes } from '@angular/router';
+import { authGuard, loginRedirectGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
+    path: 'login',
+    loadComponent: () => import('./features/auth/login/login.component').then((m) => m.LoginComponent),
+    canActivate: [loginRedirectGuard],
+    title: 'Sign In — Insurance Policy Intelligence',
+  },
+  {
     path: '',
     loadComponent: () => import('./layout/shell/shell.component').then((m) => m.ShellComponent),
+    canActivate: [authGuard],
     children: [
       { path: '', redirectTo: 'insurance-policy/dashboard', pathMatch: 'full' },
       {

@@ -13,20 +13,37 @@
   </div>
 
   <nav class="sidebar__nav">
-    @for (item of navItems; track item.path) {
-      <a
-        class="sidebar__link"
-        [routerLink]="item.path"
-        routerLinkActive="sidebar__link--active"
-        [pTooltip]="sidebarStore.collapsed() ? item.label : ''"
-        tooltipPosition="right"
-        (click)="sidebarStore.closeMobile()"
-      >
-        <i [class]="item.icon"></i>
+    @for (group of navGroups; track group.label) {
+      <div class="sidebar__group">
         @if (!sidebarStore.collapsed()) {
-          <span>{{ item.label }}</span>
+          <button
+            type="button"
+            class="sidebar__group-label"
+            [class.sidebar__group-label--expanded]="expandedGroups().has(group.label)"
+            (click)="toggleGroup(group.label)"
+          >
+            <span>{{ group.label }}</span>
+            <i class="pi pi-angle-down"></i>
+          </button>
         }
-      </a>
+        @if (sidebarStore.collapsed() || expandedGroups().has(group.label)) {
+          @for (item of group.items; track item.path) {
+            <a
+              class="sidebar__link"
+              [routerLink]="item.path"
+              routerLinkActive="sidebar__link--active"
+              [pTooltip]="sidebarStore.collapsed() ? item.label : ''"
+              tooltipPosition="right"
+              (click)="sidebarStore.closeMobile()"
+            >
+              <i [class]="item.icon"></i>
+              @if (!sidebarStore.collapsed()) {
+                <span>{{ item.label }}</span>
+              }
+            </a>
+          }
+        }
+      </div>
     }
   </nav>
 
