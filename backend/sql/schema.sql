@@ -217,6 +217,96 @@ ALTER TABLE online_payment_records ALTER COLUMN pat_type TYPE VARCHAR(255);
 ALTER TABLE online_payment_records ALTER COLUMN user_id TYPE VARCHAR(255);
 
 -- ---------------------------------------------------------------------------
+-- IP Payments (dedicated). Replaces the IP_PAYMENT rows of online_upload_batches
+-- / online_payment_records for new uploads — this table only ever holds Format 1
+-- data, so it carries just the 19 real fields with no Format-2-only columns.
+-- Historical IP_PAYMENT rows already in online_payment_records are left as-is.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS ip_payment_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ip_payment_records (
+  id                  SERIAL PRIMARY KEY,
+  batch_id            INTEGER NOT NULL REFERENCES ip_payment_upload_batches(id) ON DELETE CASCADE,
+  receipt_number      VARCHAR(255),
+  receipt_date        TIMESTAMP,
+  yhno                VARCHAR(255),
+  ip_no               VARCHAR(255),
+  patient_name        VARCHAR(255),
+  transaction_id_1    VARCHAR(255),
+  transaction_id_2    VARCHAR(255),
+  payment_mode        VARCHAR(255),
+  pay_type            VARCHAR(255),
+  remarks             VARCHAR(255),
+  payment_remarks     VARCHAR(255),
+  pat_type            VARCHAR(255),
+  bill_amount         NUMERIC(14,2),
+  cash_amount         NUMERIC(14,2),
+  card_amount         NUMERIC(14,2),
+  cheque_amount       NUMERIC(14,2),
+  online_amount       NUMERIC(14,2),
+  user_id             VARCHAR(255),
+  user_name           VARCHAR(255),
+  created_at          TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ip_payment_records_batch_id_idx ON ip_payment_records(batch_id);
+
+-- Merge of transaction_id_1/transaction_id_2, populated at upload time.
+ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS trans_id VARCHAR(255);
+
+-- ---------------------------------------------------------------------------
+-- Diag OP Payments (dedicated). Replaces the DIAG_PAYMENT rows of
+-- online_upload_batches / online_payment_records for new uploads — same
+-- rationale as ip_payment_records above. Historical DIAG_PAYMENT rows already
+-- in online_payment_records are left as-is.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS diag_op_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS diag_op_payment_records (
+  id                  SERIAL PRIMARY KEY,
+  batch_id            INTEGER NOT NULL REFERENCES diag_op_upload_batches(id) ON DELETE CASCADE,
+  receipt_number      VARCHAR(255),
+  receipt_date        TIMESTAMP,
+  yhno                VARCHAR(255),
+  diag_no             VARCHAR(255),
+  patient_name        VARCHAR(255),
+  transaction_id_1    VARCHAR(255),
+  transaction_id_2    VARCHAR(255),
+  transaction_id_3    VARCHAR(255),
+  pay_type            VARCHAR(255),
+  pay_mode            VARCHAR(255),
+  pat_type            VARCHAR(255),
+  bill_amount         NUMERIC(14,2),
+  cash_amount         NUMERIC(14,2),
+  card_amount         NUMERIC(14,2),
+  cheque_amount       NUMERIC(14,2),
+  online_amount       NUMERIC(14,2),
+  discount_amount     NUMERIC(14,2),
+  diff_amount         NUMERIC(14,2),
+  user_id             VARCHAR(255),
+  user_name           VARCHAR(255),
+  created_at          TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS diag_op_payment_records_batch_id_idx ON diag_op_payment_records(batch_id);
+
+-- ---------------------------------------------------------------------------
 -- Master Data: Division & Bank A/C.
 -- ---------------------------------------------------------------------------
 
