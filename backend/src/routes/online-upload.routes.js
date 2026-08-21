@@ -2,7 +2,6 @@ const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const db = require('../db');
-const { parseMisWorkbook } = require('../online-upload/mis-parser');
 const { parseBankStatementWorkbook } = require('../online-upload/bank-statement-parser');
 const {
   onlineUploadBatchRowToApi,
@@ -29,63 +28,18 @@ const upload = multer({
   },
 });
 
-const RECORD_COLUMNS = [
-  'batch_id', 'upload_type', 'receipt_number', 'receipt_date', 'yhno', 'ip_no', 'diag_no', 'patient_name',
-  'transaction_ref_1', 'transaction_ref_2', 'transaction_ref_3', 'payment_mode', 'pay_mode', 'pay_type',
-  'remarks', 'payment_remarks', 'pat_type', 'bill_amount', 'cash_amount', 'card_amount', 'cheque_amount',
-  'online_upi_amount', 'discount_amount', 'diff_amount', 'user_id', 'user_name',
-];
-
-function recordToRow(batchId, uploadType, r) {
-  return [
-    batchId, uploadType, r.receiptNumber ?? null, r.receiptDate ?? null, r.yhno ?? null, r.ipNo ?? null,
-    r.diagNo ?? null, r.patientName ?? null, r.transactionRef1 ?? null, r.transactionRef2 ?? null,
-    r.transactionRef3 ?? null, r.paymentMode ?? null, r.payMode ?? null, r.payType ?? null, r.remarks ?? null,
-    r.paymentRemarks ?? null, r.patType ?? null, r.billAmount ?? null, r.cashAmount ?? null,
-    r.cardAmount ?? null, r.chequeAmount ?? null, r.onlineUpiAmount ?? null, r.discountAmount ?? null,
-    r.diffAmount ?? null, r.userId ?? null, r.userName ?? null,
-  ];
-}
-
-/** Chunked multi-row INSERT — keeps parameter count well under Postgres's ~65535 limit for large uploads. */
-async function insertRecordsChunked(client, rows, chunkSize = 500) {
-  for (let start = 0; start < rows.length; start += chunkSize) {
-    const chunk = rows.slice(start, start + chunkSize);
-    const valuesSql = chunk
-      .map((row, i) => `(${row.map((_, c) => `$${i * RECORD_COLUMNS.length + c + 1}`).join(', ')})`)
-      .join(', ');
-    await client.query(
-      `INSERT INTO online_payment_records (${RECORD_COLUMNS.join(', ')}) VALUES ${valuesSql}`,
-      chunk.flat(),
-    );
-  }
-}
-
-// POST /api/online-upload/mis?format=1|2
+// POST /api/online-upload/mis?format=1|2 — retired. Format 1 (IP payments) now
+// uploads via POST /api/ip-payments; Format 2 (Diag payments) via POST /api/diag-op-payments.
 router.post('/mis', upload.single('file'), async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
     const format = req.query.format;
-    if (format !== '1' && format !== '2') return res.status(400).json({ error: 'format must be "1" or "2"' });
-
-    const { uploadType, rows } = parseMisWorkbook(req.file.buffer, format);
-    if (rows.length === 0) return res.status(400).json({ error: 'No data rows found in the uploaded file' });
-
-    const sourceFormat = format === '1' ? 'FORMAT_1' : 'FORMAT_2';
-    const uploadedBy = req.body.uploadedBy || null;
-
-    const batch = await db.withTransaction(async (client) => {
-      const { rows: batchRows } = await client.query(
-        `INSERT INTO online_upload_batches (upload_type, source_format, file_name, file_size_bytes, row_count, uploaded_by)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        [uploadType, sourceFormat, req.file.originalname, req.file.size, rows.length, uploadedBy],
-      );
-      const created = batchRows[0];
-      await insertRecordsChunked(client, rows.map((r) => recordToRow(created.id, uploadType, r)));
-      return created;
-    });
-
-    res.status(201).json(onlineUploadBatchRowToApi(batch));
+    if (format === '1') {
+      return res.status(400).json({ error: 'Format 1 (IP payments) now uploads via POST /api/ip-payments' });
+    }
+    if (format === '2') {
+      return res.status(400).json({ error: 'Format 2 (Diag payments) now uploads via POST /api/diag-op-payments' });
+    }
+    return res.status(400).json({ error: 'format must be "1" or "2"' });
   } catch (err) {
     next(err);
   }

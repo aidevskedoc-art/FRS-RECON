@@ -20,11 +20,15 @@ function parseMisWorkbook(buffer, format) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
 
-  if (grid.length < 2) {
+  if (grid.length < 4) {
     return { uploadType: spec.uploadType, rows: [] };
   }
 
-  const dataRows = grid.slice(1); // row 0 is the (misaligned) header — position-mapped below, text ignored
+  // Rows 0-2 are header/label rows (verified against real uploads — batch id 1
+  // for Format 1 and batch id 3 for Format 2 both leaked rows 1-2 in as fake
+  // records holding literal header text, e.g. yhno="Receipt Date"). Position-
+  // mapped below, text ignored.
+  const dataRows = grid.slice(3);
   const rows = [];
 
   for (const cells of dataRows) {

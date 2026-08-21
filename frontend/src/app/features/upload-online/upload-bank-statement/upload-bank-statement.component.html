@@ -18,7 +18,7 @@
     <p>The transaction table is located automatically between its start/end marker rows.</p>
 
     <div class="dropzone__actions">
-      <input #fileInput type="file" accept=".xlsx,.xls" hidden (change)="onFileInput($event)" />
+      <input #fileInput type="file" accept=".xlsx,.xls" multiple hidden (change)="onFileInput($event)" />
       <p-button label="Browse Files" icon="pi pi-folder-open" [outlined]="true" (onClick)="fileInput.click()" />
     </div>
 
@@ -39,32 +39,49 @@
     </div>
   }
 
-  @if (pendingFile(); as file) {
+  @if (pendingFiles().length) {
     <div class="pending">
-      <div class="pending__row">
-        <i class="pi pi-file-excel"></i>
-        <span class="pending__name">{{ file.name }}</span>
-        <span class="pending__size">{{ fileSizeLabel(file.size) }}</span>
-        <button type="button" class="pending__remove" [disabled]="uploading()" (click)="clearPending()">
-          <i class="pi pi-times"></i>
-        </button>
-      </div>
-      <p-button label="Save to Database" icon="pi pi-upload" [loading]="uploading()" (onClick)="upload()" />
+      @for (file of pendingFiles(); track file.name + $index) {
+        <div class="pending__row">
+          <i class="pi pi-file-excel"></i>
+          <span class="pending__name">{{ file.name }}</span>
+          <span class="pending__size">{{ fileSizeLabel(file.size) }}</span>
+          <button type="button" class="pending__remove" [disabled]="uploading()" (click)="removeFile($index)">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+      }
+      <p-button
+        [label]="progress() ? 'Uploading ' + progress()!.done + ' / ' + progress()!.total : 'Save ' + pendingFiles().length + ' file' + (pendingFiles().length === 1 ? '' : 's') + ' to Database'"
+        icon="pi pi-upload"
+        [loading]="uploading()"
+        (onClick)="upload()"
+      />
     </div>
   }
 
-  @if (uploadedBatch(); as batch) {
+  @if (uploadedBatches().length) {
     <div class="success">
       <i class="pi pi-check-circle"></i>
       <div class="success__text">
-        <strong>{{ batch.rowCount }} transaction{{ batch.rowCount === 1 ? '' : 's' }} saved</strong>
-        <span>
-          {{ batch.bankName || batch.fileName }}
-          @if (batch.accountNo) { · A/C {{ batch.accountNo }} }
-          @if (batch.statementFrom && batch.statementTo) { · {{ batch.statementFrom }} to {{ batch.statementTo }} }
-        </span>
+        <strong>{{ uploadedBatches().length }} file{{ uploadedBatches().length === 1 ? '' : 's' }} saved</strong>
+        @for (batch of uploadedBatches(); track batch.id) {
+          <span>
+            {{ batch.bankName || batch.fileName }}
+            @if (batch.accountNo) { · A/C {{ batch.accountNo }} }
+            @if (batch.statementFrom && batch.statementTo) { · {{ batch.statementFrom }} to {{ batch.statementTo }} }
+          </span>
+        }
       </div>
       <p-button label="View Statements" icon="pi pi-eye" size="small" [outlined]="true" (onClick)="viewBatches()" />
+    </div>
+  }
+
+  @if (uploadErrors().length) {
+    <div class="notice notice--danger">
+      @for (e of uploadErrors(); track e.fileName) {
+        <div><strong>{{ e.fileName }}:</strong> {{ e.message }}</div>
+      }
     </div>
   }
 </div>

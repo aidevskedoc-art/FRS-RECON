@@ -30,6 +30,8 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Upload MIS Data', icon: 'pi pi-cloud-upload', path: '/upload-online/mis' },
       { label: 'Upload Bank Statement', icon: 'pi pi-building-columns', path: '/upload-online/bank-statement' },
       { label: 'View IP & Diag Payments', icon: 'pi pi-list', path: '/upload-online/payments' },
+      { label: 'New Online Payments', icon: 'pi pi-wallet', path: '/upload-online/ip-payments' },
+      { label: 'View Diag OP Payments', icon: 'pi pi-heart', path: '/upload-online/diag-op-payments' },
       { label: 'View Bank Statements', icon: 'pi pi-book', path: '/upload-online/bank-statements' },
     ],
   },

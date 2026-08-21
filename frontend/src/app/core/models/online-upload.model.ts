@@ -24,6 +24,7 @@ export interface OnlinePaymentRecord {
   patientName: string | null;
   transactionRef1: string | null;
   transactionRef2: string | null;
+  transId: string | null;
   transactionRef3: string | null;
   paymentMode: string | null;
   payMode: string | null;

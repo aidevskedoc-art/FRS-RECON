@@ -107,6 +107,38 @@ export const routes: Routes = [
         title: 'Payment Batch — Upload Online',
       },
       {
+        path: 'upload-online/ip-payments',
+        loadComponent: () =>
+          import('./features/upload-online/view-ip-payments/view-ip-payments.component').then(
+            (m) => m.ViewIpPaymentsComponent,
+          ),
+        title: 'New Online Payments — Upload Online',
+      },
+      {
+        path: 'upload-online/ip-payments/:batchId',
+        loadComponent: () =>
+          import('./features/upload-online/ip-payment-batch-detail/ip-payment-batch-detail.component').then(
+            (m) => m.IpPaymentBatchDetailComponent,
+          ),
+        title: 'IP Payment Batch — Upload Online',
+      },
+      {
+        path: 'upload-online/diag-op-payments',
+        loadComponent: () =>
+          import('./features/upload-online/view-diag-op-payments/view-diag-op-payments.component').then(
+            (m) => m.ViewDiagOpPaymentsComponent,
+          ),
+        title: 'Diag OP Payments — Upload Online',
+      },
+      {
+        path: 'upload-online/diag-op-payments/:batchId',
+        loadComponent: () =>
+          import('./features/upload-online/diag-op-payment-batch-detail/diag-op-payment-batch-detail.component').then(
+            (m) => m.DiagOpPaymentBatchDetailComponent,
+          ),
+        title: 'Diag OP Payment Batch — Upload Online',
+      },
+      {
         path: 'upload-online/bank-statements',
         loadComponent: () =>
           import('./features/upload-online/view-bank-statements/view-bank-statements.component').then(

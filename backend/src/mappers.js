@@ -204,6 +204,99 @@ function bankStatementUploadRowToApi(row) {
   };
 }
 
+function ipPaymentBatchRowToApi(row) {
+  return {
+    id: String(row.id),
+    uploadType: 'IP_PAYMENT',
+    sourceFormat: 'FORMAT_1',
+    fileName: row.file_name,
+    fileSizeBytes: row.file_size_bytes,
+    rowCount: row.row_count,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: toIso(row.uploaded_at),
+  };
+}
+
+function ipPaymentRecordRowToApi(row) {
+  return {
+    id: String(row.id),
+    batchId: String(row.batch_id),
+    uploadType: 'IP_PAYMENT',
+    receiptNumber: row.receipt_number,
+    receiptDate: toIso(row.receipt_date),
+    yhno: row.yhno,
+    ipNo: row.ip_no,
+    diagNo: null,
+    patientName: row.patient_name,
+    transactionRef1: row.transaction_id_1,
+    transactionRef2: row.transaction_id_2,
+    transId: row.trans_id,
+    transactionRef3: null,
+    paymentMode: row.payment_mode,
+    payMode: null,
+    payType: row.pay_type,
+    remarks: row.remarks,
+    paymentRemarks: row.payment_remarks,
+    patType: row.pat_type,
+    billAmount: toNumber(row.bill_amount),
+    cashAmount: toNumber(row.cash_amount),
+    cardAmount: toNumber(row.card_amount),
+    chequeAmount: toNumber(row.cheque_amount),
+    onlineUpiAmount: toNumber(row.online_amount),
+    discountAmount: null,
+    diffAmount: null,
+    userId: row.user_id,
+    userName: row.user_name,
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function diagOpBatchRowToApi(row) {
+  return {
+    id: String(row.id),
+    uploadType: 'DIAG_PAYMENT',
+    sourceFormat: 'FORMAT_2',
+    fileName: row.file_name,
+    fileSizeBytes: row.file_size_bytes,
+    rowCount: row.row_count,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: toIso(row.uploaded_at),
+  };
+}
+
+function diagOpRecordRowToApi(row) {
+  return {
+    id: String(row.id),
+    batchId: String(row.batch_id),
+    uploadType: 'DIAG_PAYMENT',
+    receiptNumber: row.receipt_number,
+    receiptDate: toIso(row.receipt_date),
+    yhno: row.yhno,
+    ipNo: null,
+    diagNo: row.diag_no,
+    patientName: row.patient_name,
+    transactionRef1: row.transaction_id_1,
+    transactionRef2: row.transaction_id_2,
+    transactionRef3: row.transaction_id_3,
+    paymentMode: null,
+    payMode: row.pay_mode,
+    payType: row.pay_type,
+    remarks: null,
+    paymentRemarks: null,
+    patType: row.pat_type,
+    billAmount: toNumber(row.bill_amount),
+    cashAmount: toNumber(row.cash_amount),
+    cardAmount: toNumber(row.card_amount),
+    chequeAmount: toNumber(row.cheque_amount),
+    onlineUpiAmount: toNumber(row.online_amount),
+    discountAmount: toNumber(row.discount_amount),
+    diffAmount: toNumber(row.diff_amount),
+    userId: row.user_id,
+    userName: row.user_name,
+    createdAt: toIso(row.created_at),
+  };
+}
+
 function divisionBankAccountRowToApi(row) {
   return {
     id: String(row.id),
@@ -225,5 +318,9 @@ module.exports = {
   onlineUploadBatchRowToApi,
   onlinePaymentRecordRowToApi,
   bankStatementUploadRowToApi,
+  ipPaymentBatchRowToApi,
+  ipPaymentRecordRowToApi,
+  diagOpBatchRowToApi,
+  diagOpRecordRowToApi,
   divisionBankAccountRowToApi,
 };

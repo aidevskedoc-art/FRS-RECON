@@ -9,6 +9,8 @@ const { router: documentsRouter, uploadDir } = require('./routes/documents.route
 const extractionRouter = require('./routes/extraction.routes');
 const policiesRouter = require('./routes/policies.routes');
 const onlineUploadRouter = require('./routes/online-upload.routes');
+const ipPaymentsRouter = require('./routes/ip-payments.routes');
+const diagOpPaymentsRouter = require('./routes/diag-op-payments.routes');
 const masterDataRouter = require('./routes/master-data.routes');
 
 const app = express();
@@ -23,6 +25,8 @@ app.use('/api/documents', documentsRouter);
 app.use('/api/documents', extractionRouter);
 app.use('/api/policies', policiesRouter);
 app.use('/api/online-upload', onlineUploadRouter);
+app.use('/api/ip-payments', ipPaymentsRouter);
+app.use('/api/diag-op-payments', diagOpPaymentsRouter);
 app.use('/api/master', masterDataRouter);
 
 app.use((req, res) => {

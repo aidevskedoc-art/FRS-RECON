@@ -1,0 +1,40 @@
+<div class="view-payments">
+  <div class="view-payments__header">
+    <div>
+      <h2>Diag OP Payments</h2>
+      <p>{{ diagOpPayments.batches().length }} upload{{ diagOpPayments.batches().length === 1 ? '' : 's' }}</p>
+    </div>
+    <p-button label="Upload MIS Data" icon="pi pi-cloud-upload" routerLink="/upload-online/mis" />
+  </div>
+
+  <div class="view-payments__table-wrap">
+    <p-table [value]="diagOpPayments.batches()" dataKey="id" styleClass="p-datatable-sm payments-table">
+      <ng-template #header>
+        <tr>
+          <th>File Name</th>
+          <th>Rows</th>
+          <th>Uploaded By</th>
+          <th>Uploaded At</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-batch>
+        <tr>
+          <td class="file-name" [title]="batch.fileName">{{ batch.fileName }}</td>
+          <td>{{ batch.rowCount }}</td>
+          <td>{{ batch.uploadedBy || '—' }}</td>
+          <td>{{ batch.uploadedAt | date: 'medium' }}</td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="view(batch.id)" pTooltip="View"><i class="pi pi-eye"></i></button>
+            <button type="button" class="action-icon action-icon--danger" (click)="deleteBatch(batch.id)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="5" class="empty">No Diag OP payments uploaded yet.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

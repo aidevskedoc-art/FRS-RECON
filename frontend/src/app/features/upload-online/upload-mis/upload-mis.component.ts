@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
-import { OnlineUploadService } from '../../../core/services/online-upload.service';
+import { IpPaymentService } from '../../../core/services/ip-payment.service';
+import { DiagOpPaymentService } from '../../../core/services/diag-op-payment.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import { OnlineUploadBatch } from '../../../core/models';
@@ -18,7 +19,8 @@ type MisFormatChoice = '1' | '2';
 })
 export class UploadMisComponent {
   private readonly router = inject(Router);
-  private readonly onlineUpload = inject(OnlineUploadService);
+  private readonly ipPayments = inject(IpPaymentService);
+  private readonly diagOpPayments = inject(DiagOpPaymentService);
   private readonly auth = inject(AuthService);
 
   protected readonly format = signal<MisFormatChoice>('1');
@@ -78,7 +80,12 @@ export class UploadMisComponent {
     this.uploading.set(true);
     this.uploadError.set(null);
 
-    this.onlineUpload.uploadMis(file, this.format(), this.auth.userId()).subscribe({
+    const upload$ =
+      this.format() === '1'
+        ? this.ipPayments.upload(file, this.auth.userId())
+        : this.diagOpPayments.upload(file, this.auth.userId());
+
+    upload$.subscribe({
       next: (batch) => {
         this.uploadedBatch.set(batch);
         this.pendingFile.set(null);
@@ -93,7 +100,9 @@ export class UploadMisComponent {
 
   protected viewBatch(): void {
     const batch = this.uploadedBatch();
-    if (batch) this.router.navigate(['/upload-online/payments', batch.id]);
+    if (!batch) return;
+    const base = batch.uploadType === 'IP_PAYMENT' ? '/upload-online/ip-payments' : '/upload-online/diag-op-payments';
+    this.router.navigate([base, batch.id]);
   }
 
   protected fileSizeLabel(bytes: number): string {
