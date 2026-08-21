@@ -15,7 +15,9 @@
  *    entirely on one page, read with a raw-text regex.
  */
 
-const { toLines, valueAfter, indexOfLabel } = require('../lines');
+const {
+  toLines, valueAfter, valuesAfter, indexOfLabel,
+} = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
 const { tenureDays, splitRows } = require('./common');
 
@@ -106,6 +108,10 @@ function parse({ pageTexts }) {
 
   const policyCategory = valueAfter(page4, 'Policy Category:');
 
+  const receiptPageIdx = pageTexts.findIndex((t) => t.includes('Receipt Number'));
+  const receiptPage = receiptPageIdx === -1 ? [] : toLines(pageTexts[receiptPageIdx]);
+  const [, receiptNumber, receiptDate] = valuesAfter(receiptPage, 'Payment Mode', 5);
+
   const members = parseMembers(all);
   const sumInsuredMatch = page4raw.match(/(\d{6,})\s*\n\s*-\s*\n\s*(\d+)/);
 
@@ -131,8 +137,8 @@ function parse({ pageTexts }) {
     policyEndDate,
     policyTenureDays: tenureDays(policyStartDate, policyEndDate),
     policyReceiptDate: policyStartDate,
-    printedReceiptDate: null,
-    receiptNumber: null,
+    printedReceiptDate: parseDateToIso(receiptDate),
+    receiptNumber: receiptNumber || null,
     policyType: valueAfter(page4, 'Policy Type:'),
     planChosen: 'BASIC',
     sumInsured: parseCurrency(sumInsuredMatch ? sumInsuredMatch[1] : ''),

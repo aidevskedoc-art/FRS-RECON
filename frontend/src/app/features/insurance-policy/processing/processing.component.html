@@ -22,7 +22,12 @@
           <div class="processing__failed">
             <i class="pi pi-times-circle"></i>
             <p>{{ item.doc.errorMessage || 'Something went wrong while processing this document.' }}</p>
-            <p-button label="Back to Dashboard" routerLink="/insurance-policy/dashboard" [outlined]="true" />
+            <div class="processing__failed-actions">
+              @if (isUnknownFormat(item.doc.errorMessage)) {
+                <p-button label="Try AI Extraction" icon="pi pi-sparkles" (onClick)="retryWithAi(item.doc.id)" />
+              }
+              <p-button label="Back to Dashboard" routerLink="/insurance-policy/dashboard" [outlined]="true" />
+            </div>
           </div>
         } @else {
           <div class="processing__timeline-card">

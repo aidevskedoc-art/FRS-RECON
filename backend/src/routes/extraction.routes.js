@@ -5,6 +5,7 @@ const db = require('../db');
 const { uploadDir } = require('./documents.routes');
 const { extractPages } = require('../extraction/pdf-text');
 const { parseByFormat } = require('../extraction/formats');
+const { extractWithAi } = require('../extraction/ai-extraction');
 const { toExtractionResult } = require('../extraction/to-extraction-result');
 const { validate } = require('../validation/validate');
 const {
@@ -111,6 +112,112 @@ async function regenerateMemberFields(client, documentId, policyId) {
   }
 }
 
+/**
+ * Shared by /extract and /ai-extract: turns a parser's output into the
+ * stored policy/members/fields rows and the document's summary status.
+ * Both routes only differ in how `parsed` was produced.
+ */
+async function persistExtraction(documentId, parsed, { pageTexts, startedAt }) {
+  const { policy, fields, metadata } = toExtractionResult(parsed, {
+    pagesAnalyzed: pageTexts.length,
+    processingTimeMs: Date.now() - startedAt,
+  });
+  const processingTimeMs = metadata.processingTimeMs;
+
+  const overallStatus = fields.some((f) => f.confidence === 'low') ? 'Needs Review' : 'Completed';
+
+  await db.withTransaction(async (client) => {
+    const { rows: existingPolicy } = await client.query('SELECT id FROM policies WHERE document_id = $1', [documentId]);
+
+    const policyValues = [
+      policy.policyHolder.name, policy.policyHolder.address, policy.policyHolder.customerId,
+      policy.insuranceCompany, policy.insuranceCompanyAddress, policy.insuranceCompanyLegalName,
+      policy.policyNumber, policy.previousPolicyNumber,
+      policy.policyStartDate || null, policy.policyEndDate || null, policy.policyTenureDays || null,
+      policy.policyReceiptDate || null, policy.printedReceiptDate || null,
+      policy.receiptNumber, policy.planChosen, policy.policyType, policy.newOrRenewal,
+      policy.premium.sumInsured, policy.premium.totalBasicPremium,
+      policy.premium.familyFloaterDiscount, policy.premium.premium,
+      policy.premium.gst, policy.premium.totalPremium,
+      policy.tpaDetails ? policy.tpaDetails.tpaName : null,
+      policy.sourceFormat,
+    ];
+
+    let policyId;
+    if (existingPolicy.length > 0) {
+      policyId = existingPolicy[0].id;
+      await client.query(
+        `UPDATE policies SET
+           policyholder_name=$2, policyholder_address=$3, customer_id=$4,
+           insurance_company=$5, insurance_company_address=$6, insurance_company_legal_name=$7,
+           policy_number=$8, previous_policy_number=$9,
+           policy_start_date=$10, policy_end_date=$11, policy_tenure_days=$12,
+           policy_receipt_date=$13, printed_receipt_date=$14,
+           receipt_number=$15, plan_chosen=$16, policy_type=$17, new_or_renewal=$18,
+           sum_insured=$19, total_basic_premium=$20, family_floater_discount=$21,
+           premium=$22, gst=$23, total_premium=$24, tpa_name=$25, source_format=$26,
+           updated_at=now()
+         WHERE id=$1`,
+        [policyId, ...policyValues],
+      );
+      await client.query('DELETE FROM insured_members WHERE policy_id = $1', [policyId]);
+    } else {
+      const { rows } = await client.query(
+        `INSERT INTO policies (
+           document_id, policyholder_name, policyholder_address, customer_id,
+           insurance_company, insurance_company_address, insurance_company_legal_name,
+           policy_number, previous_policy_number,
+           policy_start_date, policy_end_date, policy_tenure_days,
+           policy_receipt_date, printed_receipt_date,
+           receipt_number, plan_chosen, policy_type, new_or_renewal,
+           sum_insured, total_basic_premium, family_floater_discount,
+           premium, gst, total_premium, tpa_name, source_format
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+         RETURNING id`,
+        [documentId, ...policyValues],
+      );
+      policyId = rows[0].id;
+    }
+
+    for (let i = 0; i < policy.members.length; i++) {
+      const m = policy.members[i];
+      await client.query(
+        `INSERT INTO insured_members (
+           policy_id, name, relation_with_policy_holder, age, gender, occupation,
+           base_premium, policy_type_self_parents, nominee_name, nominee_relation,
+           date_of_birth, inception_date, sort_order
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [
+          policyId, m.name, m.relationWithPolicyHolder, m.age, m.gender, m.occupation,
+          m.basePremium, m.policyTypeSelfParents, m.nomineeName, m.nomineeRelation,
+          m.dateOfBirth || null, m.inceptionDate || null, i,
+        ],
+      );
+    }
+
+    await client.query('DELETE FROM extraction_fields WHERE document_id = $1', [documentId]);
+    for (const f of fields) {
+      await client.query(
+        `INSERT INTO extraction_fields (document_id, path, label, value_text, confidence, confidence_score, source_page, verified)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [documentId, f.path, f.label, JSON.stringify(f.value), f.confidence, f.confidenceScore, f.sourcePage, f.verified],
+      );
+    }
+
+    await client.query(
+      `UPDATE documents SET
+         status=$2, page_count=$3, pages_analyzed=$4, fields_extracted=$5, fields_total=$6,
+         overall_confidence=$7, overall_confidence_score=$8, processing_time_ms=$9, extracted_at=now()
+       WHERE id=$1`,
+      [
+        documentId, overallStatus, metadata.pagesAnalyzed, metadata.pagesAnalyzed,
+        metadata.fieldsExtracted, metadata.fieldsTotal, metadata.overallConfidence,
+        metadata.overallConfidenceScore, processingTimeMs,
+      ],
+    );
+  });
+}
+
 // POST /api/documents/:id/extract
 router.post('/:id/extract', async (req, res, next) => {
   try {
@@ -119,10 +226,9 @@ router.post('/:id/extract', async (req, res, next) => {
     if (docRows.length === 0) return res.status(404).json({ error: 'Document not found' });
     const document = docRows[0];
 
-    const started = Date.now();
+    const startedAt = Date.now();
     const filePath = path.join(uploadDir, document.file_path);
     const buffer = fs.readFileSync(filePath);
-
     const { fullText, pageTexts } = await extractPages(buffer);
 
     let parsed;
@@ -138,105 +244,54 @@ router.post('/:id/extract', async (req, res, next) => {
       throw parseErr;
     }
 
-    const { policy, fields, metadata } = toExtractionResult(parsed, {
-      pagesAnalyzed: pageTexts.length,
-      processingTimeMs: Date.now() - started,
+    await persistExtraction(documentId, parsed, { pageTexts, startedAt });
+
+    const extraction = await loadExtractionResult(documentId);
+    res.json({
+      documentId: String(documentId),
+      policy: extraction.policy,
+      fields: extraction.fields,
+      metadata: extractionMetadataRowToApi(extraction.document),
     });
-    const processingTimeMs = metadata.processingTimeMs;
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const overallStatus = fields.some((f) => f.confidence === 'low') ? 'Needs Review' : 'Completed';
+/**
+ * POST /api/documents/:id/ai-extract
+ * Fallback for insurers with no hand-written parser: reads the same PDF
+ * text a normal parser would, but has Gemini extract the fields instead
+ * of matching a per-insurer layout. Opt-in — the frontend only offers
+ * this after a normal /extract attempt has already failed with
+ * UNKNOWN_FORMAT, since each call spends a real API request.
+ */
+router.post('/:id/ai-extract', async (req, res, next) => {
+  try {
+    const documentId = req.params.id;
+    const { rows: docRows } = await db.query('SELECT * FROM documents WHERE id = $1', [documentId]);
+    if (docRows.length === 0) return res.status(404).json({ error: 'Document not found' });
+    const document = docRows[0];
 
-    await db.withTransaction(async (client) => {
-      const { rows: existingPolicy } = await client.query('SELECT id FROM policies WHERE document_id = $1', [documentId]);
+    const startedAt = Date.now();
+    const filePath = path.join(uploadDir, document.file_path);
+    const buffer = fs.readFileSync(filePath);
+    const { pageTexts } = await extractPages(buffer);
 
-      const policyValues = [
-        policy.policyHolder.name, policy.policyHolder.address, policy.policyHolder.customerId,
-        policy.insuranceCompany, policy.insuranceCompanyAddress, policy.insuranceCompanyLegalName,
-        policy.policyNumber, policy.previousPolicyNumber,
-        policy.policyStartDate || null, policy.policyEndDate || null, policy.policyTenureDays || null,
-        policy.policyReceiptDate || null, policy.printedReceiptDate || null,
-        policy.receiptNumber, policy.planChosen, policy.policyType, policy.newOrRenewal,
-        policy.premium.sumInsured, policy.premium.totalBasicPremium,
-        policy.premium.familyFloaterDiscount, policy.premium.premium,
-        policy.premium.gst, policy.premium.totalPremium,
-        policy.tpaDetails ? policy.tpaDetails.tpaName : null,
-        policy.sourceFormat,
-      ];
-
-      let policyId;
-      if (existingPolicy.length > 0) {
-        policyId = existingPolicy[0].id;
-        await client.query(
-          `UPDATE policies SET
-             policyholder_name=$2, policyholder_address=$3, customer_id=$4,
-             insurance_company=$5, insurance_company_address=$6, insurance_company_legal_name=$7,
-             policy_number=$8, previous_policy_number=$9,
-             policy_start_date=$10, policy_end_date=$11, policy_tenure_days=$12,
-             policy_receipt_date=$13, printed_receipt_date=$14,
-             receipt_number=$15, plan_chosen=$16, policy_type=$17, new_or_renewal=$18,
-             sum_insured=$19, total_basic_premium=$20, family_floater_discount=$21,
-             premium=$22, gst=$23, total_premium=$24, tpa_name=$25, source_format=$26,
-             updated_at=now()
-           WHERE id=$1`,
-          [policyId, ...policyValues],
-        );
-        await client.query('DELETE FROM insured_members WHERE policy_id = $1', [policyId]);
-      } else {
-        const { rows } = await client.query(
-          `INSERT INTO policies (
-             document_id, policyholder_name, policyholder_address, customer_id,
-             insurance_company, insurance_company_address, insurance_company_legal_name,
-             policy_number, previous_policy_number,
-             policy_start_date, policy_end_date, policy_tenure_days,
-             policy_receipt_date, printed_receipt_date,
-             receipt_number, plan_chosen, policy_type, new_or_renewal,
-             sum_insured, total_basic_premium, family_floater_discount,
-             premium, gst, total_premium, tpa_name, source_format
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
-           RETURNING id`,
-          [documentId, ...policyValues],
-        );
-        policyId = rows[0].id;
+    let parsed;
+    try {
+      parsed = await extractWithAi({ pageTexts });
+    } catch (aiErr) {
+      if (aiErr.code === 'AI_NOT_CONFIGURED') {
+        return res.status(503).json({ error: aiErr.message, code: aiErr.code });
       }
-
-      for (let i = 0; i < policy.members.length; i++) {
-        const m = policy.members[i];
-        await client.query(
-          `INSERT INTO insured_members (
-             policy_id, name, relation_with_policy_holder, age, gender, occupation,
-             base_premium, policy_type_self_parents, nominee_name, nominee_relation,
-             date_of_birth, inception_date, sort_order
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-          [
-            policyId, m.name, m.relationWithPolicyHolder, m.age, m.gender, m.occupation,
-            m.basePremium, m.policyTypeSelfParents, m.nomineeName, m.nomineeRelation,
-            m.dateOfBirth || null, m.inceptionDate || null, i,
-          ],
-        );
+      if (aiErr.code === 'AI_BAD_RESPONSE') {
+        return res.status(502).json({ error: aiErr.message, code: aiErr.code });
       }
+      throw aiErr;
+    }
 
-      await client.query('DELETE FROM extraction_fields WHERE document_id = $1', [documentId]);
-      for (const f of fields) {
-        await client.query(
-          `INSERT INTO extraction_fields (document_id, path, label, value_text, confidence, confidence_score, source_page, verified)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [documentId, f.path, f.label, JSON.stringify(f.value), f.confidence, f.confidenceScore, f.sourcePage, f.verified],
-        );
-      }
-
-      await client.query(
-        `UPDATE documents SET
-           status=$2, page_count=$3, pages_analyzed=$4, fields_extracted=$5, fields_total=$6,
-           overall_confidence=$7, overall_confidence_score=$8, processing_time_ms=$9, extracted_at=now()
-         WHERE id=$1`,
-        [
-          documentId, overallStatus, metadata.pagesAnalyzed, metadata.pagesAnalyzed,
-          metadata.fieldsExtracted, metadata.fieldsTotal, metadata.overallConfidence,
-          metadata.overallConfidenceScore, processingTimeMs,
-        ],
-      );
-
-    });
+    await persistExtraction(documentId, parsed, { pageTexts, startedAt });
 
     const extraction = await loadExtractionResult(documentId);
     res.json({

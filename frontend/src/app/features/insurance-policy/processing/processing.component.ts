@@ -85,6 +85,18 @@ export class ProcessingComponent {
     }
   }
 
+  /** Shown only for the specific "no parser for this insurer" failure — not for other errors (e.g. a corrupted file). */
+  protected isUnknownFormat(message: string | null | undefined): boolean {
+    return !!message && /Unrecognised policy layout/i.test(message);
+  }
+
+  /** Retries a failed document through the AI fallback instead of the normal parser. */
+  protected retryWithAi(documentId: string): void {
+    this.extractionService.startAiExtraction(documentId).subscribe({
+      error: (err) => this.loadError.set(err?.message ?? 'AI extraction failed'),
+    });
+  }
+
   protected goToExtraction(documentId: string): void {
     this.router.navigate(['/insurance-policy/documents', documentId, 'extraction']);
   }

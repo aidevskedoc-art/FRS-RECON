@@ -57,6 +57,20 @@ export class ExtractionService {
 
   /** POST /api/documents/:id/extract — runs the real server-side parser. */
   startExtraction(documentId: string): Observable<ExtractionResult> {
+    return this.runExtraction(documentId, 'extract');
+  }
+
+  /**
+   * POST /api/documents/:id/ai-extract — fallback for an insurer with no
+   * hand-written parser (the normal /extract having already failed with
+   * UNKNOWN_FORMAT). Same animated pipeline and stored-result shape as
+   * startExtraction; only the server-side extraction method differs.
+   */
+  startAiExtraction(documentId: string): Observable<ExtractionResult> {
+    return this.runExtraction(documentId, 'ai-extract');
+  }
+
+  private runExtraction(documentId: string, endpoint: 'extract' | 'ai-extract'): Observable<ExtractionResult> {
     return new Observable<ExtractionResult>((subscriber) => {
       let cancelled = false;
 
@@ -66,7 +80,7 @@ export class ExtractionService {
           this.policyDocuments.patchLocalStatus(documentId, 'Scanning');
 
           const request = firstValueFrom(
-            this.http.post<ExtractionResult>(`${API_BASE_URL}/documents/${documentId}/extract`, {}),
+            this.http.post<ExtractionResult>(`${API_BASE_URL}/documents/${documentId}/${endpoint}`, {}),
           );
 
           for (const step of ANIMATED_STEPS) {

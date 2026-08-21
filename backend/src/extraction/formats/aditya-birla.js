@@ -65,6 +65,8 @@ function parse({ pageTexts }) {
   const page2 = toLines(pageTexts[1] || '');
   const premiumPageIdx = pageTexts.findIndex((t) => t.includes('Premium for') && t.includes('Related Covers'));
   const premiumPage = premiumPageIdx === -1 ? [] : toLines(pageTexts[premiumPageIdx]);
+  const customerIdPageIdx = pageTexts.findIndex((t) => t.includes('Customer ID'));
+  const customerIdPage = customerIdPageIdx === -1 ? [] : toLines(pageTexts[customerIdPageIdx]);
 
   const insurerLegal = (page1raw.match(/Aditya Birla Health Insurance Co\.?\s*(Limited|Ltd)\.?/) || [])[0] || null;
 
@@ -102,7 +104,7 @@ function parse({ pageTexts }) {
     insuranceCompanyAddress: null,
     policyholderName,
     policyholderAddress,
-    customerId: null,
+    customerId: valueAfter(customerIdPage, 'Customer ID'),
     policyStartDate,
     policyEndDate,
     policyTenureDays: tenureDays(policyStartDate, policyEndDate),

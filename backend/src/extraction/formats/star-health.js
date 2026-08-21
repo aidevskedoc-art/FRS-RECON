@@ -109,6 +109,13 @@ function parse({ pageTexts }) {
 
   const receiptMatch = page5raw.match(/Receipt No:[\s\S]{0,15}?([\w/]+)\s+Receipt\s*\n?Date:\s*(\d{2}-[A-Za-z]{3}-\d{4})/);
 
+  // Tax invoice table (data row: HSN, description, Total, Discount,
+  // Taxable Value, IGST, CGST, UT/SGST, Total Invoice Value, Cess).
+  const invoiceMatch = pageTexts
+    .map((t) => t.match(/997133\s*\n\s*Insurance\s*\n\s*Services\s*\n\s*([\d,.]+)\s*\n\s*([\d,.]+)/))
+    .find(Boolean);
+  const discount = invoiceMatch ? parseCurrency(invoiceMatch[2]) : null;
+
   const members = parseMembers(page3);
 
   return {
@@ -132,7 +139,7 @@ function parse({ pageTexts }) {
     planChosen: 'BASIC',
     sumInsured: parseCurrency(valueAfter(page3, 'Basic Floater Sum Insured :') || ''),
     totalBasicPremium: premium,
-    familyFloaterDiscount: null,
+    familyFloaterDiscount: discount,
     premium,
     gst: premium != null && totalPremium != null ? Math.max(totalPremium - premium, 0) : 0,
     totalPremium,

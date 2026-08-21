@@ -115,7 +115,9 @@ function parse({ pageTexts }) {
     }
   }
 
-  const receiptMatch = page1raw.match(/Receipt\s*\n?Number and Date[\s\S]{0,20}?(\d{15,20})\s*\n\s*िदनांक\s*\n\s*\/\s*\n\s*Dt\.(\d{2}\/\d{2}\/\d{4})/);
+  // Unlike the renewal-history block's "Dt.17/03/2024" (no space), this
+  // particular Dt. line prints as "Dt. 05/03/2026" with a space.
+  const receiptMatch = page1raw.match(/Receipt\s*\n?Number and Date[\s\S]{0,20}?(\d{15,20})\s*\n\s*िदनांक\s*\n\s*\/\s*\n\s*Dt\.\s*(\d{2}\/\d{2}\/\d{4})/);
 
   const gstFlat = page1raw.replace(/\n/g, ' ');
   const cgst = parseCurrency((gstFlat.match(/\bCGST\s*`?\s*([\d,.]+)/) || [])[1] || '0') || 0;

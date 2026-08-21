@@ -88,9 +88,22 @@ function attachBasePremiums(members, all) {
 
   return members.map((m, i) => {
     const row = rows[i];
-    if (!row) return m;
+    if (!row) return { ...m, _otherDiscount: null };
     const amountIdx = row.findIndex((c, j) => j >= 2 && /^\d+(\.\d+)?$/.test(c));
-    return { ...m, basePremium: amountIdx === -1 ? null : parseCurrency(row[amountIdx]) };
+    // A row that ends right at a page break swallows the footer/header
+    // boilerplate text into its own "current" bucket (splitRows only
+    // stops at the *next* serial number), so the discount cell isn't
+    // reliably the row's last element — instead, filter to numeric-only
+    // cells: 8 rider premiums + CB Discount + Long Term Discount + Other
+    // Discounts, always 11 columns wide, with Other Discounts last.
+    const numericTail = row.slice(amountIdx + 1)
+      .filter((c) => /^\d+(\.\d+)?$/.test(c))
+      .slice(0, 11);
+    return {
+      ...m,
+      basePremium: amountIdx === -1 ? null : parseCurrency(row[amountIdx]),
+      _otherDiscount: numericTail.length === 11 ? parseCurrency(numericTail[10]) : null,
+    };
   });
 }
 
@@ -117,11 +130,13 @@ function parse({ pageTexts }) {
   const policyholderAddress = linesAfter(page1, 'address', 6);
   const customerId = valueAfter(page1, 'Customer ID');
 
-  const members = attachBasePremiums(parseMembers(all), all);
+  const membersWithDiscount = attachBasePremiums(parseMembers(all), all);
+  const totalBasicPremium = membersWithDiscount.reduce((sum, m) => sum + (m.basePremium || 0), 0) || null;
+  const familyFloaterDiscount = membersWithDiscount.reduce((sum, m) => sum + (m._otherDiscount || 0), 0);
+  const members = membersWithDiscount.map(({ _otherDiscount, ...m }) => m);
 
   const floaterSumInsured = parseCurrency(valueAfter(page2, 'Floater Sum Insured') || '');
 
-  const grossPremium = parseCurrency(valueAfter(page3, 'Total Gross', { skip: 1 }) || '');
   const totalGst = parseCurrency(valueAfter(page3, 'Total GST') || '0') || 0;
   const netPremium = parseCurrency(valueAfter(page3, /^Net Premium\(With$/, { skip: 1 }) || '');
 
@@ -147,9 +162,9 @@ function parse({ pageTexts }) {
     policyType: 'Floater',
     planChosen: 'BASIC',
     sumInsured: floaterSumInsured,
-    totalBasicPremium: grossPremium,
-    familyFloaterDiscount: null,
-    premium: grossPremium,
+    totalBasicPremium,
+    familyFloaterDiscount,
+    premium: totalBasicPremium != null ? totalBasicPremium - familyFloaterDiscount : null,
     gst: totalGst,
     totalPremium: netPremium,
     tpaName: (valueAfter(all, 'Name of the TPA') || '').split('/')[0].trim() || null,

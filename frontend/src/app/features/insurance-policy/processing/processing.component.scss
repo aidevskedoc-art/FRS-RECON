@@ -108,6 +108,11 @@
   }
 }
 
+.processing__failed-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
 .processing__batch-header {
   text-align: center;
   margin-bottom: var(--space-6);

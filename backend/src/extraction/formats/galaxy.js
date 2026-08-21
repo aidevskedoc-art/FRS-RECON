@@ -79,7 +79,29 @@ function parse({ pageTexts }) {
 
   const phoneIdx = indexMatching(page1, /^Phone No\.:/);
   const policyholderName = page1[0] || null;
-  const policyholderAddress = phoneIdx > 1 ? page1.slice(1, phoneIdx).join(' ') : null;
+  const policyholderAddressLines = phoneIdx > 1 ? page1.slice(1, phoneIdx) : [];
+  const policyholderAddress = policyholderAddressLines.join(' ') || null;
+
+  // Page 2's "Proposer Address" / "Office Address" pair is the same
+  // zigzag layout as the Customer/Issuing-office block above it: the
+  // Office Address *label* prints last, but its value block (the issuing
+  // branch's address) prints first, immediately after the Proposer
+  // Address label — followed by the proposer's own address restated. That
+  // restatement wraps onto a different number of lines than page 1's copy
+  // of the same address (different column width), so the split point is
+  // found by content instead of a line count: the first comma-delimited
+  // chunk of the (page-1) proposer address, wherever it recurs as the
+  // start of a line in this block, is where the office address ends.
+  const officeAddressStartIdx = indexOfLabel(page2, 'Proposer Address');
+  const officeAddressEndIdx = indexOfLabel(page2, 'Office Address', { from: officeAddressStartIdx + 1 });
+  const insuranceCompanyAddress = (() => {
+    if (officeAddressStartIdx === -1 || officeAddressEndIdx === -1) return null;
+    const block = page2.slice(officeAddressStartIdx + 1, officeAddressEndIdx);
+    const anchor = (policyholderAddressLines[0] || '').split(',')[0].trim();
+    const splitIdx = anchor ? block.findIndex((l) => l.startsWith(anchor)) : -1;
+    const officeLines = splitIdx === -1 ? block : block.slice(0, splitIdx);
+    return officeLines.join(' ') || null;
+  })();
 
   const policyNumber = valueAfter(page2, 'Policy Number:');
   const prevRaw = valueAfter(page2, 'Previous Policy Number:');
@@ -111,6 +133,12 @@ function parse({ pageTexts }) {
   const { members, tailIdx } = parseMembers(page3);
   const [, sumInsuredRaw] = tailIdx === -1 ? [] : page3.slice(tailIdx, tailIdx + 2);
 
+  // Tax invoice row: HSN desc, Total, Discount, Taxable Value, IGST, CGST, UT/SGST, Total Invoice Value.
+  const invoiceMatch = pageTexts
+    .map((t) => t.match(/GENERAL\s*\n\s*INSURANCE\s*\n\s*SERVICES\s*\n\s*([\d,.]+)\s*\n\s*([\d,.]+)/))
+    .find(Boolean);
+  const discount = invoiceMatch ? parseCurrency(invoiceMatch[2]) : null;
+
   return {
     format: 'GALAXY_HEALTH_POLICY_SCHEDULE',
     policyNumber,
@@ -118,7 +146,7 @@ function parse({ pageTexts }) {
     newOrRenewal: previousPolicyNumber ? 'Renewal policy' : 'New policy',
     insuranceCompany: 'Galaxy Health Insurance',
     insuranceCompanyLegalName: insurerLegal,
-    insuranceCompanyAddress: null,
+    insuranceCompanyAddress,
     policyholderName,
     policyholderAddress,
     customerId,
@@ -132,7 +160,7 @@ function parse({ pageTexts }) {
     planChosen: 'BASIC',
     sumInsured: parseCurrency(sumInsuredRaw || ''),
     totalBasicPremium: basicPremium,
-    familyFloaterDiscount: null,
+    familyFloaterDiscount: discount,
     premium: basicPremium,
     gst,
     totalPremium,
