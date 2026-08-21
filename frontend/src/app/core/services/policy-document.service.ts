@@ -4,6 +4,19 @@ import { Observable, tap } from 'rxjs';
 import { DocumentStatus, PolicyDocument } from '../models';
 import { API_BASE_URL } from '../config/api.config';
 
+/** A file from the upload batch that was rejected because its content exactly matches a document already in the system. */
+export interface UploadDuplicate {
+  fileName: string;
+  existingDocumentId: string;
+  existingFileName: string;
+  existingUploadedAt: string;
+}
+
+export interface UploadResult {
+  documents: PolicyDocument[];
+  duplicates: UploadDuplicate[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class PolicyDocumentService {
   private readonly http = inject(HttpClient);
@@ -58,17 +71,22 @@ export class PolicyDocumentService {
     );
   }
 
-  /** POST /api/documents/upload (multipart) */
-  upload(files: File[]): Observable<PolicyDocument[]> {
+  /**
+   * POST /api/documents/upload (multipart). A file whose content exactly
+   * matches one already in the system comes back in `duplicates` instead
+   * of `documents` — the server rejects it rather than creating a second
+   * copy, so this can be a partial success (some files uploaded, some not).
+   */
+  upload(files: File[]): Observable<UploadResult> {
     const form = new FormData();
     for (const file of files) form.append('files', file, file.name);
 
     this._loading.set(true);
     this._error.set(null);
-    return this.http.post<PolicyDocument[]>(`${API_BASE_URL}/documents/upload`, form).pipe(
+    return this.http.post<UploadResult>(`${API_BASE_URL}/documents/upload`, form).pipe(
       tap({
-        next: (created) => {
-          this._documents.update((docs) => [...created, ...docs]);
+        next: (result) => {
+          this._documents.update((docs) => [...result.documents, ...docs]);
           this._loading.set(false);
         },
         error: (err) => {

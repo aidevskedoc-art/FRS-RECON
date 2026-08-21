@@ -115,6 +115,41 @@ export class ExtractionService {
     });
   }
 
+  /**
+   * POST /api/documents/:id/ai-fill-missing — for a document already
+   * extracted, runs one AI pass over the same PDF text and fills in only
+   * the fields still blank. Every already-filled field (parser-found or
+   * user-edited) is left untouched, so this is safe to run repeatedly.
+   *
+   * Also re-syncs the document's row in PolicyDocumentService (not just
+   * the extraction result) — filling several fields can move the overall
+   * confidence score and status, and History's list reads those off the
+   * document row, not the extraction result.
+   */
+  fillMissingWithAi(documentId: string): Observable<void> {
+    return new Observable<void>((subscriber) => {
+      this.patchAndRefresh(
+        this.http.post(`${API_BASE_URL}/documents/${documentId}/ai-fill-missing`, {}),
+        documentId,
+      ).subscribe({
+        next: () => {
+          this.policyDocuments.fetchById(documentId).subscribe({
+            next: () => {
+              subscriber.next();
+              subscriber.complete();
+            },
+            // The fill itself already succeeded — don't fail the caller over a stale list row.
+            error: () => {
+              subscriber.next();
+              subscriber.complete();
+            },
+          });
+        },
+        error: (err) => subscriber.error(err),
+      });
+    });
+  }
+
   /** PATCH /api/documents/:id/extraction/fields */
   updateField(documentId: string, fieldPath: string, value: unknown): Observable<void> {
     return this.patchAndRefresh(

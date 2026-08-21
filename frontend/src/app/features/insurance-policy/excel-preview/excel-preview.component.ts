@@ -2,17 +2,21 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, signal } f
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
-import { TableModule, Table } from 'primeng/table';
+import { TableModule } from 'primeng/table';
+import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { InputTextModule } from 'primeng/inputtext';
 import { PolicyService } from '../../../core/services/policy.service';
 import { ExcelService } from '../../../core/services/excel.service';
-import { EXCEL_COLUMN_HEADERS, ExcelColumnDef } from '../../../core/models';
+import { EXCEL_COLUMN_HEADERS, ExcelColumnDef, Policy } from '../../../core/models';
+
+/** Policyholders shown per page — the table is paginated by policy, not by Excel row. */
+const POLICIES_PER_PAGE = 10;
 
 @Component({
   selector: 'app-excel-preview',
   standalone: true,
-  imports: [RouterLink, FormsModule, ButtonModule, TableModule, MultiSelectModule, InputTextModule],
+  imports: [RouterLink, FormsModule, ButtonModule, TableModule, PaginatorModule, MultiSelectModule, InputTextModule],
   templateUrl: './excel-preview.component.html',
   styleUrl: './excel-preview.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -38,7 +42,39 @@ export class ExcelPreviewComponent {
     return all.filter((p) => wanted.has(p.id));
   });
 
+  /** Full, unfiltered row set — used only for the "N policies · M rows" summary and download. */
   protected readonly rows = computed(() => this.excelService.toExcelRows(this.selectedPolicies()));
+
+  protected readonly pageSize = POLICIES_PER_PAGE;
+  protected readonly searchTerm = signal('');
+  protected readonly currentPage = signal(0);
+
+  protected readonly filteredPolicies = computed(() => {
+    const term = this.searchTerm().trim().toLowerCase();
+    const all = this.selectedPolicies();
+    if (!term) return all;
+    return all.filter((p) => policyMatchesSearch(p, term));
+  });
+
+  protected readonly totalPages = computed(() => Math.max(1, Math.ceil(this.filteredPolicies().length / this.pageSize)));
+
+  /** Clamped so a search/refresh that shrinks the result set can't strand the page past the end. */
+  protected readonly pagedPolicies = computed(() => {
+    const policies = this.filteredPolicies();
+    const page = Math.min(this.currentPage(), this.totalPages() - 1);
+    const start = page * this.pageSize;
+    return policies.slice(start, start + this.pageSize);
+  });
+
+  /** One row per insured member for the current page's policies, with S NO continuing across pages. */
+  protected readonly displayRows = computed<Record<string, unknown>[]>(() => {
+    const page = Math.min(this.currentPage(), this.totalPages() - 1);
+    const offset = page * this.pageSize;
+    return this.excelService.toExcelRows(this.pagedPolicies()).map((row) => ({
+      ...row,
+      sNo: row.sNo ? row.sNo + offset : row.sNo,
+    })) as unknown as Record<string, unknown>[];
+  });
 
   protected readonly visibleColumns = computed<ExcelColumnDef[]>(() => {
     const visible = new Set(this.visibleKeys());
@@ -69,8 +105,24 @@ export class ExcelPreviewComponent {
     });
   }
 
-  protected onSearch(event: Event, table: Table): void {
-    const value = (event.target as HTMLInputElement).value;
-    table.filterGlobal(value, 'contains');
+  protected onSearch(event: Event): void {
+    this.searchTerm.set((event.target as HTMLInputElement).value);
+    this.currentPage.set(0);
   }
+
+  protected onPageChange(event: PaginatorState): void {
+    this.currentPage.set(event.page ?? 0);
+  }
+}
+
+function policyMatchesSearch(policy: Policy, term: string): boolean {
+  const haystacks = [
+    policy.policyHolder?.name,
+    policy.insuranceCompany,
+    policy.policyNumber,
+    policy.policyHolder?.customerId,
+    policy.receiptNumber,
+    ...policy.members.map((m) => m.name),
+  ];
+  return haystacks.some((v) => v?.toLowerCase().includes(term));
 }

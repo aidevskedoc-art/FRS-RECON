@@ -13,7 +13,11 @@
 
 const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
 
-const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+// gemini-3.6-flash's free tier caps out at 20 requests/day — easy to burn
+// through while testing. flash-lite trades a little capability for a much
+// larger free quota and is still accurate enough for structured extraction
+// (verified against hand-checked parser output before switching to it).
+const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
 
 const MEMBER_SCHEMA = {
   type: SchemaType.OBJECT,

@@ -34,6 +34,23 @@
     </div>
   }
 
+  @if (duplicates().length > 0) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      <div>
+        <p>{{ duplicates().length }} file(s) were already uploaded and were skipped:</p>
+        <ul class="notice__list">
+          @for (dup of duplicates(); track dup.fileName) {
+            <li>
+              <strong>{{ dup.fileName }}</strong> — already uploaded as "{{ dup.existingFileName }}"
+              <button type="button" class="notice__link" (click)="viewExisting(dup)">View it</button>
+            </li>
+          }
+        </ul>
+      </div>
+    </div>
+  }
+
   @if (pendingFiles().length > 0) {
     <div class="pending">
       <div class="pending__header">

@@ -46,6 +46,18 @@
       @if (saving()) {
         <span class="saving-pill"><i class="pi pi-spin pi-spinner"></i> Saving…</span>
       }
+      @if (missingFieldCount() > 0) {
+        <p-button
+          label="Fill Missing with AI"
+          icon="pi pi-sparkles"
+          [outlined]="true"
+          [loading]="fillingMissing()"
+          [disabled]="!result() || fillingMissing()"
+          pTooltip="Runs one AI pass over this document and fills only the {{ missingFieldCount() }} field(s) still blank — already-filled fields are untouched."
+          tooltipPosition="bottom"
+          (onClick)="fillMissingWithAi()"
+        />
+      }
       <p-button label="Run Validation" icon="pi pi-shield" [disabled]="!result()" (onClick)="goToValidation()" />
     </div>
   </div>

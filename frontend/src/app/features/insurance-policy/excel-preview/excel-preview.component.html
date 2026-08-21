@@ -27,7 +27,7 @@
     <div class="excel-preview__toolbar">
       <span class="search">
         <i class="pi pi-search"></i>
-        <input pInputText type="text" placeholder="Search rows…" (input)="onSearch($event, dt)" />
+        <input pInputText type="text" placeholder="Search policyholders…" (input)="onSearch($event)" />
       </span>
       <p-multiselect
         [options]="allColumns"
@@ -45,13 +45,9 @@
 
     <div class="excel-preview__table-wrap">
       <p-table
-        #dt
-        [value]="rows()"
+        [value]="displayRows()"
         [columns]="visibleColumns()"
         dataKey="sNo"
-        [paginator]="rows().length > 10"
-        [rows]="10"
-        [globalFilterFields]="['policyholder', 'insuranceCompany', 'policyNumber', 'insuredName', 'customerId', 'receiptNumber']"
         [scrollable]="true"
         scrollDirection="both"
         styleClass="p-datatable-sm excel-table"
@@ -72,5 +68,14 @@
         </ng-template>
       </p-table>
     </div>
+
+    <p-paginator
+      [rows]="pageSize"
+      [first]="currentPage() * pageSize"
+      [totalRecords]="filteredPolicies().length"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="{first} to {last} of {totalRecords} policyholders"
+      (onPageChange)="onPageChange($event)"
+    />
   }
 </div>

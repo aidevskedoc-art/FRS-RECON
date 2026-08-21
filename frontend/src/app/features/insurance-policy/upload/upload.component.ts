@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { DocumentCardComponent } from '../shared/document-card/document-card.component';
-import { PolicyDocumentService, errorMessage } from '../../../core/services/policy-document.service';
+import { PolicyDocumentService, UploadDuplicate, errorMessage } from '../../../core/services/policy-document.service';
 import { PolicyDocument } from '../../../core/models';
 
 @Component({
@@ -23,6 +23,7 @@ export class UploadComponent {
   protected readonly justUploadedIds = signal<string[]>([]);
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
+  protected readonly duplicates = signal<UploadDuplicate[]>([]);
 
   protected readonly pendingSizeLabel = computed(() => {
     const total = this.pendingFiles().reduce((sum, f) => sum + f.size, 0);
@@ -70,17 +71,23 @@ export class UploadComponent {
   protected clearPending(): void {
     this.pendingFiles.set([]);
     this.rejectedCount.set(0);
+    this.duplicates.set([]);
   }
 
   protected upload(): void {
     if (this.pendingFiles().length === 0 || this.uploading()) return;
     this.uploading.set(true);
     this.uploadError.set(null);
+    this.duplicates.set([]);
 
     this.policyDocuments.upload(this.pendingFiles()).subscribe({
-      next: (created) => {
-        this.justUploadedIds.update((ids) => [...created.map((d) => d.id), ...ids]);
-        this.pendingFiles.set([]);
+      next: ({ documents, duplicates }) => {
+        this.justUploadedIds.update((ids) => [...documents.map((d) => d.id), ...ids]);
+        this.duplicates.set(duplicates);
+        // Only successfully-uploaded files leave the pending list — a
+        // rejected duplicate stays there so it's obvious which one was skipped.
+        const duplicateNames = new Set(duplicates.map((d) => d.fileName));
+        this.pendingFiles.set(this.pendingFiles().filter((f) => duplicateNames.has(f.name)));
         this.uploading.set(false);
       },
       error: (err) => {
@@ -88,6 +95,10 @@ export class UploadComponent {
         this.uploading.set(false);
       },
     });
+  }
+
+  protected viewExisting(duplicate: UploadDuplicate): void {
+    this.router.navigate(['/insurance-policy/documents', duplicate.existingDocumentId, 'processing']);
   }
 
   protected openDocument(document: PolicyDocument): void {

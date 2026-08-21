@@ -99,7 +99,13 @@ export class ExtractionComponent {
   protected readonly locatedField = signal<string | null>(null);
   protected readonly highlightedPath = signal<string | null>(null);
   protected readonly saving = signal(false);
+  protected readonly fillingMissing = signal(false);
   protected readonly loadError = signal<string | null>(null);
+
+  /** How many currently-visible fields are blank — hides the AI button once nothing's left to fill. */
+  protected readonly missingFieldCount = computed(
+    () => [...this.fieldMeta().values()].filter((m) => m.confidence === 'low').length,
+  );
 
   constructor() {
     effect(() => {
@@ -170,6 +176,17 @@ export class ExtractionComponent {
 
   protected duplicateMember(memberId: string): void {
     this.track(this.extractionService.duplicateMember(this.id(), memberId));
+  }
+
+  protected fillMissingWithAi(): void {
+    this.fillingMissing.set(true);
+    this.extractionService.fillMissingWithAi(this.id()).subscribe({
+      next: () => this.fillingMissing.set(false),
+      error: (err) => {
+        this.fillingMissing.set(false);
+        this.loadError.set(errorMessage(err));
+      },
+    });
   }
 
   protected goToValidation(): void {

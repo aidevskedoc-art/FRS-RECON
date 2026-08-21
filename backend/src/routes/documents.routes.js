@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const db = require('../db');
 const { documentRowToApi } = require('../mappers');
 
@@ -34,16 +35,36 @@ router.post('/upload', upload.array('files', 20), async (req, res, next) => {
     }
 
     const created = [];
+    const duplicates = [];
     for (const file of req.files) {
+      // Hashed by content, not name — the same PDF re-uploaded under a
+      // different file name is still caught.
+      const hash = crypto.createHash('sha256').update(fs.readFileSync(file.path)).digest('hex');
+
+      const { rows: existing } = await db.query(
+        'SELECT id, file_name, uploaded_at FROM documents WHERE file_hash = $1 LIMIT 1',
+        [hash],
+      );
+      if (existing.length > 0) {
+        fs.unlink(file.path, () => {});
+        duplicates.push({
+          fileName: file.originalname,
+          existingDocumentId: String(existing[0].id),
+          existingFileName: existing[0].file_name,
+          existingUploadedAt: existing[0].uploaded_at,
+        });
+        continue;
+      }
+
       const { rows } = await db.query(
-        `INSERT INTO documents (file_name, file_size_bytes, file_path, status)
-         VALUES ($1, $2, $3, 'Uploaded') RETURNING *`,
-        [file.originalname, file.size, path.basename(file.path)],
+        `INSERT INTO documents (file_name, file_size_bytes, file_path, status, file_hash)
+         VALUES ($1, $2, $3, 'Uploaded', $4) RETURNING *`,
+        [file.originalname, file.size, path.basename(file.path), hash],
       );
       created.push(documentRowToApi(rows[0]));
     }
 
-    res.status(201).json(created);
+    res.status(201).json({ documents: created, duplicates });
   } catch (err) {
     next(err);
   }

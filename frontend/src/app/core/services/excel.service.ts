@@ -26,7 +26,8 @@ export class ExcelService {
     let sNo = 1;
 
     for (const policy of policies) {
-      const members = policy.members.length ? policy.members : [null];
+      const validMembers = policy.members.filter((m) => m?.name?.trim());
+      const members = validMembers.length ? validMembers : [null];
 
       members.forEach((member, index) => {
         const first = index === 0;

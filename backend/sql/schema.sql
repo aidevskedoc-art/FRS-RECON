@@ -105,6 +105,11 @@ ALTER TABLE policies ADD COLUMN IF NOT EXISTS printed_receipt_date        DATE;
 ALTER TABLE policies ADD COLUMN IF NOT EXISTS insurance_company_legal_name VARCHAR(255);
 ALTER TABLE policies ADD COLUMN IF NOT EXISTS source_format               VARCHAR(64);
 
+-- SHA-256 of the uploaded file's bytes, checked at upload time so the same
+-- PDF can't be uploaded twice under a different file name.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);
+CREATE INDEX IF NOT EXISTS documents_file_hash_idx ON documents(file_hash);
+
 -- Receipt numbers run to 20 digits — must stay text so no float rounding
 -- can truncate them (the client's own spreadsheet lost the last 5 digits).
 ALTER TABLE policies ALTER COLUMN receipt_number TYPE VARCHAR(64);

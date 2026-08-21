@@ -13,10 +13,31 @@
       <div class="bulk-bar__actions">
         <p-button label="Review" icon="pi pi-eye" size="small" [text]="true" (onClick)="bulkReview()" />
         <p-button label="Retry" icon="pi pi-refresh" size="small" [text]="true" (onClick)="bulkRetry()" />
+        @if (aiFillProgress(); as progress) {
+          <span class="bulk-bar__ai-progress">
+            <i class="pi pi-spin pi-spinner"></i> Filling with AI… {{ progress.done }} / {{ progress.total }}
+          </span>
+        } @else {
+          <p-button
+            label="Fill Missing with AI"
+            icon="pi pi-sparkles"
+            size="small"
+            [text]="true"
+            [disabled]="aiFillableSelectedCount() === 0"
+            pTooltip="Runs AI on the {{ aiFillableSelectedCount() }} selected document(s) that already have an extraction result, filling only their blank fields. Failed/in-progress documents are skipped."
+            tooltipPosition="bottom"
+            (onClick)="bulkFillMissingWithAi()"
+          />
+        }
         <p-button label="Generate Excel" icon="pi pi-file-excel" size="small" [text]="true" (onClick)="bulkGenerateExcel()" />
         <p-button label="Delete" icon="pi pi-trash" size="small" [text]="true" severity="danger" (onClick)="bulkDelete()" />
       </div>
     </div>
+    @if (aiFillError(); as err) {
+      <div class="bulk-bar__ai-error">
+        <i class="pi pi-exclamation-triangle"></i> {{ err }}
+      </div>
+    }
   }
 
   <span class="search">

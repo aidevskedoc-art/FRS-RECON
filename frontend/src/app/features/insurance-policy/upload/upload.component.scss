@@ -79,6 +79,35 @@
   border: 1px solid var(--status-danger-border);
 }
 
+.notice:has(.notice__list) {
+  align-items: flex-start;
+
+  i {
+    margin-top: 2px;
+  }
+}
+
+.notice__list {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.notice__link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: var(--space-2);
+  color: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .pending {
   @include mixins.card;
   padding: var(--space-5);

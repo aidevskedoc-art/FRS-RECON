@@ -218,6 +218,59 @@ async function persistExtraction(documentId, parsed, { pageTexts, startedAt }) {
   });
 }
 
+const MEMBER_FLAT_FIELDS = [
+  'name', 'relationWithPolicyHolder', 'age', 'gender', 'occupation',
+  'basePremium', 'policyTypeSelfParents', 'nomineeName', 'nomineeRelation',
+];
+
+const isBlank = (v) => v === null || v === undefined || v === '';
+
+/** Only ever *adds* values into fields that are currently blank — an already-filled field (parser-found or user-edited) is never touched, whatever the AI pass returned for it. */
+function mergeMissing(current, ai) {
+  const merged = { ...current };
+  for (const key of Object.keys(current)) {
+    if (key === 'members') continue;
+    if (isBlank(current[key]) && !isBlank(ai[key])) merged[key] = ai[key];
+  }
+  merged.members = current.members.map((m, i) => {
+    const aiMember = (ai.members || [])[i];
+    if (!aiMember) return m;
+    const mergedMember = { ...m };
+    for (const key of MEMBER_FLAT_FIELDS) {
+      if (isBlank(m[key]) && !isBlank(aiMember[key])) mergedMember[key] = aiMember[key];
+    }
+    return mergedMember;
+  });
+  return merged;
+}
+
+function hasAnyBlankField(parsed) {
+  const topLevelBlank = Object.keys(parsed)
+    .filter((k) => k !== 'members' && k !== 'format')
+    .some((k) => isBlank(parsed[k]));
+  if (topLevelBlank) return true;
+  return (parsed.members || []).some((m) => MEMBER_FLAT_FIELDS.some((k) => isBlank(m[k])));
+}
+
+/**
+ * Best-effort second pass folded into every /extract call: if the parser
+ * (or a prior AI pass) left any field blank, try once to fill it via AI.
+ * Deliberately swallows any AI failure (not configured, rate-limited,
+ * network error, ...) rather than throwing — this is a bonus on top of a
+ * parse that already succeeded, so a quota hiccup here should never turn
+ * a working extraction into a failed request. The manual "Fill Missing
+ * with AI" button remains the way to retry this specifically later.
+ */
+async function autoFillMissing(parsed, pageTexts) {
+  if (!hasAnyBlankField(parsed)) return parsed;
+  try {
+    const ai = await extractWithAi({ pageTexts });
+    return mergeMissing(parsed, ai);
+  } catch {
+    return parsed;
+  }
+}
+
 // POST /api/documents/:id/extract
 router.post('/:id/extract', async (req, res, next) => {
   try {
@@ -232,17 +285,31 @@ router.post('/:id/extract', async (req, res, next) => {
     const { fullText, pageTexts } = await extractPages(buffer);
 
     let parsed;
+    let usedAiFallback = false;
     try {
       parsed = parseByFormat({ fullText, pageTexts });
     } catch (parseErr) {
-      if (parseErr.code === 'UNKNOWN_FORMAT') {
+      if (parseErr.code !== 'UNKNOWN_FORMAT') throw parseErr;
+
+      // No hand-written parser recognizes this insurer — try the AI
+      // fallback automatically instead of failing outright. If AI isn't
+      // configured or also fails, surface the original error unchanged.
+      try {
+        parsed = await extractWithAi({ pageTexts });
+        usedAiFallback = true;
+      } catch {
         await db.query('UPDATE documents SET status=$2, error_message=$3 WHERE id=$1', [
           documentId, 'Failed', parseErr.message,
         ]);
         return res.status(422).json({ error: parseErr.message, code: 'UNKNOWN_FORMAT' });
       }
-      throw parseErr;
     }
+
+    // Whatever a parser found, top it up with one AI pass for anything
+    // still blank — skipped when the AI fallback above already produced
+    // this same `parsed` (no point asking the same model the same thing
+    // twice in one request).
+    if (!usedAiFallback) parsed = await autoFillMissing(parsed, pageTexts);
 
     await persistExtraction(documentId, parsed, { pageTexts, startedAt });
 
@@ -292,6 +359,106 @@ router.post('/:id/ai-extract', async (req, res, next) => {
     }
 
     await persistExtraction(documentId, parsed, { pageTexts, startedAt });
+
+    const extraction = await loadExtractionResult(documentId);
+    res.json({
+      documentId: String(documentId),
+      policy: extraction.policy,
+      fields: extraction.fields,
+      metadata: extractionMetadataRowToApi(extraction.document),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** The `policies`/`insured_members` rows, reshaped back into the same flat "parsed" object every format parser (and extractWithAi) returns — so a fresh AI pass can be merged against what's already stored. */
+function policyRowToParsed(row, memberRows) {
+  const dateOnly = (v) => (v ? new Date(v).toISOString().slice(0, 10) : null);
+  const num = (v) => (v === null || v === undefined ? null : Number(v));
+
+  return {
+    format: row.source_format,
+    policyNumber: row.policy_number,
+    previousPolicyNumber: row.previous_policy_number,
+    newOrRenewal: row.new_or_renewal,
+    insuranceCompany: row.insurance_company,
+    insuranceCompanyLegalName: row.insurance_company_legal_name,
+    insuranceCompanyAddress: row.insurance_company_address,
+    policyholderName: row.policyholder_name,
+    policyholderAddress: row.policyholder_address,
+    customerId: row.customer_id,
+    policyStartDate: dateOnly(row.policy_start_date),
+    policyEndDate: dateOnly(row.policy_end_date),
+    policyTenureDays: row.policy_tenure_days,
+    policyReceiptDate: dateOnly(row.policy_receipt_date),
+    printedReceiptDate: dateOnly(row.printed_receipt_date),
+    receiptNumber: row.receipt_number === null ? null : String(row.receipt_number),
+    policyType: row.policy_type,
+    planChosen: row.plan_chosen,
+    sumInsured: num(row.sum_insured),
+    totalBasicPremium: num(row.total_basic_premium),
+    familyFloaterDiscount: num(row.family_floater_discount),
+    premium: num(row.premium),
+    gst: num(row.gst),
+    totalPremium: num(row.total_premium),
+    tpaName: row.tpa_name,
+    members: memberRows.map((m) => ({
+      name: m.name,
+      relationWithPolicyHolder: m.relation_with_policy_holder,
+      age: m.age,
+      gender: m.gender,
+      occupation: m.occupation,
+      basePremium: num(m.base_premium),
+      policyTypeSelfParents: m.policy_type_self_parents,
+      nomineeName: m.nominee_name,
+      nomineeRelation: m.nominee_relation,
+      dateOfBirth: dateOnly(m.date_of_birth),
+      inceptionDate: dateOnly(m.inception_date),
+    })),
+  };
+}
+
+/**
+ * POST /api/documents/:id/ai-fill-missing
+ * For a document already extracted (by a parser or a prior AI pass), runs
+ * a fresh AI read of the same PDF text and fills in only the fields that
+ * are currently blank — every already-filled field (parser-found or
+ * user-edited) is left exactly as it is. Meant for the Extraction
+ * Workspace's "Fill Missing with AI" action, not the initial extraction.
+ */
+router.post('/:id/ai-fill-missing', async (req, res, next) => {
+  try {
+    const documentId = req.params.id;
+    const { rows: docRows } = await db.query('SELECT * FROM documents WHERE id = $1', [documentId]);
+    if (docRows.length === 0) return res.status(404).json({ error: 'Document not found' });
+    const document = docRows[0];
+
+    const { rows: policyRows } = await db.query('SELECT * FROM policies WHERE document_id = $1', [documentId]);
+    if (policyRows.length === 0) {
+      return res.status(404).json({ error: 'No extraction result for this document yet — run extraction first' });
+    }
+    const { rows: memberRows } = await db.query(
+      'SELECT * FROM insured_members WHERE policy_id = $1 ORDER BY sort_order',
+      [policyRows[0].id],
+    );
+    const current = policyRowToParsed(policyRows[0], memberRows);
+
+    const startedAt = Date.now();
+    const filePath = path.join(uploadDir, document.file_path);
+    const buffer = fs.readFileSync(filePath);
+    const { pageTexts } = await extractPages(buffer);
+
+    let aiParsed;
+    try {
+      aiParsed = await extractWithAi({ pageTexts });
+    } catch (aiErr) {
+      if (aiErr.code === 'AI_NOT_CONFIGURED') return res.status(503).json({ error: aiErr.message, code: aiErr.code });
+      if (aiErr.code === 'AI_BAD_RESPONSE') return res.status(502).json({ error: aiErr.message, code: aiErr.code });
+      throw aiErr;
+    }
+
+    await persistExtraction(documentId, mergeMissing(current, aiParsed), { pageTexts, startedAt });
 
     const extraction = await loadExtractionResult(documentId);
     res.json({

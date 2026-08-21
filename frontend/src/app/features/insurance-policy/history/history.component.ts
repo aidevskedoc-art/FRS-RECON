@@ -6,10 +6,14 @@ import { ButtonModule } from 'primeng/button';
 import { TableModule, Table } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { TooltipModule } from 'primeng/tooltip';
-import { PolicyDocumentService } from '../../../core/services/policy-document.service';
+import { PolicyDocumentService, errorMessage } from '../../../core/services/policy-document.service';
 import { PolicyService } from '../../../core/services/policy.service';
 import { ExcelService } from '../../../core/services/excel.service';
+import { ExtractionService } from '../../../core/services/extraction.service';
 import { ConfidenceLevel, DOCUMENT_STATUS_META, DocumentStatus } from '../../../core/models';
+
+/** Only documents that already have an extraction result can be re-checked for missing fields. */
+const AI_FILLABLE_STATUSES = new Set<DocumentStatus>(['Completed', 'Needs Review']);
 
 interface HistoryRow {
   documentId: string;
@@ -39,8 +43,16 @@ export class HistoryComponent {
   protected readonly policyDocuments = inject(PolicyDocumentService);
   private readonly policyService = inject(PolicyService);
   private readonly excelService = inject(ExcelService);
+  private readonly extractionService = inject(ExtractionService);
 
   protected readonly selectedRows = signal<HistoryRow[]>([]);
+  protected readonly aiFillProgress = signal<{ done: number; total: number } | null>(null);
+  protected readonly aiFillError = signal<string | null>(null);
+
+  /** Only Completed/Needs Review rows can be re-checked — Failed/in-progress ones have no extraction result yet. */
+  protected readonly aiFillableSelectedCount = computed(
+    () => this.selectedRows().filter((r) => AI_FILLABLE_STATUSES.has(r.status)).length,
+  );
 
   protected statusMetaFor(status: DocumentStatus) {
     return DOCUMENT_STATUS_META[status];
@@ -137,6 +149,41 @@ export class HistoryComponent {
         },
       });
     }
+  }
+
+  /**
+   * Runs "Fill Missing with AI" across every eligible selected row, one at
+   * a time rather than in parallel — the free-tier AI quota rate-limits
+   * bursts of simultaneous requests, and sequential also lets the UI show
+   * real "N of M" progress instead of an all-or-nothing spinner.
+   */
+  protected bulkFillMissingWithAi(): void {
+    const rows = this.selectedRows().filter((r) => AI_FILLABLE_STATUSES.has(r.status));
+    if (rows.length === 0) return;
+
+    this.aiFillError.set(null);
+    this.aiFillProgress.set({ done: 0, total: rows.length });
+
+    const runNext = (index: number): void => {
+      if (index >= rows.length) {
+        this.aiFillProgress.set(null);
+        this.policyService.refresh().subscribe({ error: () => {} });
+        return;
+      }
+      this.extractionService.fillMissingWithAi(rows[index].documentId).subscribe({
+        next: () => {
+          this.aiFillProgress.set({ done: index + 1, total: rows.length });
+          runNext(index + 1);
+        },
+        error: (err) => {
+          // One document's failure (e.g. a transient AI error) shouldn't stop the rest of the batch.
+          this.aiFillError.set(`${rows[index].fileName}: ${errorMessage(err)}`);
+          this.aiFillProgress.set({ done: index + 1, total: rows.length });
+          runNext(index + 1);
+        },
+      });
+    };
+    runNext(0);
   }
 
   protected bulkDelete(): void {

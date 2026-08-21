@@ -57,7 +57,8 @@ function toExcelRows(policies) {
   let sNo = 1;
 
   for (const p of policies) {
-    const members = p.members && p.members.length ? p.members : [null];
+    const validMembers = (p.members || []).filter((m) => m && m.name && m.name.trim());
+    const members = validMembers.length ? validMembers : [null];
 
     members.forEach((member, index) => {
       const isFirst = index === 0;
