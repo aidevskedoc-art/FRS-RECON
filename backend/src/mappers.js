@@ -142,10 +142,88 @@ function parseFieldValue(text) {
   }
 }
 
+function onlineUploadBatchRowToApi(row) {
+  return {
+    id: String(row.id),
+    uploadType: row.upload_type,
+    sourceFormat: row.source_format,
+    fileName: row.file_name,
+    fileSizeBytes: row.file_size_bytes,
+    rowCount: row.row_count,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: toIso(row.uploaded_at),
+  };
+}
+
+function onlinePaymentRecordRowToApi(row) {
+  return {
+    id: String(row.id),
+    batchId: String(row.batch_id),
+    uploadType: row.upload_type,
+    receiptNumber: row.receipt_number,
+    receiptDate: toIso(row.receipt_date),
+    yhno: row.yhno,
+    ipNo: row.ip_no,
+    diagNo: row.diag_no,
+    patientName: row.patient_name,
+    transactionRef1: row.transaction_ref_1,
+    transactionRef2: row.transaction_ref_2,
+    transactionRef3: row.transaction_ref_3,
+    paymentMode: row.payment_mode,
+    payMode: row.pay_mode,
+    payType: row.pay_type,
+    remarks: row.remarks,
+    paymentRemarks: row.payment_remarks,
+    patType: row.pat_type,
+    billAmount: toNumber(row.bill_amount),
+    cashAmount: toNumber(row.cash_amount),
+    cardAmount: toNumber(row.card_amount),
+    chequeAmount: toNumber(row.cheque_amount),
+    onlineUpiAmount: toNumber(row.online_upi_amount),
+    discountAmount: toNumber(row.discount_amount),
+    diffAmount: toNumber(row.diff_amount),
+    userId: row.user_id,
+    userName: row.user_name,
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function bankStatementUploadRowToApi(row) {
+  return {
+    id: String(row.id),
+    bankName: row.bank_name,
+    accountNo: row.account_no,
+    accountBranch: row.account_branch,
+    statementFrom: toDateOnly(row.statement_from),
+    statementTo: toDateOnly(row.statement_to),
+    fileName: row.file_name,
+    fileSizeBytes: row.file_size_bytes,
+    rowCount: row.row_count,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: toIso(row.uploaded_at),
+  };
+}
+
+function divisionBankAccountRowToApi(row) {
+  return {
+    id: String(row.id),
+    divisionName: row.division_name,
+    accountNumber: row.account_number,
+    bankName: row.bank_name,
+    active: row.active,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
 module.exports = {
   documentRowToApi,
   extractionMetadataRowToApi,
   policyRowToApi,
   memberRowToApi,
   fieldRowToApi,
+  onlineUploadBatchRowToApi,
+  onlinePaymentRecordRowToApi,
+  bankStatementUploadRowToApi,
+  divisionBankAccountRowToApi,
 };

@@ -1,0 +1,87 @@
+<div class="upload-mis">
+  <div class="page-header">
+    <h2>Upload MIS Data</h2>
+    <p>Import IP payment (Format 1) or Diag payment (Format 2) records from the MIS export.</p>
+  </div>
+
+  <div class="format-picker">
+    <button
+      type="button"
+      class="format-option"
+      [class.format-option--active]="format() === '1'"
+      (click)="selectFormat('1')"
+    >
+      <span class="format-option__title">Format 1 — IP Payments</span>
+      <span class="format-option__hint">Has IPNO. Saved as upload type IP_PAYMENT.</span>
+    </button>
+    <button
+      type="button"
+      class="format-option"
+      [class.format-option--active]="format() === '2'"
+      (click)="selectFormat('2')"
+    >
+      <span class="format-option__title">Format 2 — Diag Payments</span>
+      <span class="format-option__hint">Has Diag Number. Saved as upload type DIAG_PAYMENT.</span>
+    </button>
+  </div>
+
+  <div
+    class="dropzone"
+    [class.dropzone--active]="isDragging()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <div class="dropzone__icon">
+      <i class="pi pi-cloud-upload"></i>
+    </div>
+    <h3>Drop the {{ format() === '1' ? 'Format 1' : 'Format 2' }} Excel file here</h3>
+    <p>Columns are matched by position, not header text — no need to edit the file first.</p>
+
+    <div class="dropzone__actions">
+      <input #fileInput type="file" accept=".xlsx,.xls" hidden (change)="onFileInput($event)" />
+      <p-button label="Browse Files" icon="pi pi-folder-open" [outlined]="true" (onClick)="fileInput.click()" />
+    </div>
+
+    <p class="dropzone__hint">Supported formats: .xlsx, .xls — max 70MB</p>
+  </div>
+
+  @if (rejected()) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      That file was skipped — only .xlsx / .xls files are supported.
+    </div>
+  }
+
+  @if (uploadError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (pendingFile(); as file) {
+    <div class="pending">
+      <div class="pending__row">
+        <i class="pi pi-file-excel"></i>
+        <span class="pending__name">{{ file.name }}</span>
+        <span class="pending__size">{{ fileSizeLabel(file.size) }}</span>
+        <button type="button" class="pending__remove" [disabled]="uploading()" (click)="clearPending()">
+          <i class="pi pi-times"></i>
+        </button>
+      </div>
+      <p-button label="Save to Database" icon="pi pi-upload" [loading]="uploading()" (onClick)="upload()" />
+    </div>
+  }
+
+  @if (uploadedBatch(); as batch) {
+    <div class="success">
+      <i class="pi pi-check-circle"></i>
+      <div class="success__text">
+        <strong>{{ batch.rowCount }} row{{ batch.rowCount === 1 ? '' : 's' }} saved</strong>
+        <span>{{ batch.fileName }} — {{ batch.uploadType === 'IP_PAYMENT' ? 'IP Payments' : 'Diag Payments' }}</span>
+      </div>
+      <p-button label="View" icon="pi pi-eye" size="small" [outlined]="true" (onClick)="viewBatch()" />
+    </div>
+  }
+</div>

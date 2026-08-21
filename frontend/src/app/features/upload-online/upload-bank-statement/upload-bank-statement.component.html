@@ -1,0 +1,70 @@
+<div class="upload-mis">
+  <div class="page-header">
+    <h2>Upload Bank Statement</h2>
+    <p>Import an HDFC-style statement export. Account details and the transaction table are read automatically.</p>
+  </div>
+
+  <div
+    class="dropzone"
+    [class.dropzone--active]="isDragging()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <div class="dropzone__icon">
+      <i class="pi pi-building-columns"></i>
+    </div>
+    <h3>Drop the bank statement Excel file here</h3>
+    <p>The transaction table is located automatically between its start/end marker rows.</p>
+
+    <div class="dropzone__actions">
+      <input #fileInput type="file" accept=".xlsx,.xls" hidden (change)="onFileInput($event)" />
+      <p-button label="Browse Files" icon="pi pi-folder-open" [outlined]="true" (onClick)="fileInput.click()" />
+    </div>
+
+    <p class="dropzone__hint">Supported formats: .xlsx, .xls — max 70MB</p>
+  </div>
+
+  @if (rejected()) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      That file was skipped — only .xlsx / .xls files are supported.
+    </div>
+  }
+
+  @if (uploadError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (pendingFile(); as file) {
+    <div class="pending">
+      <div class="pending__row">
+        <i class="pi pi-file-excel"></i>
+        <span class="pending__name">{{ file.name }}</span>
+        <span class="pending__size">{{ fileSizeLabel(file.size) }}</span>
+        <button type="button" class="pending__remove" [disabled]="uploading()" (click)="clearPending()">
+          <i class="pi pi-times"></i>
+        </button>
+      </div>
+      <p-button label="Save to Database" icon="pi pi-upload" [loading]="uploading()" (onClick)="upload()" />
+    </div>
+  }
+
+  @if (uploadedBatch(); as batch) {
+    <div class="success">
+      <i class="pi pi-check-circle"></i>
+      <div class="success__text">
+        <strong>{{ batch.rowCount }} transaction{{ batch.rowCount === 1 ? '' : 's' }} saved</strong>
+        <span>
+          {{ batch.bankName || batch.fileName }}
+          @if (batch.accountNo) { · A/C {{ batch.accountNo }} }
+          @if (batch.statementFrom && batch.statementTo) { · {{ batch.statementFrom }} to {{ batch.statementTo }} }
+        </span>
+      </div>
+      <p-button label="View Statements" icon="pi pi-eye" size="small" [outlined]="true" (onClick)="viewBatches()" />
+    </div>
+  }
+</div>

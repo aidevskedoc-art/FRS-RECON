@@ -1,0 +1,81 @@
+<div class="batch-detail">
+  <div class="batch-detail__header">
+    <button type="button" class="back-link" (click)="back()"><i class="pi pi-arrow-left"></i> Back to Payments</button>
+
+    @if (batch(); as b) {
+      <div class="batch-summary">
+        <div>
+          <h2>{{ b.fileName }}</h2>
+          <p>
+            {{ b.uploadType === 'IP_PAYMENT' ? 'IP Payments' : 'Diag Payments' }} ·
+            {{ b.sourceFormat === 'FORMAT_1' ? 'Format 1' : 'Format 2' }} ·
+            {{ b.rowCount }} row{{ b.rowCount === 1 ? '' : 's' }} ·
+            uploaded {{ b.uploadedAt | date: 'medium' }}
+            @if (b.uploadedBy) { by {{ b.uploadedBy }} }
+          </p>
+        </div>
+      </div>
+    }
+  </div>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="filters">
+    <span class="filters__search">
+      <i class="pi pi-search"></i>
+      <input pInputText type="text" placeholder="Search patient, receipt, reference, user…" [(ngModel)]="search" (keyup.enter)="applyFilters()" />
+    </span>
+    <input pInputText type="text" placeholder="Pay Type" [(ngModel)]="payType" (keyup.enter)="applyFilters()" class="filters__field" />
+    <input pInputText type="text" placeholder="Pat Type" [(ngModel)]="patType" (keyup.enter)="applyFilters()" class="filters__field" />
+    <input type="date" [(ngModel)]="dateFrom" class="filters__date" />
+    <span class="filters__to">to</span>
+    <input type="date" [(ngModel)]="dateTo" class="filters__date" />
+    <p-button label="Apply" size="small" [outlined]="true" (onClick)="applyFilters()" />
+
+    <span class="filters__spacer"></span>
+
+    <p-button label="Download" icon="pi pi-download" size="small" [outlined]="true" (onClick)="download()" />
+    <p-button label="Delete All" icon="pi pi-trash" size="small" severity="danger" [outlined]="true" (onClick)="deleteAll()" />
+  </div>
+
+  <div class="batch-detail__table-wrap">
+    <p-table
+      [value]="records()"
+      dataKey="id"
+      [lazy]="true"
+      [paginator]="true"
+      [rows]="25"
+      [totalRecords]="total()"
+      [loading]="loading()"
+      [scrollable]="true"
+      scrollDirection="both"
+      styleClass="p-datatable-sm records-table"
+      (onLazyLoad)="onLazyLoad($event)"
+    >
+      <ng-template #header>
+        <tr>
+          @for (col of columns(); track col.key) {
+            <th>{{ col.header }}</th>
+          }
+        </tr>
+      </ng-template>
+      <ng-template #body let-record>
+        <tr>
+          @for (col of columns(); track col.key) {
+            <td [class.mono]="col.key === 'receiptNumber' || col.key === 'yhno'">{{ cellValue(record, col) }}</td>
+          }
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td [attr.colspan]="columns().length" class="empty">No records match this filter.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>
