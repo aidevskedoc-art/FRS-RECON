@@ -15,10 +15,11 @@ function toLines(pageText) {
 }
 
 /**
- * Rupee glyphs extract as stray "(" / ")" / "₹", and a label's trailing
- * colon can end up detached on its own. None of these is ever a real value.
+ * Rupee glyphs extract as stray "(" / ")" / "₹" / "`" (some fonts map the
+ * rupee glyph to a backtick codepoint), and a label's trailing colon can
+ * end up detached on its own. None of these is ever a real value.
  */
-const NOISE = /^[)(₹:\-\s]*$/;
+const NOISE = /^[)(₹`:\-\s]*$/;
 
 function isNoise(line) {
   return NOISE.test(line);
@@ -79,6 +80,26 @@ function valueInlineOrAfter(lines, label) {
   return null;
 }
 
+/**
+ * The next `count` non-noise lines after a label, as an array — for a table
+ * whose header cells and data cells print as two separate blocks rather
+ * than "label, value" pairs (common when a row wraps and a positional
+ * extractor can't otherwise tell where the header block ends).
+ */
+function valuesAfter(lines, label, count, { from = 0 } = {}) {
+  const idx = label instanceof RegExp
+    ? indexMatching(lines, label, { from })
+    : indexOfLabel(lines, label, { from });
+  if (idx === -1) return [];
+
+  const out = [];
+  for (let i = idx + 1; i < lines.length && out.length < count; i++) {
+    if (isNoise(lines[i])) continue;
+    out.push(lines[i]);
+  }
+  return out;
+}
+
 /** Joins the `count` lines following a label — for addresses split across rows. */
 function linesAfter(lines, label, count) {
   const idx = label instanceof RegExp ? indexMatching(lines, label) : indexOfLabel(lines, label);
@@ -105,6 +126,7 @@ module.exports = {
   indexOfLabel,
   indexMatching,
   valueAfter,
+  valuesAfter,
   valueInlineOrAfter,
   linesAfter,
   escapeRe,

@@ -17,39 +17,15 @@ const {
   indexMatching,
 } = require('../lines');
 const { parseCurrency } = require('../format');
+const {
+  ddmmyyyyToIso, tenureDays, shortInsurerName, splitRows,
+} = require('./common');
 
 const SIGNATURE = /FAMILY MEDICARE POLICY/i;
 const INSURER = /UNITED INDIA INSURANCE COMPANY/i;
 
-function matches(fullText) {
-  return SIGNATURE.test(fullText) && INSURER.test(fullText);
-}
-
-/** '09/06/2026' -> '2026-06-09' */
-function ddmmyyyyToIso(raw) {
-  if (!raw) return null;
-  const m = String(raw).match(/(\d{2})\/(\d{2})\/(\d{4})/);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
-}
-
-/** Inclusive day count, matching how the client counts tenure (09-Jun-26 -> 08-Jun-27 = 365). */
-function tenureDays(startIso, endIso) {
-  if (!startIso || !endIso) return null;
-  const ms = Date.parse(`${endIso}T00:00:00Z`) - Date.parse(`${startIso}T00:00:00Z`);
-  if (!Number.isFinite(ms)) return null;
-  return Math.round(ms / 86400000) + 1;
-}
-
-/**
- * "UNITED INDIA INSURANCE COMPANY LIMITED" -> "UNITED INDIA".
- * The client's Excel uses the brand, not the legal entity name.
- */
-function shortInsurerName(legalName) {
-  if (!legalName) return null;
-  return legalName
-    .replace(/\b(INSURANCE|GENERAL|HEALTH|COMPANY|CO\.?|LIMITED|LTD\.?)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+function matches(fullText, headText) {
+  return SIGNATURE.test(fullText) && INSURER.test(headText);
 }
 
 /**
@@ -83,42 +59,6 @@ function parseMembers(lines) {
   }
 
   return parseSplitTables(lines, optIdx);
-}
-
-/** Drops the stray rupee-glyph items a table's cells extract as. */
-function stripGlyphs(body) {
-  return body.filter((l) => !/^[)(₹]$/.test(l));
-}
-
-/**
- * Splits a table body into per-member rows on the leading serial number.
- *
- * The serial must be the *next* one in sequence and be followed by a
- * non-numeric cell (the insured name). Both guards matter on layout B's
- * premium table, where the CB Amount column prints as a bare "0" that a
- * plain /^\d{1,2}$/ test would mistake for the start of another row.
- */
-function splitRows(body) {
-  const cells = stripGlyphs(body);
-  const rows = [];
-  let current = null;
-  let expected = 1;
-
-  for (let i = 0; i < cells.length; i++) {
-    const startsRow = cells[i] === String(expected)
-      && cells[i + 1] !== undefined
-      && !/^[\d,]+(\.\d+)?$/.test(cells[i + 1]);
-
-    if (startsRow) {
-      if (current) rows.push(current);
-      current = [cells[i]];
-      expected++;
-    } else if (current) {
-      current.push(cells[i]);
-    }
-  }
-  if (current) rows.push(current);
-  return rows;
 }
 
 /**
