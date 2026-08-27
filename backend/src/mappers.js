@@ -47,6 +47,10 @@ function extractionMetadataRowToApi(row) {
     overallConfidenceScore: row.overall_confidence_score,
     processingTimeMs: row.processing_time_ms,
     extractedAt: toIso(row.extracted_at),
+    // What the AI pass contributed on the last extraction (null if this
+    // document predates the diagnostics column). Read by the Extraction
+    // Workspace's AI report panel — see ai-extraction.js for the shape.
+    aiDiagnostics: row.ai_diagnostics ?? null,
   };
 }
 

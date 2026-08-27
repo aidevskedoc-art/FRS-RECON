@@ -117,7 +117,7 @@ async function regenerateMemberFields(client, documentId, policyId) {
  * stored policy/members/fields rows and the document's summary status.
  * Both routes only differ in how `parsed` was produced.
  */
-async function persistExtraction(documentId, parsed, { pageTexts, startedAt }) {
+async function persistExtraction(documentId, parsed, { pageTexts, startedAt, aiDiagnostics = null }) {
   const { policy, fields, metadata } = toExtractionResult(parsed, {
     pagesAnalyzed: pageTexts.length,
     processingTimeMs: Date.now() - startedAt,
@@ -207,12 +207,14 @@ async function persistExtraction(documentId, parsed, { pageTexts, startedAt }) {
     await client.query(
       `UPDATE documents SET
          status=$2, page_count=$3, pages_analyzed=$4, fields_extracted=$5, fields_total=$6,
-         overall_confidence=$7, overall_confidence_score=$8, processing_time_ms=$9, extracted_at=now()
+         overall_confidence=$7, overall_confidence_score=$8, processing_time_ms=$9, extracted_at=now(),
+         ai_diagnostics=$10, error_message=NULL
        WHERE id=$1`,
       [
         documentId, overallStatus, metadata.pagesAnalyzed, metadata.pagesAnalyzed,
         metadata.fieldsExtracted, metadata.fieldsTotal, metadata.overallConfidence,
         metadata.overallConfidenceScore, processingTimeMs,
+        aiDiagnostics ? JSON.stringify({ ...aiDiagnostics, ranAt: new Date().toISOString() }) : null,
       ],
     );
   });
@@ -225,23 +227,62 @@ const MEMBER_FLAT_FIELDS = [
 
 const isBlank = (v) => v === null || v === undefined || v === '';
 
-/** Only ever *adds* values into fields that are currently blank — an already-filled field (parser-found or user-edited) is never touched, whatever the AI pass returned for it. */
+/**
+ * Only ever *adds* values into fields that are currently blank — an
+ * already-filled field (parser-found or user-edited) is never touched,
+ * whatever the AI pass returned for it.
+ *
+ * Returns { merged, filledPaths }: filledPaths names exactly the fields
+ * the AI contributed, which is what the workspace's AI report shows. It
+ * is the merge's own record rather than a diff computed afterwards —
+ * only this function knows which writes it actually made.
+ */
 function mergeMissing(current, ai) {
   const merged = { ...current };
+  const filledPaths = [];
   for (const key of Object.keys(current)) {
     if (key === 'members') continue;
-    if (isBlank(current[key]) && !isBlank(ai[key])) merged[key] = ai[key];
+    if (isBlank(current[key]) && !isBlank(ai[key])) {
+      merged[key] = ai[key];
+      filledPaths.push(key);
+    }
   }
   merged.members = current.members.map((m, i) => {
     const aiMember = (ai.members || [])[i];
     if (!aiMember) return m;
     const mergedMember = { ...m };
     for (const key of MEMBER_FLAT_FIELDS) {
-      if (isBlank(m[key]) && !isBlank(aiMember[key])) mergedMember[key] = aiMember[key];
+      if (isBlank(m[key]) && !isBlank(aiMember[key])) {
+        mergedMember[key] = aiMember[key];
+        filledPaths.push(`members.${i}.${key}`);
+      }
     }
     return mergedMember;
   });
-  return merged;
+  return { merged, filledPaths };
+}
+
+/** Every non-empty field of a wholly AI-produced parse — the "all of it came from AI" case, where a merge diff would report nothing filled. */
+function allFilledPaths(parsed) {
+  const paths = Object.keys(parsed).filter((k) => k !== 'members' && k !== 'format' && !isBlank(parsed[k]));
+  (parsed.members || []).forEach((m, i) => {
+    for (const key of MEMBER_FLAT_FIELDS) if (!isBlank(m[key])) paths.push(`members.${i}.${key}`);
+  });
+  return paths;
+}
+
+/** Normalises whatever extractWithAi threw into the same diagnostics shape a success produces, so the UI has one thing to render. */
+function diagnosticsFromError(err, pageTexts) {
+  return {
+    ...(err.diagnostics ?? {
+      status: 'failed',
+      reason: err.code || 'API_ERROR',
+      model: process.env.GEMINI_MODEL || null,
+      textChars: pageTexts.join('').replace(/s/g, '').length,
+      pagesSent: pageTexts.length,
+    }),
+    message: err.message,
+  };
 }
 
 function hasAnyBlankField(parsed) {
@@ -261,13 +302,22 @@ function hasAnyBlankField(parsed) {
  * a working extraction into a failed request. The manual "Fill Missing
  * with AI" button remains the way to retry this specifically later.
  */
-async function autoFillMissing(parsed, pageTexts) {
-  if (!hasAnyBlankField(parsed)) return parsed;
+async function autoFillMissing(parsed, pageTexts, pdfBuffer) {
+  if (!hasAnyBlankField(parsed)) {
+    return { parsed, aiDiagnostics: { status: 'not_needed', reason: 'NOTHING_MISSING', mode: 'fill-missing' } };
+  }
   try {
-    const ai = await extractWithAi({ pageTexts });
-    return mergeMissing(parsed, ai);
-  } catch {
-    return parsed;
+    const { parsed: ai, diagnostics } = await extractWithAi({ pageTexts, pdfBuffer });
+    const { merged, filledPaths } = mergeMissing(parsed, ai);
+    return {
+      parsed: merged,
+      aiDiagnostics: { ...diagnostics, mode: 'fill-missing', filledPaths, filledCount: filledPaths.length },
+    };
+  } catch (err) {
+    // Still swallowed — a quota hiccup must not fail a parse that already
+    // succeeded — but no longer silent: the reason is recorded on the
+    // document, so the workspace can say why no AI values turned up.
+    return { parsed, aiDiagnostics: { ...diagnosticsFromError(err, pageTexts), mode: 'fill-missing', filledPaths: [], filledCount: 0 } };
   }
 }
 
@@ -286,6 +336,7 @@ router.post('/:id/extract', async (req, res, next) => {
 
     let parsed;
     let usedAiFallback = false;
+    let aiDiagnostics = null;
     try {
       parsed = parseByFormat({ fullText, pageTexts });
     } catch (parseErr) {
@@ -295,13 +346,28 @@ router.post('/:id/extract', async (req, res, next) => {
       // fallback automatically instead of failing outright. If AI isn't
       // configured or also fails, surface the original error unchanged.
       try {
-        parsed = await extractWithAi({ pageTexts });
+        const ai = await extractWithAi({ pageTexts, pdfBuffer: buffer });
+        parsed = ai.parsed;
+        const filledPaths = allFilledPaths(parsed);
+        aiDiagnostics = { ...ai.diagnostics, mode: 'full', filledPaths, filledCount: filledPaths.length };
         usedAiFallback = true;
-      } catch {
-        await db.query('UPDATE documents SET status=$2, error_message=$3 WHERE id=$1', [
-          documentId, 'Failed', parseErr.message,
+      } catch (aiErr) {
+        // Record why the AI couldn't rescue this document either. "The PDF
+        // is a scan with no text layer" is a completely different problem
+        // from "no parser recognises this insurer", and only the first one
+        // tells the user the fix is OCR — so report it in preference to the
+        // parser's generic UNKNOWN_FORMAT.
+        const noText = (aiErr.code === 'AI_NO_TEXT_LAYER' || aiErr.code === 'AI_PDF_TOO_LARGE');
+        const diag = { ...diagnosticsFromError(aiErr, pageTexts), mode: 'full', filledPaths: [], filledCount: 0 };
+        await db.query('UPDATE documents SET status=$2, error_message=$3, ai_diagnostics=$4 WHERE id=$1', [
+          documentId, 'Failed', noText ? aiErr.message : parseErr.message,
+          JSON.stringify({ ...diag, ranAt: new Date().toISOString() }),
         ]);
-        return res.status(422).json({ error: parseErr.message, code: 'UNKNOWN_FORMAT' });
+        return res.status(422).json({
+          error: noText ? aiErr.message : parseErr.message,
+          code: noText ? aiErr.code : 'UNKNOWN_FORMAT',
+          aiDiagnostics: diag,
+        });
       }
     }
 
@@ -309,9 +375,13 @@ router.post('/:id/extract', async (req, res, next) => {
     // still blank — skipped when the AI fallback above already produced
     // this same `parsed` (no point asking the same model the same thing
     // twice in one request).
-    if (!usedAiFallback) parsed = await autoFillMissing(parsed, pageTexts);
+    if (!usedAiFallback) {
+      const filled = await autoFillMissing(parsed, pageTexts, buffer);
+      parsed = filled.parsed;
+      aiDiagnostics = filled.aiDiagnostics;
+    }
 
-    await persistExtraction(documentId, parsed, { pageTexts, startedAt });
+    await persistExtraction(documentId, parsed, { pageTexts, startedAt, aiDiagnostics });
 
     const extraction = await loadExtractionResult(documentId);
     res.json({
@@ -346,11 +416,20 @@ router.post('/:id/ai-extract', async (req, res, next) => {
     const { pageTexts } = await extractPages(buffer);
 
     let parsed;
+    let aiDiagnostics = null;
     try {
-      parsed = await extractWithAi({ pageTexts });
+      const ai = await extractWithAi({ pageTexts, pdfBuffer: buffer });
+      parsed = ai.parsed;
+      const filledPaths = allFilledPaths(parsed);
+      aiDiagnostics = { ...ai.diagnostics, mode: 'full', filledPaths, filledCount: filledPaths.length };
     } catch (aiErr) {
       if (aiErr.code === 'AI_NOT_CONFIGURED') {
         return res.status(503).json({ error: aiErr.message, code: aiErr.code });
+      }
+      // 422 not 502: the document itself is the problem, and no retry of
+      // this request will change that until the file is OCR'd.
+      if ((aiErr.code === 'AI_NO_TEXT_LAYER' || aiErr.code === 'AI_PDF_TOO_LARGE')) {
+        return res.status(422).json({ error: aiErr.message, code: aiErr.code, aiDiagnostics: diagnosticsFromError(aiErr, pageTexts) });
       }
       if (aiErr.code === 'AI_BAD_RESPONSE') {
         return res.status(502).json({ error: aiErr.message, code: aiErr.code });
@@ -358,7 +437,7 @@ router.post('/:id/ai-extract', async (req, res, next) => {
       throw aiErr;
     }
 
-    await persistExtraction(documentId, parsed, { pageTexts, startedAt });
+    await persistExtraction(documentId, parsed, { pageTexts, startedAt, aiDiagnostics });
 
     const extraction = await loadExtractionResult(documentId);
     res.json({
@@ -450,15 +529,25 @@ router.post('/:id/ai-fill-missing', async (req, res, next) => {
     const { pageTexts } = await extractPages(buffer);
 
     let aiParsed;
+    let aiDiagnostics = null;
     try {
-      aiParsed = await extractWithAi({ pageTexts });
+      const ai = await extractWithAi({ pageTexts, pdfBuffer: buffer });
+      aiParsed = ai.parsed;
+      aiDiagnostics = ai.diagnostics;
     } catch (aiErr) {
       if (aiErr.code === 'AI_NOT_CONFIGURED') return res.status(503).json({ error: aiErr.message, code: aiErr.code });
+      if ((aiErr.code === 'AI_NO_TEXT_LAYER' || aiErr.code === 'AI_PDF_TOO_LARGE')) {
+        return res.status(422).json({ error: aiErr.message, code: aiErr.code, aiDiagnostics: diagnosticsFromError(aiErr, pageTexts) });
+      }
       if (aiErr.code === 'AI_BAD_RESPONSE') return res.status(502).json({ error: aiErr.message, code: aiErr.code });
       throw aiErr;
     }
 
-    await persistExtraction(documentId, mergeMissing(current, aiParsed), { pageTexts, startedAt });
+    const { merged, filledPaths } = mergeMissing(current, aiParsed);
+    await persistExtraction(documentId, merged, {
+      pageTexts, startedAt,
+      aiDiagnostics: { ...aiDiagnostics, mode: 'fill-missing', filledPaths, filledCount: filledPaths.length },
+    });
 
     const extraction = await loadExtractionResult(documentId);
     res.json({

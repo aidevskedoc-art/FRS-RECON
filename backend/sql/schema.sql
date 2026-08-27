@@ -114,6 +114,12 @@ CREATE INDEX IF NOT EXISTS documents_file_hash_idx ON documents(file_hash);
 -- can truncate them (the client's own spreadsheet lost the last 5 digits).
 ALTER TABLE policies ALTER COLUMN receipt_number TYPE VARCHAR(64);
 
+-- What the AI pass actually did on the last extraction, so the Extraction
+-- Workspace can show its contribution instead of leaving a blank screen
+-- unexplained. JSONB rather than columns because the shape is diagnostic
+-- output, not queried domain data — see ai-extraction.js for the fields.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_diagnostics JSONB;
+
 -- ---------------------------------------------------------------------------
 -- Upload Online: MIS data (IP / Diag payments) and bank statements.
 -- Both MIS formats' source headers are shifted from their actual data (a

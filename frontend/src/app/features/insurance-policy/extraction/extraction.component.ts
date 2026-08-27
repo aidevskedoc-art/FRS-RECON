@@ -107,6 +107,75 @@ export class ExtractionComponent {
     () => [...this.fieldMeta().values()].filter((m) => m.confidence === 'low').length,
   );
 
+
+  protected readonly aiReportOpen = signal(true);
+
+  /**
+   * Turns the backend's AI diagnostics into something readable. The point
+   * is to answer "how much did the AI actually get?" without the reader
+   * having to interpret a status code — so every non-'ran' outcome gets a
+   * plain-English reason, and the stat row always reports what was *sent*
+   * as well as what came back (a zero-character send explains a
+   * zero-field result on its own).
+   */
+  protected readonly aiReport = computed(() => {
+    const d = this.result()?.metadata?.aiDiagnostics ?? null;
+    if (!d) return null;
+
+    const REASONS: Record<string, string> = {
+      NO_TEXT_LAYER: 'This PDF is a scan with no text layer, and the file itself was not available to read as images.',
+      NOT_CONFIGURED: 'No GEMINI_API_KEY is set on the backend, so the AI pass never ran.',
+      BAD_RESPONSE: 'The model replied with output that could not be parsed as JSON.',
+      NOTHING_MISSING: 'The format parser filled every field on its own, so the AI was never asked.',
+      API_ERROR: 'The AI request failed before it returned anything.',
+      PDF_TOO_LARGE: 'This PDF is a scan, and it is too large to send for visual reading. Reduce its resolution or split it.',
+    };
+
+    const badge = { ran: 'Ran', skipped: 'Skipped', failed: 'Failed', not_needed: 'Not needed' }[d.status] ?? d.status;
+    const tone = { ran: 'success', skipped: 'warning', failed: 'danger', not_needed: 'neutral' }[d.status] ?? 'neutral';
+
+    let headline: string;
+    if (d.status === 'ran') {
+      const how = d.inputMode === 'pdf-vision'
+        ? 'This PDF had no text layer, so its pages were read as images. '
+        : '';
+      headline = how + (d.mode === 'full'
+        ? 'The whole policy was read by AI — no hand-written parser matched this insurer. It returned '
+          + (d.policyFieldsReturned ?? 0) + ' of ' + (d.policyFieldsTotal ?? 0) + ' policy fields and '
+          + (d.membersReturned ?? 0) + ' insured member(s).'
+        : 'AI was asked to fill the gaps the parser left. It returned ' + (d.policyFieldsReturned ?? 0)
+          + ' of ' + (d.policyFieldsTotal ?? 0) + ' policy fields, and ' + (d.filledCount ?? 0)
+          + ' of those were actually written in (the rest were already filled).');
+    } else {
+      headline = d.message || REASONS[d.reason ?? ''] || 'The AI pass did not run.';
+    }
+
+    const stats: { label: string; value: string }[] = [
+      { label: 'Model', value: d.model ?? 'not set' },
+      { label: 'Read as', value: d.inputMode === 'pdf-vision' ? 'page images (OCR)' : 'text layer' },
+      { label: 'Text sent to AI', value: d.textChars.toLocaleString() + ' chars' + (d.textChars === 0 && d.inputMode !== 'pdf-vision' ? '  (empty!)' : '') },
+      { label: 'Pages', value: String(d.pagesSent) },
+    ];
+    if (d.status === 'ran') {
+      stats.push(
+        { label: 'Policy fields returned', value: (d.policyFieldsReturned ?? 0) + ' / ' + (d.policyFieldsTotal ?? 0) },
+        { label: 'Members returned', value: String(d.membersReturned ?? 0) },
+        { label: 'Fields written in', value: String(d.filledCount ?? 0) },
+        { label: 'Round trip', value: d.elapsedMs != null ? (d.elapsedMs / 1000).toFixed(1) + 's' : '—' },
+      );
+    }
+
+    return {
+      badge,
+      tone,
+      headline,
+      stats,
+      filled: d.filledPaths ?? [],
+      empty: d.emptyFields ?? [],
+      ranAt: d.ranAt ?? null,
+    };
+  });
+
   constructor() {
     effect(() => {
       const documentId = this.id();

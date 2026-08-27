@@ -130,6 +130,68 @@
           }
         </div>
       </section>
+
+      <section class="data-card ai-report" id="ai-report">
+        <h3>
+          <i class="pi pi-sparkles"></i> AI Extraction Report
+          <button type="button" class="ai-report__toggle" (click)="aiReportOpen.set(!aiReportOpen())">
+            {{ aiReportOpen() ? 'Hide' : 'Show' }}
+          </button>
+        </h3>
+
+        @if (aiReportOpen()) {
+          @if (aiReport(); as r) {
+            <div class="ai-report__headline" [class]="'ai-report__headline--' + r.tone">
+              <span class="ai-report__badge">{{ r.badge }}</span>
+              <p>{{ r.headline }}</p>
+            </div>
+
+            <div class="ai-report__stats">
+              @for (s of r.stats; track s.label) {
+                <div class="ai-report__stat">
+                  <span class="ai-report__stat-label">{{ s.label }}</span>
+                  <span class="ai-report__stat-value">{{ s.value }}</span>
+                </div>
+              }
+            </div>
+
+            @if (r.filled.length) {
+              <div class="ai-report__group">
+                <h4>Written in by AI — {{ r.filled.length }}</h4>
+                <div class="ai-report__chips">
+                  @for (p of r.filled; track p) {
+                    <span class="ai-report__chip ai-report__chip--filled">{{ p }}</span>
+                  }
+                </div>
+              </div>
+            }
+
+            @if (r.empty.length) {
+              <div class="ai-report__group">
+                <h4>AI found no value for — {{ r.empty.length }}</h4>
+                <p class="ai-report__note">
+                  The model is told to answer null rather than guess, so these are
+                  &ldquo;not printed in this document&rdquo; answers, not errors.
+                </p>
+                <div class="ai-report__chips">
+                  @for (p of r.empty; track p) {
+                    <span class="ai-report__chip">{{ p }}</span>
+                  }
+                </div>
+              </div>
+            }
+
+            @if (r.ranAt) {
+              <p class="ai-report__stamp">Recorded {{ r.ranAt }}</p>
+            }
+          } @else {
+            <p class="ai-report__none">
+              No AI run recorded for this document — it was extracted before this report
+              existed. Re-run extraction to capture one.
+            </p>
+          }
+        }
+      </section>
     </div>
   </div>
 </div>

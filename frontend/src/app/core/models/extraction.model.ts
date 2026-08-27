@@ -19,6 +19,43 @@ export interface ExtractedField<T = unknown> {
   verified: boolean;
 }
 
+/**
+ * What the AI pass did on the last extraction, recorded by the backend so
+ * the workspace can distinguish "the model read the document and found
+ * nothing" from "the model was never called" — which look identical on a
+ * screen full of blank fields.
+ *
+ * 'ran'        the model was called and answered
+ * 'skipped'    deliberately not called (no API key, or a PDF with no text)
+ * 'failed'     called, but errored or replied with unusable output
+ * 'not_needed' the parser left no gaps, so there was nothing to ask about
+ */
+export type AiRunStatus = 'ran' | 'skipped' | 'failed' | 'not_needed';
+
+export interface AiDiagnostics {
+  status: AiRunStatus;
+  reason: string | null;
+  message?: string | null;
+  model: string | null;
+  /** Non-whitespace characters recovered from the PDF and sent to the model. Zero means a scanned image. */
+  textChars: number;
+  pagesSent: number;
+  elapsedMs?: number;
+  /** 'full' = the whole policy came from AI; 'fill-missing' = AI only topped up a parser's gaps. */
+  mode?: 'full' | 'fill-missing';
+  /** 'text' = the PDF's text layer was sent; 'pdf-vision' = the pages went as images because there was no text layer. */
+  inputMode?: 'text' | 'pdf-vision';
+  policyFieldsReturned?: number;
+  policyFieldsTotal?: number;
+  membersReturned?: number;
+  /** Fields the model explicitly returned null for — it is told to do that rather than guess. */
+  emptyFields?: string[];
+  /** Field paths the AI's values were actually written into. */
+  filledPaths?: string[];
+  filledCount?: number;
+  ranAt?: string;
+}
+
 export interface ExtractionMetadata {
   documentId: string;
   pagesAnalyzed: number;
@@ -28,6 +65,7 @@ export interface ExtractionMetadata {
   overallConfidenceScore: number;
   processingTimeMs: number;
   extractedAt: string;
+  aiDiagnostics: AiDiagnostics | null;
 }
 
 export interface ExtractionResult {

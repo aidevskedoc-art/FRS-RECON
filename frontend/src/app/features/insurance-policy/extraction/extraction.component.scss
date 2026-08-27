@@ -269,3 +269,145 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ---------------------------------------------------------------------------
+   AI Extraction Report — what the AI pass contributed and, when it did not
+   run, why. Sits at the foot of the data panel because it is diagnostic
+   context for the fields above it, not part of the editable record.
+   --------------------------------------------------------------------------- */
+.ai-report {
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__toggle {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-pill);
+    padding: 2px var(--space-3);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: var(--transition-slow);
+
+    &:hover {
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+    }
+  }
+
+  &__headline {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--status-neutral-border);
+    background: var(--status-neutral-bg);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-4);
+
+    p {
+      margin: 0;
+      font-size: var(--text-sm);
+      color: var(--text-primary);
+      line-height: 1.5;
+    }
+
+    &--success { border-color: var(--status-success-border); background: var(--status-success-bg); }
+    &--warning { border-color: var(--status-warning-border); background: var(--status-warning-bg); }
+    &--danger  { border-color: var(--status-danger-border);  background: var(--status-danger-bg); }
+  }
+
+  &__badge {
+    flex: 0 0 auto;
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--surface-card);
+    color: var(--text-primary);
+  }
+
+  &__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  &__stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-app);
+  }
+
+  &__stat-label {
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__stat-value {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    /* Model ids and char counts run long; wrap rather than clip. */
+    overflow-wrap: anywhere;
+  }
+
+  &__group {
+    margin-top: var(--space-4);
+
+    h4 {
+      margin: 0 0 var(--space-2);
+      font-size: var(--text-2xs);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-tertiary);
+    }
+  }
+
+  &__note,
+  &__none,
+  &__stamp {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    line-height: 1.5;
+  }
+
+  &__stamp { margin-top: var(--space-4); }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  &__chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--text-2xs);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-tertiary);
+    background: var(--surface-app);
+
+    &--filled {
+      border-color: var(--status-success-border);
+      background: var(--status-success-bg);
+      color: var(--status-success-fg);
+    }
+  }
+}
