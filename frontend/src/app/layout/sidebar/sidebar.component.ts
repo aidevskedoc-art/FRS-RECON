@@ -26,7 +26,7 @@ interface NavItem {
 
 interface NavGroup {
   label: string;
-  /** Key into the --nav-color/grad/soft-* token triplets in _nav-accents.scss. */
+  /** Key into the --nav-color/grad/soft/line-* token sets in _nav-accents.scss. */
   accent: 'insurance' | 'online' | 'rules' | 'masters' | 'admin' | 'reports' | 'support';
   items: NavItem[];
 }
@@ -127,6 +127,7 @@ export class SidebarComponent {
   protected readonly activeAccent = signal<string>('insurance');
 
   private measureHandle = 0;
+  private destroyed = false;
 
   constructor() {
     this.syncToUrl(this.router.url);
@@ -151,6 +152,10 @@ export class SidebarComponent {
 
     afterNextRender(() => {
       const nav = this.navRef()?.nativeElement;
+      if (!nav) {
+        return;
+      }
+
       // The accordion animates max-height; the pill can only land correctly
       // once that transition has actually finished.
       const onTransitionEnd = (event: TransitionEvent) => {
@@ -158,9 +163,23 @@ export class SidebarComponent {
           this.measure();
         }
       };
-      nav?.addEventListener('transitionend', onTransitionEnd);
+      nav.addEventListener('transitionend', onTransitionEnd);
+
+      // Everything else that moves the rows under an already-placed pill:
+      // the window resizing, the rail collapsing, a scrollbar appearing once
+      // a tall group opens. None of those fire a transitionend on the nav,
+      // so without this the pill silently keeps its stale position.
+      const resizeObserver = new ResizeObserver(() => this.scheduleMeasure());
+      resizeObserver.observe(nav);
+
+      // Row heights come from the display font, so the first measurement is
+      // taken against fallback metrics and goes stale the moment it swaps.
+      document.fonts.ready.then(() => this.scheduleMeasure());
+
       this.destroyRef.onDestroy(() => {
-        nav?.removeEventListener('transitionend', onTransitionEnd);
+        this.destroyed = true;
+        nav.removeEventListener('transitionend', onTransitionEnd);
+        resizeObserver.disconnect();
         cancelAnimationFrame(this.measureHandle);
       });
       this.scheduleMeasure();
@@ -203,31 +222,58 @@ export class SidebarComponent {
   }
 
   private scheduleMeasure(): void {
+    if (this.destroyed) {
+      return;
+    }
     cancelAnimationFrame(this.measureHandle);
     this.measureHandle = requestAnimationFrame(() => this.measure());
   }
 
-  private measure(): void {
-    const nav = this.navRef()?.nativeElement;
-    if (!nav) {
-      this.indicatorVisible.set(false);
-      return;
-    }
-
-    // routerLinkActive is prefix-based, so '/matched-rules/ip-payment-rules'
-    // is also "active" while you're on its '/manage' child. More than one
-    // link can therefore carry the active class; the indicator belongs on
-    // the most specific one, which is the longest matching path.
-    const active = Array.from(nav.querySelectorAll<HTMLElement>('.sidebar__link--active'))
+  /**
+   * routerLinkActive is prefix-based, so '/matched-rules/ip-payment-rules'
+   * is also "active" while you're on its '/manage' child. More than one link
+   * can therefore carry the active class; the indicator belongs on the most
+   * specific one, which is the longest matching path.
+   */
+  private activeLink(nav: HTMLElement): HTMLElement | undefined {
+    return Array.from(nav.querySelectorAll<HTMLElement>('.sidebar__link--active'))
       .sort((a, b) => (a.getAttribute('href')?.length ?? 0) - (b.getAttribute('href')?.length ?? 0))
       .pop();
+  }
 
-    if (!active) {
+  private measure(): void {
+    const nav = this.navRef()?.nativeElement;
+    const active = nav ? this.activeLink(nav) : undefined;
+    if (!nav || !active) {
       this.indicatorVisible.set(false);
       return;
     }
-    this.indicatorTop.set(active.offsetTop);
-    this.indicatorHeight.set(active.offsetHeight);
+
+    const navRect = nav.getBoundingClientRect();
+    const linkRect = active.getBoundingClientRect();
+
+    // Only one group is open at a time, so the active route's link is often
+    // inside a closed one — and a closed group only clips its container to
+    // zero height, it does not take the rows out of layout. The link still
+    // reports a perfectly plausible position, which is how the pill ends up
+    // parked over some unrelated group. The clip rect is the only thing that
+    // knows whether the row is really on screen.
+    const clip = active.closest<HTMLElement>('.sidebar__group-items');
+    if (clip) {
+      const clipRect = clip.getBoundingClientRect();
+      if (linkRect.bottom <= clipRect.top + 1 || linkRect.top >= clipRect.bottom - 1) {
+        this.indicatorVisible.set(false);
+        return;
+      }
+    }
+
+    // Rects are viewport-relative, while the pill is absolutely positioned
+    // against the nav's padding box and scrolls with its content — so the
+    // border width and the scroll offset both have to be added back to land
+    // in that space. offsetTop agrees only for as long as nothing between a
+    // link and the nav is positioned, which nothing in the template enforces.
+    this.indicatorTop.set(linkRect.top - navRect.top - nav.clientTop + nav.scrollTop);
+    this.indicatorHeight.set(linkRect.height);
     this.indicatorVisible.set(true);
   }
 }

@@ -17,14 +17,19 @@
 
   // Two blurred aurora blobs bleeding from top and bottom, so the glass has
   // something alive behind it rather than flat translucency.
+  //
+  // Cyan on top, violet on the bottom — not the other way round. The top
+  // blob covers the first nav group, and the page background already parks
+  // its own indigo blob over the same corner; a violet one there too left
+  // the first group's violet active pill with nothing to separate against.
   &::before {
-    @include mixins.aurora-blob(var(--ai-aurora-2), 240px);
+    @include mixins.aurora-blob(var(--ai-aurora-3), 240px);
     top: -90px;
     left: -70px;
   }
 
   &::after {
-    @include mixins.aurora-blob(var(--ai-aurora-3), 260px);
+    @include mixins.aurora-blob(var(--ai-aurora-2), 260px);
     bottom: -110px;
     right: -80px;
   }
@@ -74,21 +79,45 @@
 }
 
 // The sliding pill. transform (not top) so it animates on the compositor.
+//
+// The fill alone is not enough to say "active". This is glass over a
+// drifting aurora, so the colour behind the pill is not a constant — a
+// 14%-alpha tint that separates cleanly over one blob disappears over
+// another of the same hue. The border and the leading bar carry the state
+// instead; the fill is only there to warm it.
 .sidebar__indicator {
   position: absolute;
   left: var(--space-3);
   right: var(--space-3);
   top: 0;
   z-index: 0;
+  overflow: hidden;
+  border: 1px solid var(--nav-accent-line);
   border-radius: var(--r-xl);
   background: var(--nav-accent-soft);
+  box-shadow: 0 2px 12px -8px var(--nav-accent-color);
   opacity: 0;
   pointer-events: none;
   transition:
     transform 380ms var(--ease-spring),
     height 380ms var(--ease-spring),
     background-color 320ms var(--ease),
+    border-color 320ms var(--ease),
     opacity 200ms var(--ease);
+
+  // Solid leading edge — the one part of the pill that is fully opaque, and
+  // so the one part that reads at a glance no matter what is behind it.
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 3px;
+    height: 40%;
+    border-radius: var(--r-pill);
+    background: var(--nav-accent-color);
+    translate: 0 -50%;
+  }
 }
 
 .sidebar__indicator--visible {
