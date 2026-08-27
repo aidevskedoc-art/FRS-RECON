@@ -1,45 +1,113 @@
 <header class="topbar">
-  <button type="button" class="icon-btn topbar__hamburger" (click)="sidebarStore.toggleMobile()" pTooltip="Menu">
-    <i class="pi pi-bars"></i>
-  </button>
+  <!-- Left — masthead. Flat serif ink, not the AI gradient. -->
+  <div class="topbar__left">
+    <button
+      type="button"
+      class="icon-btn topbar__hamburger"
+      (click)="sidebarStore.toggleMobile()"
+      pTooltip="Menu"
+      aria-label="Toggle navigation"
+    >
+      <i class="pi pi-bars"></i>
+    </button>
 
-  <div class="topbar__title">
-    <h1>Insurance Policy Intelligence</h1>
-    <p>AI-powered policy extraction &amp; Excel automation</p>
+    <div class="masthead">
+      <img class="masthead__logo" src="logo.svg" alt="Yashoda" width="34" height="34" />
+      <span class="masthead__rule" aria-hidden="true"></span>
+      <span class="masthead__wordmark">
+        <span class="masthead__name">FRS</span>
+        <span class="masthead__expansion">Financial Reconciliation System</span>
+      </span>
+    </div>
   </div>
 
+  <!-- Centre — route title, re-animated on every navigation. -->
+  <div class="topbar__center">
+    <h1
+      class="topbar__route ai-display"
+      [@titleSwap]="routeTitle().title + routeTitle().subtitle"
+      [@.disabled]="reducedMotion.prefersReduced()"
+    >
+      {{ routeTitle().title }}
+      <span class="ai-gradient-text">· {{ routeTitle().subtitle }}</span>
+    </h1>
+  </div>
+
+  <!-- Right — action cluster. -->
   <div class="topbar__actions">
+    <a
+      class="pill-btn pill-btn--gradient"
+      routerLink="/insurance-policy/upload"
+      appMagnetic
+      [magneticStrength]="0.2"
+      pTooltip="Upload policy documents"
+    >
+      <i class="pi pi-sparkles"></i>
+      <span class="pill-btn__label">Upload</span>
+    </a>
+
     <app-ai-status
       [state]="policyDocuments.counts().inProgress > 0 ? 'active' : 'idle'"
-      [label]="policyDocuments.counts().inProgress > 0 ? policyDocuments.counts().inProgress + ' document(s) processing' : 'AI Engine Ready'"
+      [label]="
+        policyDocuments.counts().inProgress > 0
+          ? policyDocuments.counts().inProgress + ' processing'
+          : 'AI Engine Ready'
+      "
     />
 
-    <button type="button" class="icon-btn" (click)="themeStore.toggle()" pTooltip="Toggle theme">
+    <button
+      type="button"
+      class="icon-btn"
+      (click)="themeStore.toggle()"
+      pTooltip="Toggle theme"
+      aria-label="Toggle theme"
+    >
       <i class="pi" [class.pi-moon]="themeStore.mode() !== 'dark'" [class.pi-sun]="themeStore.mode() === 'dark'"></i>
     </button>
 
     @if (policyDocuments.counts().needsReview > 0) {
       <p-overlaybadge [value]="policyDocuments.counts().needsReview.toString()" severity="warn">
-        <button type="button" class="icon-btn" pTooltip="Documents needing review">
+        <button type="button" class="icon-btn" pTooltip="Documents needing review" aria-label="Documents needing review">
           <i class="pi pi-bell"></i>
         </button>
       </p-overlaybadge>
     } @else {
-      <button type="button" class="icon-btn" pTooltip="Notifications">
+      <button type="button" class="icon-btn" pTooltip="Notifications" aria-label="Notifications">
         <i class="pi pi-bell"></i>
       </button>
     }
 
-    <div class="topbar__profile">
-      <div class="topbar__avatar">{{ authService.userId()?.slice(0, 2)?.toUpperCase() }}</div>
-      <div class="topbar__profile-text">
-        <span class="topbar__profile-name">{{ authService.userId() }}</span>
-        <span class="topbar__profile-role">Insurance Operations</span>
-      </div>
-    </div>
+    <div class="user-menu">
+      <button
+        type="button"
+        class="user-menu__trigger"
+        (click)="toggleMenu()"
+        [attr.aria-expanded]="menuOpen()"
+        aria-haspopup="menu"
+      >
+        <span class="user-menu__avatar">{{ initials() }}</span>
+        <span class="user-menu__text">
+          <span class="user-menu__name">{{ authService.userId() }}</span>
+          <span class="user-menu__role">{{ role() }}</span>
+        </span>
+        <i class="pi pi-angle-down user-menu__chevron"></i>
+      </button>
 
-    <button type="button" class="icon-btn" (click)="logout()" pTooltip="Sign out">
-      <i class="pi pi-sign-out"></i>
-    </button>
+      @if (menuOpen()) {
+        <!-- Click-away catcher; keeps the dropdown dismissible without a
+             document-level listener fighting the trigger's own click. -->
+        <div class="user-menu__scrim" (click)="menuOpen.set(false)"></div>
+        <div class="user-menu__panel anim-fade-up" role="menu">
+          <div class="user-menu__header">
+            <span class="user-menu__name">{{ authService.userId() }}</span>
+            <span class="user-menu__role">{{ role() }}</span>
+          </div>
+          <button type="button" class="user-menu__item" role="menuitem" (click)="logout()">
+            <i class="pi pi-sign-out"></i>
+            <span>Sign out</span>
+          </button>
+        </div>
+      }
+    </div>
   </div>
 </header>

@@ -23,7 +23,7 @@ const {
   toLines, valueAfter, linesAfter, indexOfLabel, indexMatching, isNoise,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays } = require('./common');
+const { tenureDays, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /ICICI Lombard General Insurance Company/i;
 const INSURER_LEGAL = /^ICICI Lombard General Insurance Company Limited$/i;
@@ -83,7 +83,7 @@ function parseMembers(page1) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(body[i + 1]),
       _sumInsured: sumInsuredRaw,
     });
     cursor = tail;

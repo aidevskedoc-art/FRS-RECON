@@ -84,6 +84,16 @@ function parseIndianAmount(raw) {
   return n;
 }
 
+/**
+ * "POLICY TYPE - SELF/PARENTS" column: "B" when the member's relation to
+ * the policyholder names a parent, "A" otherwise. See README's Known
+ * limits — no sample ever showed a parent row, so this rule is inferred
+ * from the client's own instruction rather than confirmed against output.
+ */
+function policyTypeSelfParentsCode(relation) {
+  return /^(mother|father|parent)$/i.test((relation || '').trim()) ? 'B' : 'A';
+}
+
 /** Completed age in years as of `refIso`, for schedules that print DOB but not age. */
 function ageAsOf(dobIso, refIso) {
   if (!dobIso || !refIso) return null;
@@ -99,4 +109,5 @@ function ageAsOf(dobIso, refIso) {
 
 module.exports = {
   ddmmyyyyToIso, tenureDays, shortInsurerName, stripGlyphs, splitRows, parseIndianAmount, ageAsOf,
+  policyTypeSelfParentsCode,
 };

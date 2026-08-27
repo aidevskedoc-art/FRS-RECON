@@ -1,0 +1,91 @@
+<div class="rules-page">
+  <div class="rules-page__header">
+    <div>
+      <h2>IP Payment Rules</h2>
+      <p>{{ total() }} matched group{{ total() === 1 ? '' : 's' }}</p>
+    </div>
+    <p-button label="Manage Rules" icon="pi pi-cog" [outlined]="true" routerLink="/matched-rules/ip-payment-rules/manage" />
+  </div>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="filter-tabs">
+    <button type="button" class="filter-tab" [class.filter-tab--active]="statusFilter() === 'ALL'" (click)="setStatus('ALL')">All</button>
+    <button type="button" class="filter-tab" [class.filter-tab--active]="statusFilter() === 'MATCHED'" (click)="setStatus('MATCHED')">Matched</button>
+    <button type="button" class="filter-tab" [class.filter-tab--active]="statusFilter() === 'AMOUNT_MISMATCH'" (click)="setStatus('AMOUNT_MISMATCH')">Amount Mismatch</button>
+    <button type="button" class="filter-tab" [class.filter-tab--active]="statusFilter() === 'UNMATCHED'" (click)="setStatus('UNMATCHED')">Unmatched</button>
+  </div>
+
+  <div class="filters">
+    <input type="date" [(ngModel)]="dateFrom" class="filters__date" />
+    <span class="filters__to">to</span>
+    <input type="date" [(ngModel)]="dateTo" class="filters__date" />
+    <p-button label="Apply" size="small" [outlined]="true" (onClick)="applyFilters()" />
+  </div>
+
+  <div class="rules-page__table-wrap">
+    <p-table
+      [value]="results()"
+      dataKey="groupId"
+      [lazy]="true"
+      [paginator]="true"
+      [rows]="25"
+      [totalRecords]="total()"
+      [loading]="loading()"
+      [scrollable]="true"
+      scrollDirection="both"
+      styleClass="p-datatable-sm rules-table"
+      (onLazyLoad)="onLazyLoad($event)"
+    >
+      <ng-template #header>
+        <tr>
+          <th>Reference(s)</th>
+          <th>Patient</th>
+          <th>Receipt</th>
+          <th>Payment Amount</th>
+          <th>Bank Amount</th>
+          <th>Status</th>
+          <th>Matched Account</th>
+          <th>Division</th>
+          <th>Bank Txn Date</th>
+          <th>Narration</th>
+          <th>Rule Applied</th>
+          <th>Match Basis</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-row>
+        <tr>
+          <td class="mono">{{ row.refs.length ? row.refs.join(' / ') : '—' }}</td>
+          <td class="wrap" [title]="row.patientName">{{ row.patientName || '—' }}</td>
+          <td class="mono">{{ row.receiptNumber || '—' }}</td>
+          <td>{{ amount(row.paymentAmount) }}</td>
+          <td>{{ amount(bankAmount(row)) }}</td>
+          <td>
+            <span
+              class="status-pill"
+              [class.status-pill--matched]="row.status === 'MATCHED'"
+              [class.status-pill--mismatch]="row.status === 'AMOUNT_MISMATCH'"
+              [class.status-pill--unmatched]="row.status === 'UNMATCHED'"
+            >{{ statusLabel(row.status) }}</span>
+          </td>
+          <td class="wrap">{{ row.bank ? (row.bank.bankName || '—') + ' · ' + (row.bank.accountNo || '—') : '—' }}</td>
+          <td>{{ row.bank?.divisionName || '—' }}</td>
+          <td>{{ row.bank?.txnDate ? (row.bank.txnDate | date: 'mediumDate') : '—' }}</td>
+          <td class="wrap" [title]="row.bank?.narration">{{ row.bank?.narration || '—' }}</td>
+          <td class="wrap" [title]="row.appliedRuleName">{{ row.appliedRuleName || '—' }}</td>
+          <td class="wrap" [title]="row.matchReason">{{ row.matchReason || '—' }}</td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="12" class="empty">No records match this filter.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

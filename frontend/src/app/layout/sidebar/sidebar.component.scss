@@ -1,92 +1,98 @@
+@use 'styles/mixins';
+
+:host {
+  display: block;
+  min-height: 0;
+}
+
+// A detached floating glass panel — it does not touch the viewport edges.
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
-  width: 236px;
-  flex: none;
   height: 100%;
-  background: var(--surface-card);
-  border-right: 1px solid var(--border-subtle);
-  transition: width var(--transition-slow);
   overflow: hidden;
-}
+  isolation: isolate;
+  @include mixins.glass-card;
 
-.sidebar--collapsed {
-  width: 72px;
-}
-
-.sidebar__backdrop {
-  display: none;
-}
-
-@media (max-width: 900px) {
-  .sidebar__backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(2, 6, 23, 0.45);
-    z-index: var(--z-overlay);
+  // Two blurred aurora blobs bleeding from top and bottom, so the glass has
+  // something alive behind it rather than flat translucency.
+  &::before {
+    @include mixins.aurora-blob(var(--ai-aurora-2), 240px);
+    top: -90px;
+    left: -70px;
   }
 
-  .sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: calc(var(--z-overlay) + 1);
-    width: 236px;
-    transform: translateX(-100%);
-    box-shadow: var(--shadow-lg);
-    transition: transform var(--transition-slow);
-  }
-
-  .sidebar--mobile-open {
-    transform: translateX(0);
-  }
-
-  /* Desktop collapse state is irrelevant once off-canvas — always show full labels while open. */
-  .sidebar.sidebar--collapsed {
-    width: 236px;
-  }
-
-  .sidebar.sidebar--collapsed .sidebar__brand-text,
-  .sidebar.sidebar--collapsed .sidebar__link span,
-  .sidebar.sidebar--collapsed .sidebar__toggle span {
-    display: none;
+  &::after {
+    @include mixins.aurora-blob(var(--ai-aurora-3), 260px);
+    bottom: -110px;
+    right: -80px;
   }
 }
 
+// ---------------------------------------------------------------------
+// Brand
+// ---------------------------------------------------------------------
 .sidebar__brand {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-5) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--ai-divider);
 }
 
+// The mark carries its own colour, so it needs no plate behind it — it
+// sits straight on the rail in both themes.
 .sidebar__logo {
   flex: none;
   width: 34px;
   height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--ai-gradient);
-  color: var(--text-inverse);
-  font-size: 1rem;
+  object-fit: contain;
 }
 
 .sidebar__brand-text {
+  font-family: var(--font-display);
   font-weight: 700;
   font-size: var(--text-md);
-  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  color: var(--text);
   white-space: nowrap;
 }
 
+// ---------------------------------------------------------------------
+// Nav
+// ---------------------------------------------------------------------
 .sidebar__nav {
+  position: relative;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-3);
   overflow-y: auto;
+  @include mixins.scrollbar-thin;
+}
+
+// The sliding pill. transform (not top) so it animates on the compositor.
+.sidebar__indicator {
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  top: 0;
+  z-index: 0;
+  border-radius: var(--r-xl);
+  background: var(--nav-accent-soft);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 380ms var(--ease-spring),
+    height 380ms var(--ease-spring),
+    background-color 320ms var(--ease),
+    opacity 200ms var(--ease);
+}
+
+.sidebar__indicator--visible {
+  opacity: 1;
 }
 
 .sidebar__group {
@@ -103,77 +109,245 @@
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: none;
+  border-radius: var(--r-md);
   background: none;
-  font-size: var(--text-xs);
+  font-family: inherit;
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-tertiary, var(--text-secondary));
+  color: var(--text-subtle);
   white-space: nowrap;
   cursor: pointer;
-  border-radius: var(--radius-md);
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
 
   i {
-    font-size: 0.75rem;
-    transition: transform var(--transition-fast);
+    font-size: 0.7rem;
+    // Chevron rests rotated and unwinds as the group opens.
+    transform: rotate(-90deg);
+    transition: transform 240ms var(--ease);
   }
 
   &:hover {
     background: var(--surface-hover);
-    color: var(--text-primary);
+    color: var(--text);
   }
 }
 
-.sidebar__group-label--expanded i {
-  transform: rotate(180deg);
+.sidebar__group-label--expanded {
+  color: var(--nav-accent-color);
+
+  i {
+    transform: rotate(0deg);
+  }
+}
+
+// Accordion. max-height is the only animatable stand-in for `height: auto`;
+// 360px comfortably clears the tallest group (6 items).
+.sidebar__group-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 240ms var(--ease), opacity 240ms var(--ease);
+}
+
+.sidebar__group-items--open {
+  max-height: 360px;
+  opacity: 1;
 }
 
 .sidebar__link {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-xl);
+  color: var(--text-muted);
   font-size: var(--text-sm);
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
-  transition: background var(--transition-fast), color var(--transition-fast);
-
-  i {
-    font-size: 1rem;
-    flex: none;
-  }
+  transition: color var(--transition-fast);
 
   &:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
+    color: var(--text);
+
+    .sidebar__icon {
+      box-shadow: var(--ai-glow-ring);
+    }
   }
 }
 
+.sidebar__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-lg);
+  background: var(--surface-hover);
+  color: var(--nav-accent-color);
+  font-size: 0.85rem;
+  transition:
+    background 240ms var(--ease),
+    color 240ms var(--ease),
+    box-shadow 240ms var(--ease),
+    scale 240ms var(--ease-spring);
+}
+
 .sidebar__link--active {
-  background: var(--ai-blue-soft);
-  color: var(--ai-blue);
+  color: var(--text);
   font-weight: 600;
+
+  .sidebar__icon {
+    background: var(--nav-accent-grad);
+    color: #fff;
+    scale: 1.05;
+    box-shadow: 0 8px 20px -8px var(--nav-accent-color);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Footer
+// ---------------------------------------------------------------------
+.sidebar__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--ai-divider);
 }
 
 .sidebar__toggle {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ai-glass-border);
+  border-radius: var(--r-xl);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
 
   &:hover {
     background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+
+.sidebar__version {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-subtle);
+  white-space: nowrap;
+}
+
+// ---------------------------------------------------------------------
+// Collapsed rail
+// ---------------------------------------------------------------------
+.side-label {
+  overflow: hidden;
+  transition: opacity 200ms var(--ease), max-width 320ms var(--ease);
+  max-width: 220px;
+  opacity: 1;
+}
+
+.sidebar--collapsed {
+  .side-label {
+    max-width: 0;
+    opacity: 0;
+  }
+
+  .sidebar__brand,
+  .sidebar__link,
+  .sidebar__toggle,
+  .sidebar__footer {
+    justify-content: center;
+  }
+
+  .sidebar__brand {
+    padding-inline: 0;
+  }
+
+  .sidebar__link {
+    gap: 0;
+    justify-content: center;
+  }
+
+  // The toggle gets out of the way once collapsed, and comes back on hover.
+  .sidebar__toggle {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms var(--ease);
+  }
+
+  &:hover .sidebar__toggle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Off-canvas below 900px
+// ---------------------------------------------------------------------
+.sidebar__backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  // Leave the shell grid entirely — the aside below is fixed-positioned.
+  :host {
+    display: contents;
+  }
+
+  .sidebar__backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    background: var(--overlay);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 8px auto 8px 8px;
+    z-index: calc(var(--z-overlay) + 1);
+    width: var(--sidebar-width);
+    transform: translateX(calc(-100% - 12px));
+    transition: transform 320ms var(--ease);
+  }
+
+  .sidebar--mobile-open {
+    transform: translateX(0);
+  }
+
+  // Desktop collapse is irrelevant once off-canvas — always show full labels.
+  .sidebar.sidebar--collapsed {
+    width: var(--sidebar-width);
+
+    .side-label {
+      max-width: 220px;
+      opacity: 1;
+    }
+
+    .sidebar__link {
+      gap: var(--space-3);
+      justify-content: flex-start;
+    }
+
+    .sidebar__toggle {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
 }

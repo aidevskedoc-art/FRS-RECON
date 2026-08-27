@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Table, TableModule } from 'primeng/table';
-import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
@@ -10,6 +9,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { MasterDataService } from '../../../core/services/master-data.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import { DIVISIONS, Division, DivisionBankAccount, DivisionBankAccountDraft } from '../../../core/models';
+import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
 
 function emptyDraft(): DivisionBankAccountDraft {
   return { divisionName: null, accountNumber: '', bankName: '', active: true };
@@ -21,12 +21,12 @@ function emptyDraft(): DivisionBankAccountDraft {
   imports: [
     FormsModule,
     TableModule,
-    ButtonModule,
     InputTextModule,
     SelectModule,
     DialogModule,
     ToggleSwitchModule,
     TooltipModule,
+    PageHeaderComponent,
   ],
   templateUrl: './division-bank-accounts.component.html',
   styleUrl: './division-bank-accounts.component.scss',
@@ -43,6 +43,10 @@ export class DivisionBankAccountsComponent {
   protected readonly formError = signal<string | null>(null);
   protected readonly saving = signal(false);
   protected readonly listError = signal<string | null>(null);
+
+  /** The account queued for deletion. Non-null while the confirm modal is up. */
+  protected readonly pendingDelete = signal<DivisionBankAccount | null>(null);
+  protected readonly deleting = signal(false);
 
   constructor() {
     this.masterData.refresh().subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
@@ -108,7 +112,31 @@ export class DivisionBankAccountsComponent {
     });
   }
 
-  protected deleteAccount(id: string): void {
-    this.masterData.remove(id).subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
+  protected requestDelete(account: DivisionBankAccount): void {
+    this.pendingDelete.set(account);
+  }
+
+  protected cancelDelete(): void {
+    this.pendingDelete.set(null);
+  }
+
+  /** Only reachable from the confirm modal — deletion is never one click. */
+  protected confirmDelete(): void {
+    const account = this.pendingDelete();
+    if (!account || this.deleting()) {
+      return;
+    }
+    this.deleting.set(true);
+    this.masterData.remove(account.id).subscribe({
+      next: () => {
+        this.deleting.set(false);
+        this.pendingDelete.set(null);
+      },
+      error: (err) => {
+        this.deleting.set(false);
+        this.pendingDelete.set(null);
+        this.listError.set(errorMessage(err));
+      },
+    });
   }
 }

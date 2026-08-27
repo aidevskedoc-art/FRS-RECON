@@ -21,7 +21,7 @@ const {
   toLines, valueAfter, valuesAfter, linesAfter, indexOfLabel, indexMatching,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays, shortInsurerName } = require('./common');
+const { tenureDays, shortInsurerName, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /BAJAJ GENERAL INSURANCE LIMITED/i;
 const SIGNATURE = /FAMILY HEALTH CARE POLICY SCHEDULE/i;
@@ -63,7 +63,7 @@ function parseMembers(page7) {
       nomineeName: body[i + offset + 3] ?? null,
       nomineeRelation: body[i + offset + 4] ?? null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(body[i + offset + 2]),
     });
     cursor = i + offset + 5;
   }

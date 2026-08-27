@@ -1,138 +1,117 @@
+<!--
+  Login sits outside the app shell, so it mounts the ambient layers itself.
+  Everything the old bespoke hero background did — orbs, mesh, scan beam,
+  rising particles — is now this one shared component.
+-->
+<app-aurora-background />
+<app-cursor-glow />
+
 <div class="login">
-  <!-- Hero panel -->
-  <section class="login__hero">
-    <div class="login__hero-bg">
-      <span class="login__orb login__orb--blue"></span>
-      <span class="login__orb login__orb--purple"></span>
-      <span class="login__orb login__orb--cyan"></span>
-      <span class="login__grid"></span>
-      <span class="login__scanbeam"></span>
-
-      <svg class="login__mesh" viewBox="0 0 400 400" preserveAspectRatio="none" aria-hidden="true">
-        <line x1="20" y1="60" x2="180" y2="140" />
-        <line x1="180" y1="140" x2="340" y2="80" />
-        <line x1="180" y1="140" x2="120" y2="280" />
-        <line x1="120" y1="280" x2="300" y2="320" />
-        <line x1="300" y1="320" x2="360" y2="200" />
-        <line x1="360" y1="200" x2="340" y2="80" />
-        <circle cx="20" cy="60" r="3" />
-        <circle cx="180" cy="140" r="4" />
-        <circle cx="340" cy="80" r="3" />
-        <circle cx="120" cy="280" r="3.5" />
-        <circle cx="300" cy="320" r="3" />
-        <circle cx="360" cy="200" r="3" />
-      </svg>
-
-      @for (p of particles; track $index) {
-        <span
-          class="login__particle"
-          [style.left.%]="p.left"
-          [style.width.px]="p.size"
-          [style.height.px]="p.size"
-          [style.animation-duration.s]="p.duration"
-          [style.animation-delay.s]="p.delay"
-          [style.--drift]="p.drift + 'px'"
-        ></span>
-      }
-    </div>
-
-    <div class="login__hero-content">
-      <div class="login__hero-badge">
-        <i class="pi pi-sparkles"></i>
-        <span>AI Document Intelligence</span>
-      </div>
-
-      <h1 class="login__hero-title">
-        Insurance policies,<br />
-        <span class="login__hero-title-accent">understood instantly.</span>
-      </h1>
-
-      @for (t of [taglines[taglineIndex()]]; track taglineIndex()) {
-        <p class="login__hero-tagline">{{ t }}</p>
-      }
-
-      <ul class="login__features">
-        @for (f of features; track f.text; let i = $index) {
-          <li class="login__feature" [style.animation-delay.ms]="i * 120">
-            <span class="login__feature-icon"><i [class]="f.icon"></i></span>
-            <span>{{ f.text }}</span>
-          </li>
-        }
-      </ul>
-    </div>
-  </section>
-
-  <!-- Form panel -->
-  <section class="login__panel">
-    <div class="login__card" [class.login__card--shake]="shake()">
-      <div class="login__brand">
-        <div class="login__logo">
-          <i class="pi pi-sparkles"></i>
-        </div>
-        <span class="login__brand-text">FRS Insurance AI</span>
-      </div>
-
-      <div class="login__intro">
-        <h2>Welcome back</h2>
-        <p>Sign in to continue to Insurance Policy Intelligence.</p>
-      </div>
-
-      <form class="login__form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
-        <div class="login__field">
-          <label for="userId">User ID</label>
-          <div class="login__input-wrap">
-            <i class="pi pi-user login__input-icon"></i>
-            <input
-              id="userId"
-              type="text"
-              pInputText
-              formControlName="userId"
-              autocomplete="username"
-              placeholder="Enter your user ID"
-            />
-          </div>
+  <!-- The shell bounds the two columns so the split stays readable on wide
+       monitors instead of stretching edge to edge. -->
+  <div class="login__shell">
+    <!-- Left — product copy. The shared aurora is the only texture here; the
+         dot-grid overlay that used to sit on top read as clutter over it. -->
+    <section class="login__hero">
+      <div class="login__hero-content">
+        <div class="ai-badge login__hero-badge">
+          <span class="ai-spark"><i class="pi pi-sparkles"></i></span>
+          <span>AI Document Intelligence</span>
         </div>
 
-        <div class="login__field">
-          <label for="password">Password</label>
-          <div class="login__input-wrap login__input-wrap--password">
-            <i class="pi pi-lock login__input-icon"></i>
-            <p-password
-              inputId="password"
-              formControlName="password"
-              [feedback]="false"
-              [toggleMask]="true"
-              autocomplete="current-password"
-              placeholder="Enter your password"
-            />
-          </div>
-        </div>
+        <h1 class="login__hero-title ai-display">
+          Insurance policies,<br />
+          <span class="ai-gradient-text-shimmer">understood instantly</span><span class="ai-gradient-text">.</span>
+        </h1>
 
-        @if (loginError()) {
-          <div class="login__error">
-            <i class="pi pi-exclamation-circle"></i>
-            <span>{{ loginError() }}</span>
-          </div>
+        @for (t of [taglines[taglineIndex()]]; track taglineIndex()) {
+          <p class="login__hero-tagline anim-fade-in">{{ t }}</p>
         }
 
-        <button
-          type="submit"
-          pButton
-          class="login__submit"
-          [loading]="submitting()"
-          [disabled]="submitting()"
-        >
-          <span>{{ submitting() ? 'Verifying…' : 'Sign In' }}</span>
-          @if (!submitting()) {
-            <i class="pi pi-arrow-right"></i>
+        <ul class="login__features">
+          @for (f of features; track f.text; let i = $index) {
+            <li class="login__feature anim-fade-up" [style.animation-delay.ms]="120 + i * 120">
+              <span class="login__feature-icon"><i [class]="f.icon"></i></span>
+              <span>{{ f.text }}</span>
+            </li>
           }
-        </button>
-      </form>
-
-      <div class="login__footer">
-        <app-ai-status state="active" label="AI Engine Ready" />
-        <span class="login__footer-note"><i class="pi pi-lock"></i> Secured session</span>
+        </ul>
       </div>
-    </div>
-  </section>
+    </section>
+
+    <!-- Right — the glass card. -->
+    <section class="login__panel">
+      <div class="login__card glass-card glass-card--static" [class.login__card--shake]="shake()">
+        <div class="login__brand">
+          <img class="login__logo" src="logo.svg" alt="Yashoda" width="38" height="38" />
+          <span class="login__brand-text">FRS · Recon</span>
+        </div>
+
+        <div class="login__intro">
+          <h2 class="ai-display">Welcome back<span class="ai-gradient-text">.</span></h2>
+          <p>Sign in to continue to the reconciliation workspace.</p>
+        </div>
+
+        <form class="login__form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+          <div class="field">
+            <label class="field-label" for="userId">User ID</label>
+            <div class="login__input-wrap">
+              <i class="pi pi-user login__input-icon"></i>
+              <input
+                id="userId"
+                type="text"
+                pInputText
+                formControlName="userId"
+                autocomplete="username"
+                placeholder="Enter your user ID"
+              />
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="password">Password</label>
+            <div class="login__input-wrap login__input-wrap--password">
+              <i class="pi pi-lock login__input-icon"></i>
+              <p-password
+                inputId="password"
+                formControlName="password"
+                [feedback]="false"
+                [toggleMask]="true"
+                autocomplete="current-password"
+                placeholder="Enter your password"
+              />
+            </div>
+          </div>
+
+          @if (loginError()) {
+            <div class="modal-error login__error anim-fade-in">
+              <i class="pi pi-exclamation-circle"></i>
+              <span>{{ loginError() }}</span>
+            </div>
+          }
+
+          <button
+            type="submit"
+            class="ai-button-primary login__submit"
+            appMagnetic
+            [magneticStrength]="0.15"
+            [disabled]="submitting()"
+          >
+            <span>{{ submitting() ? 'Verifying…' : 'Sign In' }}</span>
+            <!-- The arrow swaps to a spinner rather than sitting beside one. -->
+            @if (submitting()) {
+              <span class="login__spinner"></span>
+            } @else {
+              <i class="pi pi-arrow-right"></i>
+            }
+          </button>
+        </form>
+
+        <div class="login__footer">
+          <app-ai-status state="active" label="AI Engine Ready" />
+          <span class="login__footer-note"><i class="pi pi-lock"></i> Secured session</span>
+        </div>
+      </div>
+    </section>
+  </div>
 </div>

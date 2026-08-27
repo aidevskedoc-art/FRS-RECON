@@ -37,6 +37,9 @@ const EXCEL_COLUMNS = [
   { key: 'newOrRenewalPolicy', header: 'New/Renewal policy' },
   { key: 'policyholdersAddress', header: "Policyholder's address" },
   { key: 'insuranceCompanyAddress', header: 'Insurance company address' },
+  // Appended rather than inserted: the client's sheet is read by column
+  // position, so adding it at the end leaves the existing 29 where they are.
+  { key: 'documentName', header: 'Document Name' },
 ];
 
 /** Columns repeated per policy — blanked on all but the first member row. */
@@ -46,6 +49,7 @@ const POLICY_LEVEL_KEYS = new Set([
   'totalBasicPremium', 'lessFamilyFloaterDiscount', 'premium', 'gst',
   'totalPremium', 'policyType', 'planChosen', 'customerId', 'receiptNumber',
   'newOrRenewalPolicy', 'policyholdersAddress', 'insuranceCompanyAddress',
+  'documentName',
 ]);
 
 /**
@@ -92,6 +96,7 @@ function toExcelRows(policies) {
         newOrRenewalPolicy: p.newOrRenewal,
         policyholdersAddress: p.policyholderAddress,
         insuranceCompanyAddress: p.insuranceCompanyAddress,
+        documentName: p.documentName,
       };
 
       if (!isFirst) {

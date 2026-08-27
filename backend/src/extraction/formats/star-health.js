@@ -22,7 +22,7 @@ const {
   toLines, valueAfter, indexOfLabel, indexMatching,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays, shortInsurerName } = require('./common');
+const { tenureDays, shortInsurerName, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /Star Health and Allied Insurance/i;
 const SIGNATURE = /Star Health Assure Insurance Policy|POLICY SCHEDULE/i;
@@ -72,7 +72,7 @@ function parseMembers(page3) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(body[i + 3]),
     });
     cursor = i + 10;
   }

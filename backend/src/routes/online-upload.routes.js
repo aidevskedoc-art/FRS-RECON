@@ -7,6 +7,7 @@ const {
   onlineUploadBatchRowToApi,
   onlinePaymentRecordRowToApi,
   bankStatementUploadRowToApi,
+  bankStatementRecordRowToApi,
 } = require('../mappers');
 
 const router = express.Router();
@@ -219,11 +220,62 @@ router.get('/bank-statement/batches', async (req, res, next) => {
   }
 });
 
+// GET /api/online-upload/bank-statement/batches/:id
+router.get('/bank-statement/batches/:id', async (req, res, next) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM bank_statement_uploads WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
+    res.json(bankStatementUploadRowToApi(rows[0]));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/online-upload/bank-statement/batches/:id/records?page=&pageSize=&status=
+router.get('/bank-statement/batches/:id/records', async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
+
+    const clauses = ['batch_id = $1'];
+    const params = [req.params.id];
+    if (req.query.status) {
+      params.push(req.query.status);
+      clauses.push(`match_status = $${params.length}`);
+    }
+    const where = `WHERE ${clauses.join(' AND ')}`;
+
+    const { rows: countRows } = await db.query(`SELECT COUNT(*)::int AS total FROM bank_statement_records ${where}`, params);
+    const { rows } = await db.query(
+      `SELECT * FROM bank_statement_records ${where} ORDER BY txn_date, id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, pageSize, (page - 1) * pageSize],
+    );
+
+    res.json({ total: countRows[0].total, page, pageSize, records: rows.map(bankStatementRecordRowToApi) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/online-upload/bank-statement/batches/:id
 router.delete('/bank-statement/batches/:id', async (req, res, next) => {
   try {
     const { rowCount } = await db.query('DELETE FROM bank_statement_uploads WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/online-upload/bank-statement/records?batchId=  (clears all transactions in a statement, keeps the batch itself)
+router.delete('/bank-statement/records', async (req, res, next) => {
+  try {
+    if (!req.query.batchId) return res.status(400).json({ error: 'batchId is required' });
+    await db.withTransaction(async (client) => {
+      await client.query('DELETE FROM bank_statement_records WHERE batch_id = $1', [req.query.batchId]);
+      await client.query('UPDATE bank_statement_uploads SET row_count = 0 WHERE id = $1', [req.query.batchId]);
+    });
     res.status(204).send();
   } catch (err) {
     next(err);

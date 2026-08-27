@@ -1,36 +1,48 @@
 <div class="history">
-  <div class="history__header">
-    <div>
-      <h2>Processing History</h2>
-      <p>{{ rows().length }} document{{ rows().length === 1 ? '' : 's' }} processed through the pipeline</p>
-    </div>
-    <p-button label="Upload New" icon="pi pi-cloud-upload" routerLink="/insurance-policy/upload" />
-  </div>
+  <app-page-header
+    icon="pi pi-history"
+    title="Processing History"
+    [subtitle]="rows().length + ' document' + (rows().length === 1 ? '' : 's') + ' processed through the pipeline'"
+  >
+    <a actions class="ai-button-primary" routerLink="/insurance-policy/upload">
+      <i class="pi pi-cloud-upload"></i>
+      <span>Upload New</span>
+    </a>
+  </app-page-header>
 
   @if (selectedRows().length > 0) {
-    <div class="bulk-bar">
-      <span>{{ selectedRows().length }} selected</span>
+    <div class="bulk-bar anim-fade-up">
+      <span class="bulk-bar__count"><span class="num">{{ selectedRows().length }}</span> selected</span>
       <div class="bulk-bar__actions">
-        <p-button label="Review" icon="pi pi-eye" size="small" [text]="true" (onClick)="bulkReview()" />
-        <p-button label="Retry" icon="pi pi-refresh" size="small" [text]="true" (onClick)="bulkRetry()" />
+        <button type="button" class="btn btn-ghost btn-sm" (click)="bulkReview()">
+          <i class="pi pi-eye"></i><span>Review</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="bulkRetry()">
+          <i class="pi pi-refresh"></i><span>Retry</span>
+        </button>
         @if (aiFillProgress(); as progress) {
           <span class="bulk-bar__ai-progress">
-            <i class="pi pi-spin pi-spinner"></i> Filling with AI… {{ progress.done }} / {{ progress.total }}
+            <span class="spinner bulk-bar__spinner"></span>
+            Filling with AI… <span class="num">{{ progress.done }}</span> / <span class="num">{{ progress.total }}</span>
           </span>
         } @else {
-          <p-button
-            label="Fill Missing with AI"
-            icon="pi pi-sparkles"
-            size="small"
-            [text]="true"
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
             [disabled]="aiFillableSelectedCount() === 0"
             pTooltip="Runs AI on the {{ aiFillableSelectedCount() }} selected document(s) that already have an extraction result, filling only their blank fields. Failed/in-progress documents are skipped."
             tooltipPosition="bottom"
-            (onClick)="bulkFillMissingWithAi()"
-          />
+            (click)="bulkFillMissingWithAi()"
+          >
+            <i class="pi pi-sparkles"></i><span>Fill Missing with AI</span>
+          </button>
         }
-        <p-button label="Generate Excel" icon="pi pi-file-excel" size="small" [text]="true" (onClick)="bulkGenerateExcel()" />
-        <p-button label="Delete" icon="pi pi-trash" size="small" [text]="true" severity="danger" (onClick)="bulkDelete()" />
+        <button type="button" class="btn btn-ghost btn-sm" (click)="bulkGenerateExcel()">
+          <i class="pi pi-file-excel"></i><span>Generate Excel</span>
+        </button>
+        <button type="button" class="btn btn-danger btn-sm" (click)="bulkDelete()">
+          <i class="pi pi-trash"></i><span>Delete</span>
+        </button>
       </div>
     </div>
     @if (aiFillError(); as err) {
@@ -40,12 +52,18 @@
     }
   }
 
-  <span class="search">
-    <i class="pi pi-search"></i>
-    <input pInputText type="text" placeholder="Search by document, policy number, policyholder…" (input)="onSearch($event, dt)" />
-  </span>
+  <div class="filter-bar">
+    <span class="filter-search">
+      <i class="pi pi-search"></i>
+      <input
+        type="text"
+        placeholder="Search by document, policy number, policyholder…"
+        (input)="onSearch($event, dt)"
+      />
+    </span>
+  </div>
 
-  <div class="history__table-wrap">
+  <div class="history__table-wrap glass-card glass-card--static">
     <p-table
       #dt
       [value]="rows()"
@@ -65,7 +83,7 @@
           <th pSortableColumn="fileName">Document <p-sortIcon field="fileName" /></th>
           <th pSortableColumn="policyNumber">Policy Number <p-sortIcon field="policyNumber" /></th>
           <th pSortableColumn="policyholder">Policyholder <p-sortIcon field="policyholder" /></th>
-          <th pSortableColumn="members">Members <p-sortIcon field="members" /></th>
+          <th pSortableColumn="members" class="align-right">Members <p-sortIcon field="members" /></th>
           <th pSortableColumn="uploadedAt">Uploaded <p-sortIcon field="uploadedAt" /></th>
           <th pSortableColumn="processedAt">Processed <p-sortIcon field="processedAt" /></th>
           <th pSortableColumn="status">Status <p-sortIcon field="status" /></th>
@@ -78,11 +96,11 @@
         <tr>
           <td><p-tableCheckbox [value]="row" /></td>
           <td class="doc-name" [title]="row.fileName">{{ row.fileName }}</td>
-          <td class="mono">{{ row.policyNumber || '—' }}</td>
+          <td class="ref">{{ row.policyNumber || '—' }}</td>
           <td>{{ row.policyholder || '—' }}</td>
-          <td>{{ row.members || '—' }}</td>
-          <td>{{ row.uploadedAt | date: 'mediumDate' }}</td>
-          <td>{{ row.processedAt ? (row.processedAt | date: 'mediumDate') : '—' }}</td>
+          <td class="num align-right">{{ row.members || '—' }}</td>
+          <td class="ref">{{ row.uploadedAt | date: 'mediumDate' }}</td>
+          <td class="ref">{{ row.processedAt ? (row.processedAt | date: 'mediumDate') : '—' }}</td>
           <td>
             <span class="status-pill" [class]="'status-pill--' + statusMetaFor(row.status).severity">
               <i [class]="statusMetaFor(row.status).icon"></i> {{ statusMetaFor(row.status).label }}
@@ -113,7 +131,13 @@
       </ng-template>
       <ng-template #emptymessage>
         <tr>
-          <td colspan="11" class="empty">No documents processed yet.</td>
+          <td colspan="11">
+            <div class="empty-state">
+              <i class="pi pi-inbox"></i>
+              <strong>No documents processed yet</strong>
+              <p>Upload a policy PDF and it will appear here once the pipeline has run.</p>
+            </div>
+          </td>
         </tr>
       </ng-template>
     </p-table>

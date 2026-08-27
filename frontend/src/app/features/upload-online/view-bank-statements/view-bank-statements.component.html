@@ -7,6 +7,13 @@
     <p-button label="Upload Bank Statement" icon="pi pi-cloud-upload" routerLink="/upload-online/bank-statement" />
   </div>
 
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
   <div class="view-statements__table-wrap">
     <p-table [value]="bankStatements.batches()" dataKey="id" styleClass="p-datatable-sm statements-table">
       <ng-template #header>
@@ -41,6 +48,7 @@
           <td>{{ batch.rowCount }}</td>
           <td>{{ batch.uploadedAt | date: 'medium' }}</td>
           <td class="actions-col">
+            <button type="button" class="action-icon" (click)="viewRecords(batch.id)" pTooltip="View Transactions"><i class="pi pi-eye"></i></button>
             <button type="button" class="action-icon action-icon--danger" (click)="deleteBatch(batch.id)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
           </td>
         </tr>

@@ -19,7 +19,7 @@
 
 const { toLines, valueAfter, indexOfLabel } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays } = require('./common');
+const { tenureDays, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /HDFC ERGO General Insurance Company Limited/i;
 const SIGNATURE = /Optima Restore Floater/i;
@@ -52,7 +52,9 @@ function parseMembers(page3raw) {
         nomineeName: null,
         nomineeRelation: null,
         basePremium: null,
-        policyTypeSelfParents: 'A',
+        // Relationship isn't known until attachAttributes fills it in below;
+        // policyTypeSelfParents is (re)computed there once it is.
+        policyTypeSelfParents: policyTypeSelfParentsCode(null),
       };
     });
 }
@@ -82,11 +84,13 @@ function attachAttributes(members, page3) {
 
   return members.map((m, i) => {
     const dobAge = (dobValues[i] || '').match(/^(\d{2}\/\d{2}\/\d{4})\s*\((\d+)\)$/);
+    const relation = relValues[i] && relValues[i] !== '-' ? relValues[i] : null;
     return {
       ...m,
       dateOfBirth: dobAge ? parseDateToIso(dobAge[1].replace(/\//g, '-')) : null,
       age: dobAge ? Number(dobAge[2]) : null,
-      relationWithPolicyHolder: relValues[i] && relValues[i] !== '-' ? relValues[i] : null,
+      relationWithPolicyHolder: relation,
+      policyTypeSelfParents: policyTypeSelfParentsCode(relation),
     };
   });
 }

@@ -1,4 +1,4 @@
-# FRS — Insurance Policy Intelligence
+# FRS - Recon
 
 Upload an insurance policy PDF; the system extracts structured, confidence-scored
 data from it, lets you review and correct that data, stores it in PostgreSQL, and

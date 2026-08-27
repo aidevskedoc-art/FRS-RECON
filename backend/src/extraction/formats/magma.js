@@ -15,7 +15,7 @@
 
 const { toLines, valueAfter, indexOfLabel } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays } = require('./common');
+const { tenureDays, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /Magma General Insurance Limited/i;
 const SIGNATURE = /OneHealth Health Insurance Policy|Policy Schedule\s*\/TAX INVOICE/i;
@@ -52,7 +52,7 @@ function parseMembers(page2) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(body[i + 2]),
     });
     cursor = i + 9;
   }

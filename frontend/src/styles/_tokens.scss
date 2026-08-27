@@ -1,104 +1,240 @@
-// Design tokens — CSS custom properties, consumed by every component's SCSS.
-// Naming convention: --{group}-{scale|role}[-variant]. Never hardcode a color/
-// spacing/radius value in component SCSS — always reference a token here.
+// =====================================================================
+// "AI Glass" design tokens — the single source of truth for colour,
+// elevation, radius and motion. Light theme lives here; the dark theme
+// overrides live in _theme.scss.
+//
+// Rule: no colour literal may appear in a component stylesheet. Every
+// colour routes through a custom property, so the whole app reskins on
+// theme toggle alone.
+//
+// Structure of this file:
+//   1. AI Glass primitives   — the new, authoritative names (--bg, --surface,
+//                              --text, --ai-*, --stat-*, --r-*, --ease…)
+//   2. Legacy token aliases  — the pre-retrofit names (--surface-card,
+//                              --text-primary, --border-subtle…) remapped
+//                              onto the primitives above, so the existing
+//                              component stylesheets re-theme without being
+//                              individually rewritten.
+//   3. Structural scales     — spacing / type / z-index, carried over
+//                              unchanged because component layout depends
+//                              on them.
+// =====================================================================
 
 :root {
-  // ---------------------------------------------------------------------
-  // Neutral scale (slate-leaning, for the "dark navy text on light neutral
-  // base" look the design language calls for)
-  // ---------------------------------------------------------------------
+  color-scheme: light;
+
+  // -------------------------------------------------------------------
+  // 1a. Surfaces & text — light mode is strict editorial monochrome.
+  //     No tinted greys. Semantic status colour and --stat-gradient are
+  //     the only two deliberate exceptions.
+  // -------------------------------------------------------------------
+  --bg: #ffffff;
+  --bg-elev: #ffffff;
+  --surface: #ffffff;
+  --surface-soft: #f7f7f8;
+  --surface-hover: #efeff1;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+
+  --text: #09090b;
+  --text-muted: #6b6b71;
+  --text-subtle: #a1a1aa;
+  --text-inverse: #ffffff;
+  --overlay: rgba(9, 9, 11, 0.5);
+
+  // -------------------------------------------------------------------
+  // 1b. Brand
+  // -------------------------------------------------------------------
+  --brand: #0a0a0a;
+  --brand-hover: #000000;
+  --brand-soft: #f4f4f5;
+  --brand-ring: rgba(10, 10, 10, 0.14);
+
+  // Topbar masthead uses flat ink, deliberately NOT the AI gradient — an
+  // official-letterhead counterweight to the electric palette.
+  --brand-ink: #09090b;
+  --brand-sub-ink: #6b6b71;
+
+  // -------------------------------------------------------------------
+  // 1c. Semantic status — the monochrome exception, so risk stays scannable
+  // -------------------------------------------------------------------
+  --success: #10b981;
+  --success-soft: #ecfdf5;
+  --warning: #f59e0b;
+  --warning-soft: #fffbeb;
+  --orange: #f97316;
+  --orange-soft: #fff7ed;
+  --info: #0ea5e9;
+  --info-soft: #f0f9ff;
+  --danger: #ef4444;
+  --danger-soft: #fef2f2;
+
+  // -------------------------------------------------------------------
+  // 1d. AI Glass primitives — monochrome ink/silver sheen in light mode
+  // -------------------------------------------------------------------
+  --ai-primary: #0a0a0a;
+  --ai-primary-2: #262626;
+  --ai-accent: #171717;
+  --ai-ai: #404040;
+  --ai-gradient: linear-gradient(135deg, #0a0a0a 0%, #34343a 50%, #0a0a0a 100%);
+  --ai-gradient-soft: linear-gradient(
+    135deg,
+    rgba(10, 10, 10, 0.05) 0%,
+    rgba(10, 10, 10, 0.02) 50%,
+    rgba(10, 10, 10, 0.05) 100%
+  );
+  --ai-glow-ring: 0 0 0 6px rgba(10, 10, 10, 0.12);
+  --ai-glass-tint: rgba(255, 255, 255, 0.65);
+  --ai-glass-border: rgba(9, 9, 11, 0.09);
+  --ai-glass-shadow: 0 24px 60px -24px rgba(9, 9, 11, 0.14), 0 8px 24px -12px rgba(99, 102, 241, 0.1);
+  --ai-glass-blur: 22px;
+  --ai-divider: rgba(9, 9, 11, 0.06);
+
+  // -------------------------------------------------------------------
+  // 1e. Ambient aurora + dot grid (consumed by the fixed background layer)
+  // -------------------------------------------------------------------
+  --ai-aurora-1: rgba(99, 102, 241, 0.13);
+  --ai-aurora-2: rgba(139, 92, 246, 0.11);
+  --ai-aurora-3: rgba(6, 182, 212, 0.1);
+  --ai-aurora-4: rgba(249, 115, 22, 0.06);
+  --ai-grid-line: rgba(9, 9, 11, 0.045);
+  --glow-card: 0 8px 30px -10px rgba(79, 70, 229, 0.22);
+  --cursor-glow-blend: normal;
+  --aurora-canvas-opacity: 0.5;
+
+  // -------------------------------------------------------------------
+  // 1f. KPI / hero highlight — real electric colour even in light mode
+  // -------------------------------------------------------------------
+  --stat-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #0891b2 100%);
+  --stat-gradient-soft: linear-gradient(
+    135deg,
+    rgba(79, 70, 229, 0.12) 0%,
+    rgba(124, 58, 237, 0.1) 50%,
+    rgba(8, 145, 178, 0.1) 100%
+  );
+  --stat-accent: #4f46e5;
+
+  // -------------------------------------------------------------------
+  // 1g. Radius / shadow / motion / shell metrics
+  // -------------------------------------------------------------------
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --r-2xl: 28px;
+  --r-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 2px 4px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 8px 24px -8px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --shadow-xl: 0 16px 40px -12px rgba(15, 23, 42, 0.18), 0 4px 10px rgba(15, 23, 42, 0.06);
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, Menlo, monospace;
+  --font-serif: Georgia, 'Times New Roman', serif;
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --sidebar-width: 276px;
+  --sidebar-width-collapsed: 84px;
+  --topbar-height: 84px;
+  --shell-gap: 14px;
+
+  // Native <select> chevron, recoloured per theme so selects match the
+  // rest of the form controls (appearance: none kills the built-in arrow).
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' stroke='%236b6b71' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
+  // ===================================================================
+  // 2. LEGACY TOKEN ALIASES
+  //
+  // Pre-retrofit component stylesheets reference these names directly.
+  // Pointing them at the primitives above is what lets the untouched
+  // feature stylesheets inherit the AI Glass palette (and its dark
+  // theme) for free. Do not use these names in NEW code — use the
+  // primitives.
+  // ===================================================================
   --neutral-0: #ffffff;
-  --neutral-50: #f8fafc;
-  --neutral-100: #f1f5f9;
-  --neutral-200: #e2e8f0;
-  --neutral-300: #cbd5e1;
-  --neutral-400: #94a3b8;
-  --neutral-500: #64748b;
-  --neutral-600: #475569;
-  --neutral-700: #334155;
-  --neutral-800: #1e293b;
-  --neutral-900: #0f172a;
-  --neutral-950: #020617;
+  --neutral-50: #fafafa;
+  --neutral-100: #f4f4f5;
+  --neutral-200: #e4e4e7;
+  --neutral-300: #d4d4d8;
+  --neutral-400: #a1a1aa;
+  --neutral-500: #71717a;
+  --neutral-600: #52525b;
+  --neutral-700: #3f3f46;
+  --neutral-800: #27272a;
+  --neutral-900: #18181b;
+  --neutral-950: #09090b;
 
-  // ---------------------------------------------------------------------
-  // Semantic surface / text / border roles — components reference these,
-  // never the raw neutral scale directly, so theme.scss can flip them.
-  // ---------------------------------------------------------------------
-  --surface-app: var(--neutral-50);
-  --surface-card: var(--neutral-0);
-  --surface-sunken: var(--neutral-100);
-  --surface-hover: var(--neutral-100);
-  --surface-overlay: var(--neutral-0);
+  --surface-app: var(--bg);
+  --surface-card: var(--surface);
+  --surface-sunken: var(--surface-soft);
+  --surface-overlay: var(--surface);
+  --surface-glass: var(--ai-glass-tint);
+  --glass-border: var(--ai-glass-border);
+  --glass-blur: var(--ai-glass-blur);
 
-  --text-primary: var(--neutral-900);
-  --text-secondary: var(--neutral-600);
-  --text-tertiary: var(--neutral-400);
-  --text-inverse: var(--neutral-0);
+  --text-primary: var(--text);
+  --text-secondary: var(--text-muted);
+  --text-tertiary: var(--text-subtle);
 
-  --border-subtle: var(--neutral-200);
-  --border-default: var(--neutral-300);
+  --border-subtle: var(--border);
+  --border-default: var(--border-strong);
 
-  // ---------------------------------------------------------------------
-  // AI brand accents — decorative only (glass cards, progress glow, active
-  // nav states). Never reused for confidence/validation status below —
-  // those answer "is this trustworthy," these answer "this is AI at work."
-  // ---------------------------------------------------------------------
-  --ai-blue: #2563eb;
-  --ai-blue-soft: #eff6ff;
-  --ai-cyan: #06b6d4;
-  --ai-cyan-soft: #ecfeff;
+  // The old decorative "AI accent" trio now rides the stat gradient, which
+  // is the one place light mode is allowed real hue.
+  --ai-blue: var(--stat-accent);
+  --ai-blue-soft: rgba(79, 70, 229, 0.1);
+  --ai-cyan: #0891b2;
+  --ai-cyan-soft: rgba(8, 145, 178, 0.1);
   --ai-purple: #7c3aed;
-  --ai-purple-soft: #f5f3ff;
-  --ai-gradient: linear-gradient(135deg, var(--ai-blue), var(--ai-purple));
-  --ai-gradient-soft: linear-gradient(135deg, var(--ai-blue-soft), var(--ai-purple-soft));
+  --ai-purple-soft: rgba(124, 58, 237, 0.1);
 
-  --surface-glass: rgba(255, 255, 255, 0.66);
-  --glass-border: rgba(255, 255, 255, 0.5);
-  --glass-blur: 16px;
+  --status-success-fg: var(--success);
+  --status-success-bg: var(--success-soft);
+  --status-success-border: rgba(16, 185, 129, 0.28);
+  --status-warning-fg: var(--warning);
+  --status-warning-bg: var(--warning-soft);
+  --status-warning-border: rgba(245, 158, 11, 0.3);
+  --status-danger-fg: var(--danger);
+  --status-danger-bg: var(--danger-soft);
+  --status-danger-border: rgba(239, 68, 68, 0.28);
+  --status-info-fg: var(--info);
+  --status-info-bg: var(--info-soft);
+  --status-info-border: rgba(14, 165, 233, 0.28);
+  --status-neutral-fg: var(--text-muted);
+  --status-neutral-bg: var(--surface-soft);
+  --status-neutral-border: var(--border);
 
-  // ---------------------------------------------------------------------
-  // General semantic status (document/policy states — Uploaded, Completed,
-  // Needs Review, Failed, etc.)
-  // ---------------------------------------------------------------------
-  --status-success-fg: #0f7a3d;
-  --status-success-bg: #e7f7ee;
-  --status-success-border: #b6e3c8;
+  --confidence-high-fg: var(--success);
+  --confidence-high-bg: var(--success-soft);
+  --confidence-high-border: rgba(16, 185, 129, 0.28);
+  --confidence-medium-fg: var(--warning);
+  --confidence-medium-bg: var(--warning-soft);
+  --confidence-medium-border: rgba(245, 158, 11, 0.3);
+  --confidence-low-fg: var(--danger);
+  --confidence-low-bg: var(--danger-soft);
+  --confidence-low-border: rgba(239, 68, 68, 0.28);
 
-  --status-warning-fg: #92660a;
-  --status-warning-bg: #fdf3d9;
-  --status-warning-border: #f2d98a;
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-xl);
+  --radius-xl: var(--r-2xl);
+  --radius-pill: var(--r-pill);
 
-  --status-danger-fg: #b91c2c;
-  --status-danger-bg: #fce8e8;
-  --status-danger-border: #f2b7bc;
+  --shadow-glow-blue: var(--glow-card);
 
-  --status-info-fg: #1d4ed8;
-  --status-info-bg: #eaf1fe;
-  --status-info-border: #bcd4fb;
+  --transition-fast: 120ms var(--ease);
+  --transition-base: 200ms var(--ease);
+  --transition-slow: 320ms var(--ease);
 
-  --status-neutral-fg: var(--neutral-600);
-  --status-neutral-bg: var(--neutral-100);
-  --status-neutral-border: var(--neutral-300);
-
-  // ---------------------------------------------------------------------
-  // Confidence — separate palette, same 3-level shape as status, but
-  // dedicated to "trust this AI-extracted value?" only.
-  // ---------------------------------------------------------------------
-  --confidence-high-fg: #0f7a3d;
-  --confidence-high-bg: #e7f7ee;
-  --confidence-high-border: #b6e3c8;
-
-  --confidence-medium-fg: #92660a;
-  --confidence-medium-bg: #fdf3d9;
-  --confidence-medium-border: #f2d98a;
-
-  --confidence-low-fg: #b91c2c;
-  --confidence-low-bg: #fce8e8;
-  --confidence-low-border: #f2b7bc;
-
-  // ---------------------------------------------------------------------
-  // Spacing — 4px base
-  // ---------------------------------------------------------------------
+  // ===================================================================
+  // 3. STRUCTURAL SCALES — carried over unchanged. Component layout is
+  //    built on these; changing the ramp would reflow every screen.
+  //    (--space-1…6 already match the AI Glass 4px ramp exactly.)
+  // ===================================================================
   --space-0: 0;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -111,9 +247,6 @@
   --space-9: 3rem;
   --space-10: 4rem;
 
-  // ---------------------------------------------------------------------
-  // Type scale
-  // ---------------------------------------------------------------------
   --text-2xs: 0.6875rem;
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
@@ -124,28 +257,9 @@
   --text-2xl: 1.5rem;
   --text-3xl: 1.875rem;
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-
-  // ---------------------------------------------------------------------
-  // Radii / shadows / z-index / transitions
-  // ---------------------------------------------------------------------
-  --radius-sm: 0.375rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 0.875rem;
-  --radius-pill: 999px;
-
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
-  --shadow-glow-blue: 0 0 0 1px rgba(37, 99, 235, 0.12), 0 8px 24px rgba(37, 99, 235, 0.16);
-
   --z-dropdown: 1000;
   --z-sticky: 1100;
   --z-overlay: 1200;
   --z-modal: 1300;
   --z-toast: 1400;
-
-  --transition-fast: 120ms ease;
-  --transition-base: 200ms ease;
-  --transition-slow: 320ms ease;
 }

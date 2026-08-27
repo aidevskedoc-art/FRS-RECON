@@ -6,87 +6,48 @@
   gap: var(--space-4);
 }
 
-.division-accounts__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-
-  h2 {
-    margin: 0;
-    font-size: var(--text-xl);
-    color: var(--text-primary);
-  }
-
-  p {
-    margin: var(--space-1) 0 0;
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-  }
-}
-
 .notice {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
+  border-radius: var(--r-xl);
   font-size: var(--text-sm);
 }
 
 .notice--danger {
-  color: var(--status-danger-fg);
-  background: var(--status-danger-bg);
+  color: var(--danger);
+  background: var(--danger-soft);
   border: 1px solid var(--status-danger-border);
 }
 
-.search {
-  position: relative;
-  max-width: 380px;
-
-  i {
-    position: absolute;
-    left: var(--space-3);
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-tertiary);
-    font-size: var(--text-sm);
-  }
-
-  input {
-    width: 100%;
-    padding-left: var(--space-7);
-  }
+.filter-search {
+  max-width: 420px;
 }
 
+// The glass card owns the frame; table chrome comes from the PrimeNG bridge.
 .division-accounts__table-wrap {
-  @include mixins.card;
   @include mixins.scrollbar-thin;
   overflow: auto;
 }
 
 :host ::ng-deep .accounts-table {
-  .p-datatable-thead > tr > th {
-    background: var(--surface-sunken);
-    white-space: nowrap;
-  }
-
+  .p-datatable-thead > tr > th,
   .p-datatable-tbody > tr > td {
     white-space: nowrap;
   }
 }
 
-.mono {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: var(--text-sm);
-}
-
+// Active/inactive is a toggle, not a label — so it's a button that looks
+// like a status pill, and it says so on hover.
 .status-pill {
-  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
-  border: 1px solid var(--status-neutral-border);
+  @include mixins.status-chip(var(--text-muted), var(--surface-soft), var(--border));
   cursor: pointer;
   font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   transition: opacity var(--transition-fast);
 
   &:hover {
@@ -95,9 +56,9 @@
 }
 
 .status-pill--active {
-  color: var(--status-success-fg);
-  background: var(--status-success-bg);
-  border-color: var(--status-success-border);
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: transparent;
 }
 
 .actions-col {
@@ -106,43 +67,31 @@
 }
 
 .action-icon {
-  border: none;
-  background: none;
-  color: var(--text-secondary);
-  cursor: pointer;
   padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 
   &:hover {
     background: var(--surface-hover);
-    color: var(--ai-blue);
+    color: var(--brand);
   }
 }
 
 .action-icon--danger:hover {
-  color: var(--status-danger-fg);
+  color: var(--danger);
 }
 
-.empty {
-  text-align: center;
-  padding: var(--space-8);
-  color: var(--text-tertiary);
-}
-
+// ---------------------------------------------------------------------
+// Create / edit form
+// ---------------------------------------------------------------------
 .form {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    font-size: var(--text-sm);
-    color: var(--text-secondary);
-    font-weight: 500;
-  }
 
   input,
   .full-width {
@@ -151,7 +100,43 @@
 }
 
 .form__switch {
-  flex-direction: row !important;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
+}
+
+// ---------------------------------------------------------------------
+// Delete confirmation
+// ---------------------------------------------------------------------
+.confirm-copy {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-muted);
+
+  strong {
+    color: var(--text);
+  }
+}
+
+// The confirm button carries the destructive colour, not the brand's — the
+// modal's primary action here is the dangerous one.
+.confirm-delete {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(239, 68, 68, 0.35);
+
+  &:hover:not(:disabled) {
+    background: var(--danger);
+    filter: brightness(0.94);
+  }
+}
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
 }

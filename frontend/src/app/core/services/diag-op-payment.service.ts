@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
-import { OnlinePaymentRecordsPage, OnlinePaymentRecordsQuery, OnlineUploadBatch } from '../models';
+import { OnlinePaymentRecordsPage, OnlinePaymentRecordsQuery, OnlineUploadBatch, RecordFilterOptions } from '../models';
 import { API_BASE_URL } from '../config/api.config';
 
 /** Dedicated Diag OP Payments table (diag_op_upload_batches / diag_op_payment_records) — Format 2 only. */
@@ -59,6 +59,11 @@ export class DiagOpPaymentService {
   /** DELETE /api/diag-op-payments/records?batchId= — clears every row in the batch, keeps the batch itself. */
   deleteAllRecords(batchId: string): Observable<void> {
     return this.http.delete<void>(`${API_BASE_URL}/diag-op-payments/records`, { params: { batchId } });
+  }
+
+  /** GET /api/diag-op-payments/records/filter-options?batchId= — distinct Pay Mode / Pay Type values for the filter dropdowns. */
+  fetchFilterOptions(batchId: string): Observable<RecordFilterOptions> {
+    return this.http.get<RecordFilterOptions>(`${API_BASE_URL}/diag-op-payments/records/filter-options`, { params: { batchId } });
   }
 
   /** GET /api/diag-op-payments/records/export.xlsx — streams the filtered set as a workbook. */

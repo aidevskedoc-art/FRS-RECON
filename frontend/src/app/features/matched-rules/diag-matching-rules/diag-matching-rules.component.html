@@ -1,0 +1,229 @@
+<div class="matching-rules">
+  <div class="matching-rules__header">
+    <div>
+      <h2>Diagnostics Payment Matching Rules</h2>
+      <p>{{ allRules().length }} rule{{ allRules().length === 1 ? '' : 's' }} — settings and exceptions share one prioritized list</p>
+    </div>
+    <p-button label="Add Rule" icon="pi pi-plus" (onClick)="openAdd()" />
+  </div>
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <span class="search">
+    <i class="pi pi-search"></i>
+    <input pInputText type="text" placeholder="Search rule name, condition, status…" (input)="onSearchInput($event, dt)" />
+  </span>
+
+  <div class="matching-rules__table-wrap">
+    <p-table
+      #dt
+      [value]="allRules()"
+      dataKey="id"
+      [paginator]="allRules().length > 10"
+      [rows]="10"
+      [globalFilterFields]="['name', 'field', 'value', 'action']"
+      styleClass="p-datatable-sm rules-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th class="priority-col" pTooltip="Evaluation order — the first active rule whose condition matches (or has none) wins, per field">Priority</th>
+          <th>Name</th>
+          <th>Condition</th>
+          <th>Match Status</th>
+          <th>Config Overrides</th>
+          <th>Active</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-rule>
+        <tr>
+          <td class="priority-col">
+            <button type="button" class="action-icon" [disabled]="isFirst(rule) || reordering()" (click)="moveRule(rule, -1)" pTooltip="Move up">
+              <i class="pi pi-arrow-up"></i>
+            </button>
+            <button type="button" class="action-icon" [disabled]="isLast(rule) || reordering()" (click)="moveRule(rule, 1)" pTooltip="Move down">
+              <i class="pi pi-arrow-down"></i>
+            </button>
+          </td>
+          <td>{{ rule.name }}</td>
+          <td class="mono wrap">{{ conditionSummary(rule) }}</td>
+          <td>{{ actionLabel(rule.action) }}</td>
+          <td class="wrap" [pTooltip]="overrideSummary(rule)">{{ overrideSummary(rule) }}</td>
+          <td>
+            <button
+              type="button"
+              class="status-pill"
+              [class.status-pill--active]="rule.active"
+              (click)="toggleActive(rule)"
+              [pTooltip]="rule.active ? 'Click to deactivate' : 'Click to activate'"
+            >
+              {{ rule.active ? 'Active' : 'Inactive' }}
+            </button>
+          </td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="openEdit(rule)" pTooltip="Edit"><i class="pi pi-pencil"></i></button>
+            <button type="button" class="action-icon action-icon--danger" (click)="deleteRule(rule.id)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="7" class="empty">No rules yet.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  <p-dialog
+    [header]="editingId() ? 'Edit Rule' : 'Add Rule'"
+    [visible]="dialogVisible()"
+    (visibleChange)="dialogVisible.set($event)"
+    [modal]="true"
+    [style]="{ width: '34rem' }"
+  >
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="notice notice--danger">
+          <i class="pi pi-times-circle"></i>
+          {{ err }}
+        </div>
+      }
+      <label>
+        <span>Name</span>
+        <input pInputText type="text" [ngModel]="draft().name" (ngModelChange)="updateDraft({ name: $event })" placeholder="e.g. Exclude cash payments" />
+      </label>
+
+      <section class="form-section">
+        <label class="form__switch">
+          <span>Only apply when a condition matches</span>
+          <p-toggleswitch [ngModel]="hasCondition()" (ngModelChange)="toggleCondition($event)" />
+        </label>
+        @if (hasCondition()) {
+          <label>
+            <span>Field</span>
+            <p-select
+              [options]="fieldOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().field"
+              (ngModelChange)="updateDraft({ field: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+          <label>
+            <span>Operator</span>
+            <p-select
+              [options]="operatorOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().operator"
+              (ngModelChange)="updateDraft({ operator: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+          <label>
+            <span>Value</span>
+            <input pInputText type="text" [ngModel]="draft().value" (ngModelChange)="updateDraft({ value: $event })" placeholder="e.g. CASH" />
+          </label>
+        } @else {
+          <p class="form-section__hint">No condition — this rule always applies.</p>
+        }
+      </section>
+
+      <section class="form-section">
+        <label>
+          <span>Match Status</span>
+          <p-select
+            [options]="actionOptions"
+            optionLabel="label"
+            optionValue="value"
+            [ngModel]="draft().action"
+            (ngModelChange)="updateDraft({ action: $event })"
+            placeholder="No match-status override"
+            [showClear]="true"
+            appendTo="body"
+            styleClass="full-width"
+          />
+        </label>
+      </section>
+
+      <section class="form-section">
+        <p class="form-section__title">Matching config overrides</p>
+        <p class="form-section__hint">Only used when this rule's condition matches (or always, if it has none). Off = inherit from the next rule, or the engine default.</p>
+        @for (meta of configFields; track meta.field) {
+          <div class="config-row" [class.config-row--disabled]="isOverrideDisabled(meta)">
+            <label class="form__switch">
+              <span>{{ meta.label }}</span>
+              <p-toggleswitch
+                [ngModel]="isOverrideEnabled(meta.field)"
+                (ngModelChange)="toggleOverride(meta.field, $event)"
+                [disabled]="isOverrideDisabled(meta)"
+              />
+            </label>
+            @if (isOverrideDisabled(meta)) {
+              <p class="config-row__hint">Requires no condition — this setting affects how records are grouped.</p>
+            } @else if (isOverrideEnabled(meta.field)) {
+              @if (meta.kind === 'toggle') {
+                <label class="form__switch config-row__control">
+                  <span>Enabled</span>
+                  <p-toggleswitch
+                    [ngModel]="draft()[meta.field] === 'ENABLED'"
+                    (ngModelChange)="setOverrideValue(meta.field, $event ? 'ENABLED' : 'DISABLED')"
+                  />
+                </label>
+              } @else if (meta.kind === 'number') {
+                <input
+                  pInputText
+                  type="number"
+                  min="0"
+                  class="config-row__control"
+                  [ngModel]="draft()[meta.field]"
+                  (ngModelChange)="setOverrideValue(meta.field, $event)"
+                />
+              } @else if (meta.kind === 'select') {
+                <p-select
+                  [options]="meta.selectOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  class="config-row__control"
+                  [ngModel]="draft()[meta.field]"
+                  (ngModelChange)="setOverrideValue(meta.field, $event)"
+                  appendTo="body"
+                  styleClass="full-width"
+                />
+              } @else if (meta.kind === 'multiSelect') {
+                <div class="config-row__control">
+                  @for (opt of optionsForField(meta.field); track opt.value) {
+                    <label class="form__switch">
+                      <span>{{ opt.label }}</span>
+                      <p-toggleswitch
+                        [ngModel]="isMultiSelectChecked(meta.field, opt.value)"
+                        (ngModelChange)="toggleMultiSelectValue(meta.field, opt.value, $event)"
+                      />
+                    </label>
+                  }
+                </div>
+              }
+            }
+          </div>
+        }
+      </section>
+
+      <label class="form__switch">
+        <span>Active</span>
+        <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
+      </label>
+    </div>
+    <ng-template #footer>
+      <p-button label="Cancel" severity="secondary" [text]="true" [disabled]="saving()" (onClick)="dialogVisible.set(false)" />
+      <p-button [label]="editingId() ? 'Save' : 'Add Rule'" icon="pi pi-check" [loading]="saving()" (onClick)="save()" />
+    </ng-template>
+  </p-dialog>
+</div>

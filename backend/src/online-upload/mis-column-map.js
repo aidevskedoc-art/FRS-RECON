@@ -48,6 +48,38 @@ const FORMAT_1_COLUMNS = [
   'userName',           // 20: source "emp name"
 ];
 
+/**
+ * SBD's IP-online export (e.g. "SBD-01.IP ONLINE DATA.xls") is a genuinely
+ * different physical layout from the HTC export FORMAT_1_COLUMNS was built
+ * from — it drops the YHNO column entirely and drops one of the pay-type
+ * columns, so applying FORMAT_1_COLUMNS to it reads every field from
+ * "Payment Mode" onward out of the wrong cell. Derived the same way as
+ * FORMAT_1_COLUMNS: verified row-by-row against a real SBD-01 export.
+ * Selected automatically in mis-parser.js when the sheet's header row has
+ * no "YHNO" column — there is no separate yhno/remarks value to carry for
+ * this layout, so those two fields are simply absent (stored as null).
+ */
+const FORMAT_1_COLUMNS_SBD = [
+  null,               // 0: source "Slno" — serial number, not stored
+  'receiptNumber',    // 1: source "Receipt Number" — already aligned
+  'receiptDate',      // 2: source "Receipt Date" — already aligned
+  'ipNo',             // 3: source "IPNO" — already aligned (no YHNO column)
+  'patientName',      // 4: source "Patient Name" — already aligned
+  'transactionRef1',  // 5: source "Transaction Id" — already aligned
+  'transactionRef2',  // 6: source "Payment Mode"
+  'paymentMode',      // 7: source "Bank Name"
+  'payType',          // 8: source "Payment Remarks"
+  'paymentRemarks',   // 9: source "Pat Type"
+  'patType',          // 10: source blank column
+  'billAmount',       // 11: source "Bill Amount" — already aligned
+  'cashAmount',       // 12: source "Cash Amount" — already aligned
+  'cardAmount',       // 13: source "Card Amount" — already aligned
+  'chequeAmount',     // 14: source "Cheque Amount" — already aligned
+  'onlineUpiAmount',  // 15: source "Online Amount" — already aligned
+  'userId',           // 16: source "User ID" — already aligned
+  'userName',         // 17: source "User Name" — already aligned
+];
+
 const FORMAT_2_COLUMNS = [
   null,               // 0: source "Slno" — serial number, not stored
   'receiptNumber',    // 1: source "Receipt Number" — already aligned
@@ -73,4 +105,4 @@ const FORMAT_2_COLUMNS = [
   'userName',                // 21: source "empname"
 ];
 
-module.exports = { FORMAT_1_COLUMNS, FORMAT_2_COLUMNS, DATE_FIELD, AMOUNT_FIELDS };
+module.exports = { FORMAT_1_COLUMNS, FORMAT_1_COLUMNS_SBD, FORMAT_2_COLUMNS, DATE_FIELD, AMOUNT_FIELDS };

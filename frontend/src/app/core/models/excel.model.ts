@@ -35,6 +35,7 @@ export interface ExcelRow {
   newOrRenewalPolicy: string;
   policyholdersAddress: string;
   insuranceCompanyAddress: string;
+  documentName: string;
 }
 
 export interface ExcelColumnDef {
@@ -72,4 +73,5 @@ export const EXCEL_COLUMN_HEADERS: ReadonlyArray<ExcelColumnDef> = [
   { key: 'newOrRenewalPolicy', header: 'New/Renewal policy' },
   { key: 'policyholdersAddress', header: "Policyholder's address" },
   { key: 'insuranceCompanyAddress', header: 'Insurance company address' },
+  { key: 'documentName', header: 'Document Name' },
 ];

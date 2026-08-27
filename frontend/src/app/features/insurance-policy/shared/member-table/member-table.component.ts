@@ -31,7 +31,7 @@ function emptyDraft(): MemberDraft {
     gender: 'Male',
     occupation: '',
     basePremium: 0,
-    // Matches the constant the client's output template uses for this column.
+    // 'Self' is the default relation above, so this starts as the non-parent code.
     policyTypeSelfParents: 'A',
     nomineeName: '',
     nomineeRelation: '',

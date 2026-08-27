@@ -12,6 +12,7 @@
             uploaded {{ b.uploadedAt | date: 'medium' }}
             @if (b.uploadedBy) { by {{ b.uploadedBy }} }
           </p>
+          @if (b.unitName) { <p class="unit-name">{{ b.unitName }}</p> }
         </div>
       </div>
     }
@@ -24,12 +25,40 @@
     </div>
   }
 
+  @if (batch()?.rulesChangedSinceGenerate) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      Matching rules have changed since this batch was last generated — click Regenerate Matches to apply them.
+    </div>
+  }
+
+  <div class="generate-bar">
+    <p-button
+      [label]="matchesGenerated() ? 'Regenerate Matches' : 'Generate'"
+      icon="pi pi-refresh"
+      size="small"
+      [loading]="matchesLoading()"
+      (onClick)="generateMatches()"
+    />
+    @if (matchesGenerated() && !matchesLoading() && !batch()?.rulesChangedSinceGenerate) {
+      <span class="generate-bar__hint"><i class="pi pi-check-circle"></i> Matched against the bank statement</span>
+    }
+  </div>
+
+  <div class="filter-tabs">
+    <button type="button" class="filter-tab" [class.filter-tab--active]="statusFilter() === 'ALL'" (click)="setStatus('ALL')">All</button>
+    <button type="button" class="filter-tab" [class.filter-tab--active]="statusFilter() === 'MATCHED'" [disabled]="!matchesGenerated() || matchesLoading()" (click)="setStatus('MATCHED')">Matched</button>
+    <button type="button" class="filter-tab" [class.filter-tab--active]="statusFilter() === 'AMOUNT_MISMATCH'" [disabled]="!matchesGenerated() || matchesLoading()" (click)="setStatus('AMOUNT_MISMATCH')">Amount Mismatch</button>
+    <button type="button" class="filter-tab" [class.filter-tab--active]="statusFilter() === 'UNMATCHED'" [disabled]="!matchesGenerated() || matchesLoading()" (click)="setStatus('UNMATCHED')">Unmatched</button>
+  </div>
+
   <div class="filters">
     <span class="filters__search">
       <i class="pi pi-search"></i>
       <input pInputText type="text" placeholder="Search patient, receipt, reference, user…" [(ngModel)]="search" (keyup.enter)="applyFilters()" />
     </span>
-    <input pInputText type="text" placeholder="Pay Type" [(ngModel)]="payType" (keyup.enter)="applyFilters()" class="filters__field" />
+    <p-select [options]="paymentModeOptions()" optionLabel="label" optionValue="value" [(ngModel)]="paymentMode" (onChange)="applyFilters()" class="filters__field" />
+    <p-select [options]="payTypeOptions()" optionLabel="label" optionValue="value" [(ngModel)]="payType" (onChange)="applyFilters()" class="filters__field" />
     <input pInputText type="text" placeholder="Pat Type" [(ngModel)]="patType" (keyup.enter)="applyFilters()" class="filters__field" />
     <input type="date" [(ngModel)]="dateFrom" class="filters__date" />
     <span class="filters__to">to</span>
@@ -38,6 +67,7 @@
 
     <span class="filters__spacer"></span>
 
+    <p-button label="Manage Rules" icon="pi pi-cog" size="small" [outlined]="true" routerLink="/matched-rules/ip-payment-rules/manage" />
     <p-button label="Download" icon="pi pi-download" size="small" [outlined]="true" (onClick)="download()" />
     <p-button label="Delete All" icon="pi pi-trash" size="small" severity="danger" [outlined]="true" (onClick)="deleteAll()" />
   </div>
@@ -58,6 +88,10 @@
     >
       <ng-template #header>
         <tr>
+          <th>Status</th>
+          <th>Rule Applied</th>
+          <th>Match Basis</th>
+          <th>Matched Bank A/C No</th>
           @for (col of columns; track col.key) {
             <th>{{ col.header }}</th>
           }
@@ -65,6 +99,18 @@
       </ng-template>
       <ng-template #body let-record>
         <tr>
+          <td>
+            <span
+              class="status-pill"
+              [class.status-pill--matched]="record.matchStatus === 'MATCHED'"
+              [class.status-pill--mismatch]="record.matchStatus === 'AMOUNT_MISMATCH'"
+              [class.status-pill--unmatched]="record.matchStatus === 'UNMATCHED'"
+              [pTooltip]="statusTooltip(record)"
+            >{{ record.matchStatus ? statusLabel(record.matchStatus) : (matchesGenerated() ? 'Excluded' : 'Not generated') }}</span>
+          </td>
+          <td class="wrap" [title]="record.matchAppliedRule">{{ record.matchAppliedRule || (matchesGenerated() ? '—' : '') }}</td>
+          <td class="wrap" [title]="record.matchReason">{{ record.matchReason || (matchesGenerated() ? '—' : '') }}</td>
+          <td class="mono">{{ record.matchedBank?.accountNo || (matchesGenerated() ? '—' : '') }}</td>
           @for (col of columns; track col.key) {
             <td
               [class.mono]="col.key === 'receiptNumber' || col.key === 'yhno'"
@@ -75,7 +121,7 @@
       </ng-template>
       <ng-template #emptymessage>
         <tr>
-          <td [attr.colspan]="columns.length" class="empty">No records match this filter.</td>
+          <td [attr.colspan]="columns.length + 4" class="empty">No records match this filter.</td>
         </tr>
       </ng-template>
     </p-table>

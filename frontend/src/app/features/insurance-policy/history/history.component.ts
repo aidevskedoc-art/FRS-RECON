@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { ButtonModule } from 'primeng/button';
 import { TableModule, Table } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { TooltipModule } from 'primeng/tooltip';
@@ -11,6 +10,7 @@ import { PolicyService } from '../../../core/services/policy.service';
 import { ExcelService } from '../../../core/services/excel.service';
 import { ExtractionService } from '../../../core/services/extraction.service';
 import { ConfidenceLevel, DOCUMENT_STATUS_META, DocumentStatus } from '../../../core/models';
+import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
 
 /** Only documents that already have an extraction result can be re-checked for missing fields. */
 const AI_FILLABLE_STATUSES = new Set<DocumentStatus>(['Completed', 'Needs Review']);
@@ -33,7 +33,7 @@ interface HistoryRow {
 @Component({
   selector: 'app-history',
   standalone: true,
-  imports: [RouterLink, DatePipe, FormsModule, ButtonModule, TableModule, InputTextModule, TooltipModule],
+  imports: [RouterLink, DatePipe, FormsModule, TableModule, InputTextModule, TooltipModule, PageHeaderComponent],
   templateUrl: './history.component.html',
   styleUrl: './history.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

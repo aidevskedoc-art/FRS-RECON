@@ -1,11 +1,14 @@
 <div class="division-accounts">
-  <div class="division-accounts__header">
-    <div>
-      <h2>Division & Bank A/C</h2>
-      <p>{{ masterData.accounts().length }} account{{ masterData.accounts().length === 1 ? '' : 's' }}</p>
-    </div>
-    <p-button label="Add Account" icon="pi pi-plus" (onClick)="openAdd()" />
-  </div>
+  <app-page-header
+    icon="pi pi-sitemap"
+    title="Division & Bank A/C"
+    [subtitle]="masterData.accounts().length + ' account' + (masterData.accounts().length === 1 ? '' : 's') + ' on file'"
+  >
+    <button actions type="button" class="ai-button-primary" (click)="openAdd()">
+      <i class="pi pi-plus"></i>
+      <span>Add Account</span>
+    </button>
+  </app-page-header>
 
   @if (listError(); as err) {
     <div class="notice notice--danger">
@@ -14,12 +17,14 @@
     </div>
   }
 
-  <span class="search">
-    <i class="pi pi-search"></i>
-    <input pInputText type="text" placeholder="Search division, account number, bank…" (input)="onSearchInput($event, dt)" />
-  </span>
+  <div class="filter-bar">
+    <span class="filter-search">
+      <i class="pi pi-search"></i>
+      <input type="text" placeholder="Search division, account number, bank…" (input)="onSearchInput($event, dt)" />
+    </span>
+  </div>
 
-  <div class="division-accounts__table-wrap">
+  <div class="division-accounts__table-wrap glass-card glass-card--static">
     <p-table
       #dt
       [value]="masterData.accounts()"
@@ -38,10 +43,11 @@
           <th class="actions-col">Actions</th>
         </tr>
       </ng-template>
+
       <ng-template #body let-account>
         <tr>
           <td>{{ account.divisionName }}</td>
-          <td class="mono">{{ account.accountNumber }}</td>
+          <td class="ref">{{ account.accountNumber }}</td>
           <td>{{ account.bankName }}</td>
           <td>
             <button
@@ -55,19 +61,37 @@
             </button>
           </td>
           <td class="actions-col">
-            <button type="button" class="action-icon" (click)="openEdit(account)" pTooltip="Edit"><i class="pi pi-pencil"></i></button>
-            <button type="button" class="action-icon action-icon--danger" (click)="deleteAccount(account.id)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+            <button type="button" class="action-icon" (click)="openEdit(account)" pTooltip="Edit" aria-label="Edit account">
+              <i class="pi pi-pencil"></i>
+            </button>
+            <button
+              type="button"
+              class="action-icon action-icon--danger"
+              (click)="requestDelete(account)"
+              pTooltip="Delete"
+              aria-label="Delete account"
+            >
+              <i class="pi pi-trash"></i>
+            </button>
           </td>
         </tr>
       </ng-template>
+
       <ng-template #emptymessage>
         <tr>
-          <td colspan="5" class="empty">No division bank accounts yet.</td>
+          <td colspan="5">
+            <div class="empty-state">
+              <i class="pi pi-sitemap"></i>
+              <strong>No division bank accounts yet</strong>
+              <p>Add an account to map divisions to the bank accounts reconciliation reads from.</p>
+            </div>
+          </td>
         </tr>
       </ng-template>
     </p-table>
   </div>
 
+  <!-- Create / edit -->
   <p-dialog
     [header]="editingId() ? 'Edit Bank Account' : 'Add Bank Account'"
     [visible]="dialogVisible()"
@@ -77,13 +101,10 @@
   >
     <div class="form">
       @if (formError(); as err) {
-        <div class="notice notice--danger">
-          <i class="pi pi-times-circle"></i>
-          {{ err }}
-        </div>
+        <div class="modal-error">{{ err }}</div>
       }
-      <label>
-        <span>Division</span>
+      <label class="field">
+        <span class="field-label">Division</span>
         <p-select
           [options]="divisions"
           [ngModel]="draft().divisionName"
@@ -93,22 +114,70 @@
           styleClass="full-width"
         />
       </label>
-      <label>
-        <span>Account Number</span>
-        <input pInputText type="text" [ngModel]="draft().accountNumber" (ngModelChange)="updateDraft({ accountNumber: $event })" />
+      <label class="field">
+        <span class="field-label">Account Number</span>
+        <input
+          pInputText
+          type="text"
+          [ngModel]="draft().accountNumber"
+          (ngModelChange)="updateDraft({ accountNumber: $event })"
+        />
       </label>
-      <label>
-        <span>Bank Name</span>
+      <label class="field">
+        <span class="field-label">Bank Name</span>
         <input pInputText type="text" [ngModel]="draft().bankName" (ngModelChange)="updateDraft({ bankName: $event })" />
       </label>
-      <label class="form__switch">
-        <span>Active</span>
+      <label class="field form__switch">
+        <span class="field-label">Active</span>
         <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
       </label>
     </div>
+
     <ng-template #footer>
-      <p-button label="Cancel" severity="secondary" [text]="true" [disabled]="saving()" (onClick)="dialogVisible.set(false)" />
-      <p-button [label]="editingId() ? 'Save' : 'Add Account'" icon="pi pi-check" [loading]="saving()" (onClick)="save()" />
+      <button type="button" class="btn btn-ghost" [disabled]="saving()" (click)="dialogVisible.set(false)">Cancel</button>
+      <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+        @if (saving()) {
+          <span class="btn-spinner"></span>
+        } @else {
+          <i class="pi pi-check"></i>
+        }
+        <span>{{ editingId() ? 'Save' : 'Add Account' }}</span>
+      </button>
     </ng-template>
   </p-dialog>
+
+  <!--
+    Destructive actions never fire from a single click. This is a plain
+    overlay rather than a p-dialog so the copy can name the exact record.
+  -->
+  @if (pendingDelete(); as account) {
+    <div class="modal-overlay" (click)="cancelDelete()">
+      <div class="modal" role="alertdialog" aria-modal="true" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h2>Delete bank account?</h2>
+          <button type="button" class="modal-close" (click)="cancelDelete()" aria-label="Close">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-copy">
+            <strong>{{ account.divisionName }}</strong> — account
+            <span class="ref">{{ account.accountNumber }}</span> at {{ account.bankName }} will be removed.
+            Reconciliation runs that reference it will no longer resolve this division.
+          </p>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" [disabled]="deleting()" (click)="cancelDelete()">Cancel</button>
+          <button type="button" class="btn btn-primary confirm-delete" [disabled]="deleting()" (click)="confirmDelete()">
+            @if (deleting()) {
+              <span class="btn-spinner"></span>
+            } @else {
+              <i class="pi pi-trash"></i>
+            }
+            <span>Delete account</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 </div>

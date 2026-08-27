@@ -54,6 +54,9 @@ function policyRowToApi(row, members = []) {
   return {
     id: String(row.id),
     documentId: String(row.document_id),
+    // Present only when the query joined documents (see policies.routes.js) —
+    // the uploaded file's name, carried through to the Excel export.
+    documentName: row.document_name ?? null,
     policyHolder: {
       name: row.policyholder_name,
       address: row.policyholder_address,
@@ -201,6 +204,27 @@ function bankStatementUploadRowToApi(row) {
     rowCount: row.row_count,
     uploadedBy: row.uploaded_by,
     uploadedAt: toIso(row.uploaded_at),
+    matchedAt: toIso(row.matched_at),
+  };
+}
+
+function bankStatementRecordRowToApi(row) {
+  return {
+    id: String(row.id),
+    batchId: String(row.batch_id),
+    txnDate: toDateOnly(row.txn_date),
+    narration: row.narration,
+    chqRefNo: row.chq_ref_no,
+    valueDate: toDateOnly(row.value_date),
+    withdrawalAmt: toNumber(row.withdrawal_amt),
+    depositAmt: toNumber(row.deposit_amt),
+    closingBalance: toNumber(row.closing_balance),
+    // Persisted verdict from the bank statement's own Generate run (see
+    // matched-rules.routes.js generateForBankBatch) — null until that's been
+    // run at least once for this record's batch.
+    matchStatus: row.match_status ?? null,
+    matchPaymentType: row.match_payment_type ?? null,
+    matchPaymentRecordId: row.match_payment_record_id === null || row.match_payment_record_id === undefined ? null : String(row.match_payment_record_id),
   };
 }
 
@@ -214,6 +238,8 @@ function ipPaymentBatchRowToApi(row) {
     rowCount: row.row_count,
     uploadedBy: row.uploaded_by,
     uploadedAt: toIso(row.uploaded_at),
+    unitName: row.unit_name,
+    matchedAt: toIso(row.matched_at),
   };
 }
 
@@ -248,6 +274,7 @@ function ipPaymentRecordRowToApi(row) {
     userId: row.user_id,
     userName: row.user_name,
     createdAt: toIso(row.created_at),
+    ...matchFieldsToApi(row),
   };
 }
 
@@ -261,6 +288,8 @@ function diagOpBatchRowToApi(row) {
     rowCount: row.row_count,
     uploadedBy: row.uploaded_by,
     uploadedAt: toIso(row.uploaded_at),
+    unitName: row.unit_name,
+    matchedAt: toIso(row.matched_at),
   };
 }
 
@@ -294,6 +323,38 @@ function diagOpRecordRowToApi(row) {
     userId: row.user_id,
     userName: row.user_name,
     createdAt: toIso(row.created_at),
+    ...matchFieldsToApi(row),
+  };
+}
+
+/**
+ * Persisted match verdict (see matched-rules.routes.js POST .../generate) —
+ * shared by ipPaymentRecordRowToApi/diagOpRecordRowToApi. matchedBank is only
+ * populated when the query actually LEFT JOINed bank_statement_records under
+ * the match_bank_* aliases (see buildRecordsFilter callers); a plain
+ * `SELECT *` with no such join leaves those keys undefined here, so this
+ * correctly reports "no match info available" rather than a false match.
+ */
+function matchFieldsToApi(row) {
+  const hasBankJoin = row.match_bank_account_no !== undefined || row.match_bank_bank_name !== undefined || row.match_bank_txn_date !== undefined;
+  return {
+    matchStatus: row.match_status ?? null,
+    matchAppliedRule: row.match_applied_rule ?? null,
+    matchReason: row.match_reason ?? null,
+    matchedBank:
+      hasBankJoin && row.match_bank_record_id
+        ? {
+            recordId: String(row.match_bank_record_id),
+            txnDate: toDateOnly(row.match_bank_txn_date),
+            narration: row.match_bank_narration,
+            chqRefNo: row.match_bank_chq_ref_no,
+            depositAmt: toNumber(row.match_bank_deposit_amt),
+            withdrawalAmt: toNumber(row.match_bank_withdrawal_amt),
+            accountNo: row.match_bank_account_no,
+            bankName: row.match_bank_bank_name,
+            divisionName: row.match_bank_division_name ?? null,
+          }
+        : null,
   };
 }
 
@@ -309,6 +370,36 @@ function divisionBankAccountRowToApi(row) {
   };
 }
 
+function matchingRuleRowToApi(row) {
+  return {
+    id: String(row.id),
+    name: row.name,
+    // Condition — all three null means "always applies" (see reconciliation/rules.js isUnconditional).
+    field: row.field,
+    operator: row.operator,
+    value: row.value,
+    // Match-status output — null means this row doesn't set one (a pure config-override row).
+    action: row.action,
+    active: row.active,
+    isSystem: row.is_system,
+    sortOrder: row.sort_order,
+    // Matching-config overrides — each null unless this row sets it. Comma-list
+    // fields (referenceFields/bankFields/amountFields) stay raw strings here;
+    // matched-rules.routes.js parses them to arrays once when building the
+    // live rules list for the engine.
+    amountTolerance: row.amount_tolerance === null || row.amount_tolerance === undefined ? null : Number(row.amount_tolerance),
+    referenceFields: row.reference_fields ?? null,
+    suffixGrouping: row.suffix_grouping ?? null,
+    divisionScoping: row.division_scoping ?? null,
+    bankFields: row.bank_fields ?? null,
+    amountFields: row.amount_fields ?? null,
+    bankAmountSide: row.bank_amount_side ?? null,
+    tieBreak: row.tie_break ?? null,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
 module.exports = {
   documentRowToApi,
   extractionMetadataRowToApi,
@@ -318,9 +409,11 @@ module.exports = {
   onlineUploadBatchRowToApi,
   onlinePaymentRecordRowToApi,
   bankStatementUploadRowToApi,
+  bankStatementRecordRowToApi,
   ipPaymentBatchRowToApi,
   ipPaymentRecordRowToApi,
   diagOpBatchRowToApi,
   diagOpRecordRowToApi,
   divisionBankAccountRowToApi,
+  matchingRuleRowToApi,
 };

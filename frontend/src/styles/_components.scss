@@ -1,0 +1,791 @@
+// =====================================================================
+// Shared AI Glass component classes.
+//
+// These are global on purpose: they are the vocabulary every feature
+// template writes in (.glass-card, .btn, .status-badge, .modal, .num…),
+// so they must not be scoped to one component's emulated encapsulation.
+// Component SCSS should compose these, not restate them.
+// =====================================================================
+
+// ---------------------------------------------------------------------
+// Typography helpers
+// ---------------------------------------------------------------------
+.ai-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.025em;
+  font-feature-settings: 'ss01';
+}
+
+.ai-mono {
+  font-family: var(--font-mono);
+  font-feature-settings: 'cv11';
+}
+
+// Every numeric table cell. Tabular figures keep columns of digits aligned.
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+// IDs, reference codes, dates.
+.ref {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  letter-spacing: 0.01em;
+}
+
+.align-right {
+  text-align: right;
+}
+
+.ai-gradient-text {
+  background: var(--ai-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+// The signature move: shimmer a single keyword inside a hero subtitle.
+.ai-gradient-text-shimmer {
+  background: var(--ai-gradient);
+  background-size: 220% 220%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-pan 3.2s ease-in-out infinite alternate;
+}
+
+.ai-stat-text {
+  background: var(--stat-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+// ---------------------------------------------------------------------
+// Surfaces
+// ---------------------------------------------------------------------
+.glass-card {
+  position: relative;
+  background: var(--ai-glass-tint);
+  border: 1px solid var(--ai-glass-border);
+  border-radius: var(--r-2xl);
+  backdrop-filter: blur(var(--ai-glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--ai-glass-blur)) saturate(160%);
+  box-shadow: var(--ai-glass-shadow);
+  transition:
+    transform 320ms var(--ease),
+    box-shadow 320ms var(--ease),
+    border-color 320ms var(--ease);
+
+  // Top sheen — the thing that reads as "glass" rather than "translucent box".
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 40%);
+    opacity: 0.7;
+    mix-blend-mode: overlay;
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: rgba(99, 102, 241, 0.35);
+  }
+}
+
+// Opt-out for glass cards that contain their own hover targets (tables,
+// long forms) where lifting the whole surface is distracting.
+.glass-card--static:hover {
+  transform: none;
+}
+
+// Plain (non-glass) variant for dense internal pages.
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2xl);
+  box-shadow: var(--shadow-md);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+
+  h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    color: var(--text-muted);
+  }
+}
+
+.card-body {
+  padding: 20px 24px;
+}
+
+// 24px dot-grid overlay for hero/auth surfaces.
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--ai-grid-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+// ---------------------------------------------------------------------
+// Buttons
+// ---------------------------------------------------------------------
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 150ms var(--ease),
+    border-color 150ms var(--ease),
+    color 150ms var(--ease),
+    transform 150ms var(--ease);
+
+  &:active {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  i {
+    font-size: 0.9em;
+  }
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: var(--text-inverse);
+  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.3);
+
+  &:hover:not(:disabled) {
+    background: var(--brand-hover);
+  }
+}
+
+.btn-secondary {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+
+  &:hover:not(:disabled) {
+    border-color: var(--brand);
+    color: var(--brand-hover);
+  }
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+
+  &:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--text-muted);
+
+  &:hover:not(:disabled) {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
+// Hero CTA — the gradient pans on hover.
+.ai-button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border: none;
+  border-radius: 14px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: var(--ai-gradient);
+  background-size: 200% 200%;
+  box-shadow: 0 10px 30px -12px rgba(79, 70, 229, 0.5);
+  transition: transform 150ms var(--ease), box-shadow 200ms var(--ease);
+
+  &:hover:not(:disabled) {
+    animation: gradient-pan 3s ease infinite;
+    box-shadow: 0 14px 36px -12px rgba(79, 70, 229, 0.62);
+  }
+
+  &:active {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+// Square icon button used across the topbar and table rows.
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease);
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Badges, chips, status pills
+// ---------------------------------------------------------------------
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--ai-glass-border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--ai-glass-tint);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 6px 20px -10px rgba(99, 102, 241, 0.45);
+}
+
+.ai-spark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--ai-gradient);
+  color: #fff;
+  font-size: 10px;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--ai-glass-border);
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--ai-glass-tint);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
+  &.chip-ready {
+    color: var(--success);
+  }
+  &.chip-learning {
+    color: var(--warning);
+  }
+  &.chip-synced {
+    color: var(--info);
+  }
+  &.chip-optimized {
+    color: var(--ai-accent);
+  }
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse-soft 2.4s ease-in-out infinite;
+}
+
+// Status pill — leading dot is a ::before so any colour pair works.
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+}
+
+// Every domain status maps to one of these five pairs.
+.status-badge--success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.status-badge--warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.status-badge--orange {
+  background: var(--orange-soft);
+  color: var(--orange);
+}
+.status-badge--danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.status-badge--info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.status-badge--neutral {
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+// ---------------------------------------------------------------------
+// Data tables
+// ---------------------------------------------------------------------
+.table-wrap {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--text-muted);
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.84rem;
+    color: var(--text);
+  }
+
+  tbody tr {
+    transition: background-color 120ms var(--ease);
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+}
+
+// Rows that navigate somewhere on click.
+.data-table--clickable tbody tr {
+  cursor: pointer;
+
+  &:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  i {
+    font-size: 0.7rem;
+    color: var(--text-subtle);
+    transition: color 120ms var(--ease);
+  }
+}
+
+.th-sortable {
+  cursor: pointer;
+
+  &:hover .th-inner i,
+  &.is-sorted .th-inner i {
+    color: var(--brand);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Filter bar
+// ---------------------------------------------------------------------
+.filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filter-search {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 180px;
+
+  i {
+    position: absolute;
+    top: 50%;
+    left: 12px;
+    transform: translateY(-50%);
+    font-size: 15px;
+    color: var(--text-subtle);
+    pointer-events: none;
+  }
+
+  input {
+    width: 100%;
+    padding: 9px 12px 9px 34px;
+  }
+}
+
+.field-input,
+.filter-search input,
+.filter-select {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 9px 12px;
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+
+  &::placeholder {
+    color: var(--text-subtle);
+  }
+
+  &:hover {
+    border-color: var(--text-subtle);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-ring);
+  }
+}
+
+.filter-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 32px;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+
+.filter-bar__spacer {
+  flex: 1 1 auto;
+}
+
+// ---------------------------------------------------------------------
+// Modal
+// ---------------------------------------------------------------------
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fade-up 200ms ease-out both;
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--ai-glass-tint);
+  border: 1px solid var(--ai-glass-border);
+  border-radius: var(--r-xl);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--ai-glass-shadow);
+}
+
+.modal-wide {
+  max-width: 640px;
+}
+.modal-lg {
+  max-width: 760px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--ai-divider);
+
+  h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+}
+
+.modal-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--ai-divider);
+}
+
+.modal-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.modal-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.modal-error {
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+// ---------------------------------------------------------------------
+// Side drawer (record detail)
+// ---------------------------------------------------------------------
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  justify-content: flex-end;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fade-in 180ms ease-out both;
+}
+
+.drawer {
+  display: flex;
+  flex-direction: column;
+  width: 420px;
+  max-width: 92vw;
+  height: 100%;
+  background: var(--ai-glass-tint);
+  border-left: 1px solid var(--ai-glass-border);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--ai-glass-shadow);
+  animation: drawer-in 180ms var(--ease) both;
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--ai-divider);
+}
+
+.drawer-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px 22px;
+}
+
+.drawer-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--ai-divider);
+}
+
+// ---------------------------------------------------------------------
+// Empty state / skeleton / spinner
+// ---------------------------------------------------------------------
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 56px 24px;
+  color: var(--text-muted);
+  text-align: center;
+
+  i {
+    font-size: 1.6rem;
+    color: var(--text-subtle);
+  }
+
+  strong {
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.84rem;
+    max-width: 42ch;
+  }
+}
+
+.skeleton {
+  border-radius: var(--r-md);
+  background: linear-gradient(
+    90deg,
+    var(--surface-soft) 0%,
+    var(--surface-hover) 50%,
+    var(--surface-soft) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  border-top-color: var(--ai-primary);
+  border-right-color: var(--ai-ai);
+  animation: spin 0.7s linear infinite;
+}
+
+// ---------------------------------------------------------------------
+// Cursor glow orb — positioned by CursorGlowComponent via CSS variables.
+// ---------------------------------------------------------------------
+.cursor-glow {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 420px;
+  height: 420px;
+  margin: -210px 0 0 -210px;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--ai-aurora-1) 0%, transparent 62%);
+  mix-blend-mode: var(--cursor-glow-blend);
+  will-change: transform;
+}

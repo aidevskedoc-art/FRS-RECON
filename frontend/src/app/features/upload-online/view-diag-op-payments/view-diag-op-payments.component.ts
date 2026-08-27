@@ -1,10 +1,11 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { DiagOpPaymentService } from '../../../core/services/diag-op-payment.service';
+import { errorMessage } from '../../../core/services/policy-document.service';
 
 @Component({
   selector: 'app-view-diag-op-payments',
@@ -18,6 +19,9 @@ export class ViewDiagOpPaymentsComponent {
   private readonly router = inject(Router);
   protected readonly diagOpPayments = inject(DiagOpPaymentService);
 
+  protected readonly deletingId = signal<string | null>(null);
+  protected readonly deleteError = signal<string | null>(null);
+
   constructor() {
     this.diagOpPayments.refreshBatches().subscribe({ error: () => {} });
   }
@@ -27,6 +31,15 @@ export class ViewDiagOpPaymentsComponent {
   }
 
   protected deleteBatch(batchId: string): void {
-    this.diagOpPayments.deleteBatch(batchId).subscribe({ error: () => {} });
+    if (this.deletingId()) return;
+    this.deletingId.set(batchId);
+    this.deleteError.set(null);
+    this.diagOpPayments.deleteBatch(batchId).subscribe({
+      next: () => this.deletingId.set(null),
+      error: (err) => {
+        this.deletingId.set(null);
+        this.deleteError.set(errorMessage(err));
+      },
+    });
   }
 }

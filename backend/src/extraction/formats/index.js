@@ -4,6 +4,7 @@ const newIndia = require('./new-india');
 const starHealth = require('./star-health');
 const acko = require('./acko');
 const care = require('./care');
+const careGroup = require('./care-group');
 const galaxy = require('./galaxy');
 const national = require('./national');
 const bajaj = require('./bajaj');
@@ -28,6 +29,9 @@ const FORMATS = [
   { id: 'NEW_INDIA_FLOATER_MEDICLAIM', module: newIndia },
   { id: 'STAR_HEALTH_POLICY_SCHEDULE', module: starHealth },
   { id: 'ACKO_HEALTH_POLICY_SCHEDULE', module: acko },
+  // Ahead of CARE_HEALTH_POLICY_CERTIFICATE: the group certificate carries
+  // the more specific signature, and detectFormat takes the first match.
+  { id: 'CARE_GROUP_CERTIFICATE', module: careGroup },
   { id: 'CARE_HEALTH_POLICY_CERTIFICATE', module: care },
   { id: 'GALAXY_HEALTH_POLICY_SCHEDULE', module: galaxy },
   { id: 'NATIONAL_PARIVAR_MEDICLAIM_PLUS', module: national },

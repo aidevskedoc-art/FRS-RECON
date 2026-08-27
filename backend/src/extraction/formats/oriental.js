@@ -24,7 +24,7 @@ const {
   toLines, valueAfter, valuesAfter, linesAfter, indexOfLabel, isNoise,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays } = require('./common');
+const { tenureDays, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /The Oriental Insurance Company/i;
 const SIGNATURE = /ORIENTAL INSURANCE BANK SAATHI POLICY/i;
@@ -108,7 +108,7 @@ function parseMembers(page2, surname) {
     nomineeName: null,
     nomineeRelation: null,
     basePremium: null,
-    policyTypeSelfParents: 'A',
+    policyTypeSelfParents: policyTypeSelfParentsCode(relationGroups[i]),
   }));
 }
 

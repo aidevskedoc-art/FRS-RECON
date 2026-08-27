@@ -1,8 +1,8 @@
 {
-  "name": "frs-insurance-backend",
+  "name": "frs-recon-backend",
   "version": "0.0.0",
   "private": true,
-  "description": "Node.js + PostgreSQL API for insurance policy PDF extraction (FRS)",
+  "description": "Node.js + PostgreSQL API for insurance policy PDF extraction (FRS - Recon)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

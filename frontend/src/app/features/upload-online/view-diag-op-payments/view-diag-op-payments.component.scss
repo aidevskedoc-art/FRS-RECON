@@ -26,6 +26,21 @@
   }
 }
 
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+}
+
 .view-payments__table-wrap {
   @include mixins.card;
   @include mixins.scrollbar-thin;
@@ -65,6 +80,16 @@
   &:hover {
     background: var(--surface-hover);
     color: var(--ai-blue);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+
+    &:hover {
+      background: none;
+      color: var(--text-secondary);
+    }
   }
 }
 

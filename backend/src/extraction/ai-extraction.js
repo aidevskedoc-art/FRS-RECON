@@ -12,6 +12,7 @@
  */
 
 const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
+const { policyTypeSelfParentsCode } = require('./formats/common');
 
 // gemini-3.6-flash's free tier caps out at 20 requests/day — easy to burn
 // through while testing. flash-lite trades a little capability for a much
@@ -134,7 +135,10 @@ async function extractWithAi({ pageTexts }) {
     policyTenureDays: tenureDaysFrom(extracted.policyStartDate, extracted.policyEndDate),
     policyReceiptDate: extracted.policyStartDate || null,
     planChosen: 'BASIC',
-    members: (extracted.members || []).map((m) => ({ ...m, policyTypeSelfParents: 'A' })),
+    members: (extracted.members || []).map((m) => ({
+      ...m,
+      policyTypeSelfParents: policyTypeSelfParentsCode(m.relationWithPolicyHolder),
+    })),
   };
 }
 

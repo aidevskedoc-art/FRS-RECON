@@ -19,7 +19,7 @@ const {
   toLines, valueAfter, valuesAfter, indexOfLabel,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays, splitRows } = require('./common');
+const { tenureDays, splitRows, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /ManipalCigna Health Insurance Company/i;
 const SIGNATURE = /ManipalCigna Sarvah|POLICY SCHEDULE/i;
@@ -79,7 +79,7 @@ function parseMembers(all) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(relation),
     };
   }).filter((m) => m.name);
 }

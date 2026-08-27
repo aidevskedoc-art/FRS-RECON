@@ -4,6 +4,17 @@ const { toText, toAmount, parseBankDate } = require('./parse-helpers');
 const MARKER_CELL = /^\*+$/;
 const TXN_COLUMN_COUNT = 7; // Date, Narration, Chq./Ref.No., Value Dt, Withdrawal Amt., Deposit Amt., Closing Balance
 
+// IFSC's first 4 letters are the bank code (RBI standard) — a more reliable
+// bank-name source than the letterhead row, which can come through blank or
+// corrupted in some exports (seen for real: one real statement's letterhead
+// row held just "0" with the actual name nowhere else in the sheet).
+const IFSC_BANK_NAMES = {
+  HDFC: 'HDFC Bank', ICIC: 'ICICI Bank', SBIN: 'State Bank of India', AXIS: 'Axis Bank',
+  UTIB: 'Axis Bank', KKBK: 'Kotak Mahindra Bank', IDFB: 'IDFC First Bank', YESB: 'Yes Bank',
+  INDB: 'IndusInd Bank', BARB: 'Bank of Baroda', CNRB: 'Canara Bank', UBIN: 'Union Bank of India',
+  PUNB: 'Punjab National Bank',
+};
+
 function isHeaderRow(row) {
   return toText(row[0])?.toLowerCase() === 'date' && toText(row[1])?.toLowerCase() === 'narration';
 }
@@ -46,6 +57,12 @@ function extractMetadata(preambleRows) {
       if (period) {
         metadata.statementFrom = parseFullDate(period[1]);
         metadata.statementTo = parseFullDate(period[2]);
+      }
+
+      const ifsc = cell.match(/IFSC\s*:\s*([A-Z]{4})/i);
+      if (ifsc) {
+        const bankName = IFSC_BANK_NAMES[ifsc[1].toUpperCase()];
+        if (bankName) metadata.bankName = bankName;
       }
     }
   }

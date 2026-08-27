@@ -16,9 +16,17 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}-${file.originalname}`),
 });
 
+/**
+ * Per-request caps. The file count is the one clients hit in practice, so
+ * it's exported: the Angular app splits a larger selection into batches of
+ * this size rather than letting the request fail.
+ */
+const MAX_FILES_PER_UPLOAD = 20;
+const MAX_FILE_SIZE_MB = 25;
+
 const upload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== 'application/pdf') {
       return cb(new Error('Only PDF files are accepted'));
@@ -27,8 +35,39 @@ const upload = multer({
   },
 });
 
+const uploadFiles = upload.array('files', MAX_FILES_PER_UPLOAD);
+
+/**
+ * Multer reports an over-limit batch as "Unexpected field", which reaches
+ * the client as an opaque 500 and gives no hint that the file *count* was
+ * the problem — and the whole batch is rejected, not just the excess. This
+ * translates its errors into a 400 that names the actual limit, so a client
+ * (or a person reading the response) can act on it.
+ */
+function handleUpload(req, res, next) {
+  uploadFiles(req, res, (err) => {
+    if (!err) return next();
+
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        error: `Too many files in one request — the limit is ${MAX_FILES_PER_UPLOAD}. Upload them in smaller batches.`,
+        code: 'TOO_MANY_FILES',
+        maxFiles: MAX_FILES_PER_UPLOAD,
+      });
+    }
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        error: `That file is larger than the ${MAX_FILE_SIZE_MB} MB limit.`,
+        code: 'FILE_TOO_LARGE',
+        maxFileSizeMb: MAX_FILE_SIZE_MB,
+      });
+    }
+    return res.status(400).json({ error: err.message });
+  });
+}
+
 // POST /api/documents/upload
-router.post('/upload', upload.array('files', 20), async (req, res, next) => {
+router.post('/upload', handleUpload, async (req, res, next) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded (expected multipart field "files")' });
@@ -122,4 +161,6 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-module.exports = { router, uploadDir };
+module.exports = {
+  router, uploadDir, MAX_FILES_PER_UPLOAD, MAX_FILE_SIZE_MB,
+};

@@ -21,7 +21,7 @@ const {
   indexOfLabel,
 } = require('../lines');
 const { parseCurrency } = require('../format');
-const { ddmmyyyyToIso, tenureDays, shortInsurerName } = require('./common');
+const { ddmmyyyyToIso, tenureDays, shortInsurerName, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /ROYAL SUNDARAM/i;
 const SIGNATURE = /Insurance Certificate|Premium Certificate/i;
@@ -63,7 +63,7 @@ function parseMembers(lines) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(cells[i + 1]),
     });
     // Skip past this row's "insured since" date and PED cell, if present.
     cursor = /^\d{2}\/\d{2}\/\d{4}$/.test(cells[i + 2]) ? i + 4 : i + 3;

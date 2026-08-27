@@ -6,3 +6,5 @@ export * from './validation.model';
 export * from './excel.model';
 export * from './online-upload.model';
 export * from './master-data.model';
+export * from './matched-rules.model';
+export * from './matching-rules.model';

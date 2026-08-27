@@ -1,49 +1,90 @@
 <div class="dashboard">
-  <div class="dashboard__hero">
+  <!-- Hero — gradient period on the title, shimmer on one subtitle keyword. -->
+  <header class="dashboard__hero anim-fade-up">
     <div class="dashboard__hero-text">
-      <h2>Welcome back</h2>
+      <h1 class="ai-display">Dashboard<span class="ai-gradient-text">.</span></h1>
       <p>
-        Upload an insurance policy PDF and let AI convert it into validated, structured data —
-        ready for review and Excel export.
+        Upload an insurance policy PDF and let
+        <span class="ai-gradient-text-shimmer">AI</span>
+        convert it into validated, structured data — ready for review and Excel export.
       </p>
     </div>
-    <div class="dashboard__hero-actions">
-      <p-button label="Upload Policy PDF" icon="pi pi-cloud-upload" routerLink="/insurance-policy/upload" />
-      <p-button
-        label="Generate Excel"
-        icon="pi pi-file-excel"
-        severity="secondary"
-        [outlined]="true"
-        routerLink="/insurance-policy/excel-preview"
-      />
-    </div>
-  </div>
 
-  <div class="dashboard__cards">
-    @for (card of summaryCards(); track card.label) {
-      <div class="summary-card" [class]="'summary-card--' + card.accent">
-        <div class="summary-card__icon">
-          <i [class]="card.icon"></i>
-        </div>
-        <div>
-          <p class="summary-card__value">{{ card.value }}</p>
-          <p class="summary-card__label">{{ card.label }}</p>
-        </div>
+    <div class="dashboard__hero-actions">
+      <a
+        class="ai-button-primary"
+        routerLink="/insurance-policy/upload"
+        appMagnetic
+        [magneticStrength]="0.2"
+      >
+        <i class="pi pi-cloud-upload"></i>
+        <span>Upload Policy PDF</span>
+      </a>
+      <a class="btn btn-secondary" routerLink="/insurance-policy/excel-preview">
+        <i class="pi pi-file-excel"></i>
+        <span>Generate Excel</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Process-flow strip — the real document lifecycle, not decoration. -->
+  <div class="flow anim-fade-up delay-100">
+    @for (step of pipeline; track step.label; let last = $last) {
+      <div class="flow__step">
+        <span class="flow__icon"><i [class]="step.icon"></i></span>
+        <span class="flow__label">{{ step.label }}</span>
       </div>
+      @if (!last) {
+        <span class="flow__link" aria-hidden="true"></span>
+      }
     }
   </div>
 
-  <div class="dashboard__section">
+  <!-- Bento KPI row. -->
+  <section class="dashboard__kpis">
+    @for (card of kpiCards(); track card.label; let i = $index) {
+      <article
+        class="kpi glass-card nav-accent--{{ card.accent }} anim-fade-up"
+        [style.animation-delay.ms]="i * 50"
+      >
+        <div class="kpi__head">
+          <span class="kpi__chip"><i [class]="card.icon"></i></span>
+          @if (card.ring !== undefined) {
+            <app-circular-progress [value]="card.ring" [size]="40" [label]="card.label + ' share'" />
+          }
+        </div>
+
+        <p class="kpi__label">{{ card.label }}</p>
+        <p class="kpi__value ai-stat-text">
+          <app-animated-counter [value]="card.value" [format]="card.format ?? 'number'" />
+        </p>
+        @if (card.caption) {
+          <p class="kpi__caption">{{ card.caption }}</p>
+        }
+      </article>
+    }
+  </section>
+
+  <!-- Recent documents. -->
+  <section class="dashboard__section">
     <div class="dashboard__section-header">
-      <h3>Recent Documents</h3>
-      <a routerLink="/insurance-policy/history" class="dashboard__link">View all history <i class="pi pi-arrow-right"></i></a>
+      <h2>Recent Documents</h2>
+      <a routerLink="/insurance-policy/history" class="dashboard__link">
+        View all history <i class="pi pi-arrow-right"></i>
+      </a>
     </div>
 
     @if (recentDocuments().length === 0) {
-      <div class="empty-state">
-        <i class="pi pi-inbox"></i>
-        <p>No documents yet. Upload your first insurance policy PDF to get started.</p>
-        <p-button label="Upload Policy PDF" icon="pi pi-cloud-upload" routerLink="/insurance-policy/upload" />
+      <div class="glass-card glass-card--static">
+        <div class="empty-state">
+          <i class="pi pi-inbox"></i>
+          <strong>No documents yet</strong>
+          <p>Upload your first insurance policy PDF to populate this dashboard.</p>
+          <a class="ai-button-primary" routerLink="/insurance-policy/upload">
+            <i class="pi pi-cloud-upload"></i>
+            <span>Upload Policy PDF</span>
+          </a>
+        </div>
       </div>
     } @else {
       <div class="dashboard__doc-grid">
@@ -57,5 +98,5 @@
         }
       </div>
     }
-  </div>
+  </section>
 </div>

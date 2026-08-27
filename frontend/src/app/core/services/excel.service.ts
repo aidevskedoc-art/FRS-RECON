@@ -63,6 +63,7 @@ export class ExcelService {
           newOrRenewalPolicy: blank(policy.newOrRenewal),
           policyholdersAddress: blank(policy.policyHolder.address),
           insuranceCompanyAddress: blank(policy.insuranceCompanyAddress),
+          documentName: blank(policy.documentName ?? ''),
         });
       });
 

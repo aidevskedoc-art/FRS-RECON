@@ -20,7 +20,7 @@ const {
   toLines, valueAfter, valueInlineOrAfter, linesAfter, indexOfLabel, indexMatching,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays } = require('./common');
+const { tenureDays, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /Niva Bupa Health Insurance/i;
 const SIGNATURE = /Insurance Certificate|ReAssure/i;
@@ -54,7 +54,7 @@ function parseMembers(page5) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(body[i + 1]),
     });
     cursor = i + 6;
   }

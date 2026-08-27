@@ -20,7 +20,7 @@ const {
   toLines, valueAfter, valuesAfter, linesAfter, indexOfLabel,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays, ageAsOf } = require('./common');
+const { tenureDays, ageAsOf, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /Reliance General Insurance Company Limited/i;
 const SIGNATURE = /RELIANCE HEALTH GAIN POLICY/i;
@@ -80,7 +80,7 @@ function parseMembers(page3, asOfIso) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(relations[i]),
     };
   });
 }

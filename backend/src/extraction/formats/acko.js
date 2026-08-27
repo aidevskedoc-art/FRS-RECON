@@ -16,7 +16,7 @@ const {
   toLines, valueAfter, valuesAfter, linesAfter, indexOfLabel,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays, parseIndianAmount } = require('./common');
+const { tenureDays, parseIndianAmount, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /ACKO General Insurance/i;
 const SIGNATURE = /ACKO Health/i;
@@ -47,7 +47,7 @@ function parseMembers(page1) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(relation),
     });
   }
   return members;

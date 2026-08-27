@@ -18,7 +18,7 @@ const {
 } = require('../lines');
 const { parseCurrency } = require('../format');
 const {
-  ddmmyyyyToIso, tenureDays, shortInsurerName, splitRows,
+  ddmmyyyyToIso, tenureDays, shortInsurerName, splitRows, policyTypeSelfParentsCode,
 } = require('./common');
 
 const INSURER = /NEW INDIA ASSURANCE/i;
@@ -57,17 +57,18 @@ function parseMembers(all) {
     const abhaIdx = inceptionIdx === -1 ? row.length : inceptionIdx - 1;
 
     const rawName = row.slice(1, genderIdx - 2).join(' ');
+    const relation = row.slice(genderIdx + 1, abhaIdx).join('') || null;
     return {
       name: rawName.replace(/\(\S*$/, '').replace(/\([^)]*\)/g, '').trim(),
       dateOfBirth: ddmmyyyyToIso(row[genderIdx - 2]),
       age: Number(row[genderIdx - 1]) || null,
       gender: row[genderIdx] === 'M' ? 'Male' : 'Female',
-      relationWithPolicyHolder: row.slice(genderIdx + 1, abhaIdx).join('') || null,
+      relationWithPolicyHolder: relation,
       occupation: null,
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(relation),
     };
   }).filter(Boolean);
 }

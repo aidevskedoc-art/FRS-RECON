@@ -1,25 +1,13 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  DestroyRef,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
 import { AiStatusComponent } from '../../insurance-policy/shared/ai-status/ai-status.component';
 import { AuthService } from '../../../core/services/auth.service';
-
-interface Particle {
-  left: number;
-  size: number;
-  duration: number;
-  delay: number;
-  drift: number;
-}
+import { AuroraBackgroundComponent } from '../../../shared/ambient/aurora-background.component';
+import { CursorGlowComponent } from '../../../shared/ambient/cursor-glow.component';
+import { MagneticDirective } from '../../../shared/motion/magnetic.directive';
 
 const TAGLINES = [
   'Extracting policy data with AI precision.',
@@ -34,17 +22,30 @@ const FEATURES = [
   { icon: 'pi pi-file-excel', text: 'One-click Excel automation' },
 ];
 
+/**
+ * Auth screen — the AI Glass "centred glass card over the live aurora"
+ * archetype, widened to a two-panel split so the product's own copy has
+ * somewhere to live.
+ *
+ * The ambient layers are mounted here directly because login sits outside
+ * the app shell, which is what normally provides them.
+ */
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, ButtonModule, InputTextModule, PasswordModule, AiStatusComponent],
+  imports: [
+    ReactiveFormsModule,
+    InputTextModule,
+    PasswordModule,
+    AiStatusComponent,
+    AuroraBackgroundComponent,
+    CursorGlowComponent,
+    MagneticDirective,
+  ],
   templateUrl: './login.component.html',
   styleUrl: './login.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    class: 'app-login-host',
-    '(mousemove)': 'onPointerMove($event)',
-  },
+  host: { class: 'app-login-host' },
 })
 export class LoginComponent {
   private readonly fb = inject(FormBuilder);
@@ -55,21 +56,10 @@ export class LoginComponent {
   protected readonly submitting = signal(false);
   protected readonly loginError = signal<string | null>(null);
   protected readonly shake = signal(false);
-  protected readonly passwordVisible = signal(false);
   protected readonly taglineIndex = signal(0);
 
   protected readonly taglines = TAGLINES;
   protected readonly features = FEATURES;
-  protected readonly particles: Particle[] = Array.from({ length: 22 }, (_, i) => {
-    const seed = (i * 137.5) % 100;
-    return {
-      left: seed,
-      size: 2 + ((i * 7) % 5),
-      duration: 10 + ((i * 5) % 12),
-      delay: -((i * 3) % 14),
-      drift: ((i % 2 === 0 ? 1 : -1) * (10 + (i % 4) * 8)),
-    };
-  });
 
   protected readonly form = this.fb.nonNullable.group({
     userId: ['', Validators.required],
@@ -81,14 +71,6 @@ export class LoginComponent {
       this.taglineIndex.update((i) => (i + 1) % TAGLINES.length);
     }, 3400);
     this.destroyRef.onDestroy(() => clearInterval(interval));
-  }
-
-  protected onPointerMove(event: MouseEvent): void {
-    const host = event.currentTarget as HTMLElement;
-    const x = (event.clientX / host.clientWidth) * 100;
-    const y = (event.clientY / host.clientHeight) * 100;
-    host.style.setProperty('--pointer-x', `${x}%`);
-    host.style.setProperty('--pointer-y', `${y}%`);
   }
 
   protected submit(): void {
@@ -117,6 +99,8 @@ export class LoginComponent {
   }
 
   private triggerShake(): void {
+    // Clearing first, then re-setting on the next frame, is what restarts the
+    // CSS animation — re-adding a class in the same frame does nothing.
     this.shake.set(false);
     requestAnimationFrame(() => this.shake.set(true));
     setTimeout(() => this.shake.set(false), 420);

@@ -1,0 +1,152 @@
+<div class="recon-summary">
+  <div class="recon-summary__header">
+    <div>
+      <h2>Reconciliation Summary</h2>
+      <p>Bank Statement vs IP &amp; Diag OP Payment Statement reconciliation, across every configured matching rule.</p>
+    </div>
+    @if (summary(); as s) {
+      <p class="recon-summary__generated">Updated {{ s.generatedAt | date: 'medium' }}</p>
+    }
+  </div>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="filters">
+    <label class="filters__date-label">
+      <span>From</span>
+      <input type="date" [(ngModel)]="dateFrom" class="filters__date" />
+    </label>
+    <label class="filters__date-label">
+      <span>To</span>
+      <input type="date" [(ngModel)]="dateTo" class="filters__date" />
+    </label>
+    <p-button label="Apply" size="small" [outlined]="true" (onClick)="applyFilters()" />
+    <p-button label="Clear" size="small" severity="secondary" [text]="true" (onClick)="clearFilters()" />
+  </div>
+
+  <div class="recon-summary__cards">
+    @for (card of summaryCards(); track card.label) {
+      <div class="summary-card" [class]="'summary-card--' + card.accent">
+        <div class="summary-card__icon">
+          <i [class]="card.icon"></i>
+        </div>
+        <div>
+          <p class="summary-card__value">{{ card.value }}</p>
+          <p class="summary-card__label">{{ card.label }}</p>
+        </div>
+      </div>
+    }
+  </div>
+
+  @if (summary(); as s) {
+    <div class="recon-summary__section">
+      <h3>By Payment Type</h3>
+      <div class="table-wrap">
+        <table class="breakdown-table">
+          <thead>
+            <tr>
+              <th>Statement</th>
+              <th>Total</th>
+              <th>Matched</th>
+              <th>Amount Mismatch</th>
+              <th>Unmatched</th>
+              <th>Excluded</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>IP Payments</td>
+              <td>{{ s.ipPayments.total }}</td>
+              <td>{{ s.ipPayments.matched }}</td>
+              <td>{{ s.ipPayments.mismatched }}</td>
+              <td>{{ s.ipPayments.unmatched }}</td>
+              <td>{{ s.ipPayments.excluded }}</td>
+            </tr>
+            <tr>
+              <td>Diag OP Payments</td>
+              <td>{{ s.diagPayments.total }}</td>
+              <td>{{ s.diagPayments.matched }}</td>
+              <td>{{ s.diagPayments.mismatched }}</td>
+              <td>{{ s.diagPayments.unmatched }}</td>
+              <td>{{ s.diagPayments.excluded }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="recon-summary__section">
+      <h3>Bank Statement</h3>
+      @if (s.bankStatement.notGenerated > 0) {
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          {{ s.bankStatement.notGenerated }} bank transaction{{ s.bankStatement.notGenerated === 1 ? '' : 's' }} in this range
+          {{ s.bankStatement.notGenerated === 1 ? 'has' : 'have' }} never been through Generate — open that bank statement's batch
+          page and click Generate to include it here.
+        </div>
+      }
+      <div class="table-wrap">
+        <table class="breakdown-table">
+          <thead>
+            <tr>
+              <th>Total</th>
+              <th>Matched</th>
+              <th>Amount Mismatch</th>
+              <th>Only in Bank Statement</th>
+              <th>Not Yet Generated</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ s.bankStatement.total }}</td>
+              <td>{{ s.bankStatement.matched }}</td>
+              <td>{{ s.bankStatement.mismatched }}</td>
+              <td>{{ s.bankStatement.unmatched }}</td>
+              <td>{{ s.bankStatement.notGenerated }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="recon-summary__section">
+      <h3>Amount Differences</h3>
+      <div class="table-wrap">
+        <p-table [value]="s.amountDifferences" dataKey="groupId" styleClass="p-datatable-sm diff-table">
+          <ng-template #header>
+            <tr>
+              <th>Source</th>
+              <th>Reference</th>
+              <th>Patient</th>
+              <th>Receipt No.</th>
+              <th>Payment Amount</th>
+              <th>Bank Amount</th>
+              <th>Difference</th>
+            </tr>
+          </ng-template>
+          <ng-template #body let-diff>
+            <tr>
+              <td>{{ sourceLabel(diff.source) }}</td>
+              <td class="mono">{{ diff.refs.join(', ') || '—' }}</td>
+              <td>{{ diff.patientName || '—' }}</td>
+              <td class="mono">{{ diff.receiptNumber || '—' }}</td>
+              <td class="amount">{{ amount(diff.paymentAmount) }}</td>
+              <td class="amount">{{ amount(diff.bankAmount) }}</td>
+              <td class="amount diff-table__diff">{{ amount(diff.difference) }}</td>
+            </tr>
+          </ng-template>
+          <ng-template #emptymessage>
+            <tr>
+              <td colspan="7" class="empty">No amount mismatches in this range.</td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </div>
+    </div>
+  }
+</div>

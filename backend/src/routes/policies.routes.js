@@ -9,6 +9,7 @@ const router = express.Router();
 /** Reshapes the API policy object into the flat form the Excel mapper expects. */
 function toMapperShape(policy) {
   return {
+    documentName: policy.documentName,
     policyholderName: policy.policyHolder.name,
     policyholderAddress: policy.policyHolder.address,
     customerId: policy.policyHolder.customerId,
@@ -34,7 +35,12 @@ function toMapperShape(policy) {
 }
 
 async function loadPolicyWithMembers(policyId) {
-  const { rows: policyRows } = await db.query('SELECT * FROM policies WHERE id = $1', [policyId]);
+  const { rows: policyRows } = await db.query(
+    `SELECT p.*, d.file_name AS document_name
+       FROM policies p JOIN documents d ON d.id = p.document_id
+      WHERE p.id = $1`,
+    [policyId],
+  );
   if (policyRows.length === 0) return null;
   const { rows: memberRows } = await db.query(
     'SELECT * FROM insured_members WHERE policy_id = $1 ORDER BY sort_order',
@@ -46,7 +52,11 @@ async function loadPolicyWithMembers(policyId) {
 // GET /api/policies
 router.get('/', async (req, res, next) => {
   try {
-    const { rows: policyRows } = await db.query('SELECT * FROM policies ORDER BY created_at DESC');
+    const { rows: policyRows } = await db.query(
+      `SELECT p.*, d.file_name AS document_name
+         FROM policies p JOIN documents d ON d.id = p.document_id
+        ORDER BY p.created_at DESC`,
+    );
     const policies = [];
     for (const row of policyRows) {
       const { rows: memberRows } = await db.query(
@@ -71,8 +81,17 @@ router.get('/export.xlsx', async (req, res, next) => {
     const idList = (req.query.ids || '').split(',').map((s) => s.trim()).filter(Boolean);
 
     const { rows: policyRows } = idList.length
-      ? await db.query('SELECT * FROM policies WHERE id = ANY($1::int[]) ORDER BY created_at', [idList])
-      : await db.query('SELECT * FROM policies ORDER BY created_at');
+      ? await db.query(
+        `SELECT p.*, d.file_name AS document_name
+           FROM policies p JOIN documents d ON d.id = p.document_id
+          WHERE p.id = ANY($1::int[]) ORDER BY p.created_at`,
+        [idList],
+      )
+      : await db.query(
+        `SELECT p.*, d.file_name AS document_name
+           FROM policies p JOIN documents d ON d.id = p.document_id
+          ORDER BY p.created_at`,
+      );
 
     if (policyRows.length === 0) return res.status(404).json({ error: 'No policies to export' });
 

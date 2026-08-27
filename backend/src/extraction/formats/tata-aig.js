@@ -19,7 +19,7 @@ const {
   toLines, valueAfter, indexOfLabel, indexMatching,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays } = require('./common');
+const { tenureDays, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /TATA AIG/i;
 const SIGNATURE = /MediCare Premier|Insured Person Details:/i;
@@ -61,7 +61,7 @@ function parseMembers(page3) {
     nomineeName: null,
     nomineeRelation: null,
     basePremium: null,
-    policyTypeSelfParents: 'A',
+    policyTypeSelfParents: policyTypeSelfParentsCode(relations[i]),
   }));
 }
 

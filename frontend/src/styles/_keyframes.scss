@@ -1,0 +1,168 @@
+// =====================================================================
+// The named keyframes and motion utility classes the AI Glass system
+// ships. One easing curve everywhere: --ease, with --ease-spring for
+// playful pops.
+//
+// Every animation here is neutralised by the reduced-motion block at the
+// bottom of styles.scss — and any component whose *behaviour* (not just
+// decoration) depends on motion additionally checks the
+// prefersReducedMotion() signal and renders a static fallback.
+// =====================================================================
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes gradient-pan {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.88);
+  }
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+// Translate only — deliberately no scale(). The blobs carry a large blur(),
+// and a changing size forces the compositor to re-rasterise that blur every
+// frame; a pure translate lets it reuse one cached texture instead. The
+// offsets are widened to keep the same amount of visible drift.
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  33% {
+    transform: translate3d(6%, -5%, 0);
+  }
+  66% {
+    transform: translate3d(-5%, 6%, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes halo-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Utility classes
+// ---------------------------------------------------------------------
+.anim-fade-up {
+  animation: fade-up 500ms var(--ease) both;
+}
+
+.anim-fade-in {
+  animation: fade-in 400ms var(--ease) both;
+}
+
+.anim-float-slow {
+  animation: float-slow 1.8s ease-in-out infinite;
+}
+
+.anim-pulse-soft {
+  animation: pulse-soft 2.4s ease-in-out infinite;
+}
+
+.spin-icon {
+  animation: spin 0.9s linear infinite;
+}
+
+.delay-100 {
+  animation-delay: 100ms;
+}
+.delay-200 {
+  animation-delay: 200ms;
+}
+.delay-300 {
+  animation-delay: 300ms;
+}
+.delay-400 {
+  animation-delay: 400ms;
+}
+.delay-500 {
+  animation-delay: 500ms;
+}

@@ -67,6 +67,7 @@ export interface Policy {
   /** Always a string: 20-digit receipt numbers exceed JS number precision. */
   receiptNumber: string;
   planChosen: string;
+  documentName: string | null;
   policyType: string;
   newOrRenewal: NewOrRenewal | string;
   sourceFormat: string | null;

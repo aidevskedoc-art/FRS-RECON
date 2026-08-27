@@ -12,6 +12,8 @@ const onlineUploadRouter = require('./routes/online-upload.routes');
 const ipPaymentsRouter = require('./routes/ip-payments.routes');
 const diagOpPaymentsRouter = require('./routes/diag-op-payments.routes');
 const masterDataRouter = require('./routes/master-data.routes');
+const matchedRulesRouter = require('./routes/matched-rules.routes');
+const matchingRulesRouter = require('./routes/matching-rules.routes');
 
 const app = express();
 
@@ -28,6 +30,8 @@ app.use('/api/online-upload', onlineUploadRouter);
 app.use('/api/ip-payments', ipPaymentsRouter);
 app.use('/api/diag-op-payments', diagOpPaymentsRouter);
 app.use('/api/master', masterDataRouter);
+app.use('/api/matched-rules', matchedRulesRouter);
+app.use('/api/matching-rules', matchingRulesRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });
@@ -48,7 +52,7 @@ async function start() {
   console.log('Database schema ready.');
 
   app.listen(PORT, HOST, () => {
-    console.log(`FRS insurance backend listening on http://${HOST}:${PORT}`);
+    console.log(`FRS - Recon backend listening on http://${HOST}:${PORT}`);
   });
 }
 

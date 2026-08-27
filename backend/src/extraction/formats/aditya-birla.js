@@ -15,7 +15,7 @@ const {
   toLines, valueAfter, valuesAfter, linesAfter, indexMatching,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays } = require('./common');
+const { tenureDays, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /Aditya Birla Health Insurance Co\.?\s*(Limited|Ltd)/i;
 const SIGNATURE = /Activ One|Policy Schedule/i;
@@ -48,7 +48,7 @@ function parseMembers(page2) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(body[i - 3]),
     });
     // Advance past the PED text and "start date of first policy" trailer
     // by finding where the next row's serial-free name block would begin:

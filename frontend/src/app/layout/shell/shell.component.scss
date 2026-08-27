@@ -5,28 +5,83 @@
   height: 100%;
 }
 
+// The frame itself is transparent so the fixed aurora shows through; the
+// body paints the ground colour. z-index 2 puts it above the aurora (0) and
+// the cursor glow (1).
 .shell {
-  display: flex;
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+  grid-template-areas:
+    'topbar topbar'
+    'sidebar content';
   height: 100vh;
-  background: var(--surface-app);
+  padding: var(--shell-gap);
+  gap: var(--shell-gap);
+  background: transparent;
+  transition: grid-template-columns 320ms var(--ease);
 }
 
-.shell__main {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
+// Collapsing narrows the rail; the sidebar's own labels fade out in step.
+.shell--collapsed {
+  grid-template-columns: var(--sidebar-width-collapsed) minmax(0, 1fr);
+}
+
+.shell__topbar {
+  grid-area: topbar;
   min-width: 0;
+  // .topbar's glass backdrop-filter makes it a stacking context, so the user
+  // menu inside it can only ever paint as high as this grid area does. Left
+  // on auto, the sidebar and the content cards — later in DOM order and
+  // stacking contexts of their own — paint straight over the open dropdown.
+  // Below --z-overlay so the off-canvas sidebar still covers the topbar.
+  position: relative;
+  z-index: var(--z-sticky);
+}
+
+.shell__sidebar {
+  grid-area: sidebar;
+  min-height: 0;
 }
 
 .shell__content {
-  flex: 1 1 auto;
+  grid-area: content;
+  min-width: 0;
   overflow-y: auto;
-  padding: var(--space-6);
+  padding: 28px 32px 40px;
   @include mixins.scrollbar-thin;
 }
 
 @media (max-width: 900px) {
+  // Off-canvas below 900px: the sidebar leaves the grid flow entirely and
+  // the shell becomes a single column.
+  .shell,
+  .shell--collapsed {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'topbar'
+      'content';
+  }
+
+  // The sidebar takes itself out of the grid below 900px (it goes off-canvas
+  // and fixed). That rule lives in sidebar.component.scss's own :host block,
+  // not here — two components' :host/class rules have equal specificity, so
+  // whichever stylesheet the bundler happened to emit last would win.
+
   .shell__content {
-    padding: var(--space-4);
+    padding: 20px 18px 32px;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .shell__content {
+    padding: 16px 14px 28px;
   }
 }

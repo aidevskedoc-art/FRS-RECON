@@ -1,0 +1,15 @@
+<!--
+  Layer 1 — the CSS aurora. Always rendered; it is the entire visual under
+  reduced motion, so it must stand on its own without the particle field.
+-->
+<div class="aurora__gradient">
+  <span class="aurora__blob aurora__blob--1"></span>
+  <span class="aurora__blob aurora__blob--2"></span>
+  <span class="aurora__blob aurora__blob--3"></span>
+  <span class="aurora__blob aurora__blob--4"></span>
+</div>
+
+<!-- Layer 2 — the particle field. Skipped entirely under reduced motion. -->
+@if (!reduced()) {
+  <canvas #canvas class="aurora__canvas" [class.aurora__canvas--ready]="ready()"></canvas>
+}

@@ -1,4 +1,4 @@
-# FRS Insurance Backend
+# FRS - Recon Backend
 
 Node.js (plain JavaScript) + PostgreSQL REST API for the insurance policy PDF
 extraction module. Parses uploaded policy PDFs into structured, confidence-scored
@@ -153,9 +153,10 @@ npm run smoke-test             # full API round trip
   registry and the shared line helpers are the reusable part.
 - **Text-based PDFs only.** A scanned schedule has no text layer and would need
   OCR.
-- **`POLICY TYPE - SELF/PARENTS` is the constant `"A"`**, matching the client's
-  template. Nobody has yet explained what drives that column, so it is not
-  derived from the member's relation.
+- **`POLICY TYPE - SELF/PARENTS` is `"B"` when a member's relation to the
+  policyholder is Mother, Father, or Parent, and `"A"` otherwise** — a rule
+  given directly by the client, not derived from any sample output (no
+  sample has ever included a parent row).
 - **`POLICY RECEIPT DATE` mirrors the policy start date**, matching the expected
   output — *not* the "Receipt Date:" printed on the schedule (16/06/2026 for
   this policy). The printed date is still captured, as `printedReceiptDate`.

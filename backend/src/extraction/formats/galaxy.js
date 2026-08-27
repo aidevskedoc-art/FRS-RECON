@@ -23,7 +23,7 @@ const {
   toLines, valueAfter, valuesAfter, indexOfLabel, indexMatching,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays } = require('./common');
+const { tenureDays, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /Galaxy Health Insurance/i;
 const SIGNATURE = /Galaxy Health (Family Member|Insurance)/i;
@@ -52,19 +52,20 @@ function parseMembers(page3) {
       // so a relation that wraps across cells ("Dependent"/"Daughter")
       // is read whole instead of truncated at a fixed offset.
       const idCardIdx = row.findIndex((c, j) => j > genderIdx + 2 && /^\d{10,}$/.test(c));
+      const relation = idCardIdx === -1
+        ? row[genderIdx + 3] ?? null
+        : row.slice(genderIdx + 3, idCardIdx).join(' ').trim();
       members.push({
         name: row.slice(0, genderIdx).join(' ').trim(),
         dateOfBirth: parseDateToIso(row[genderIdx + 1]),
         age: Number(row[genderIdx + 2]) || null,
         gender: /^male$/i.test(row[genderIdx]) ? 'Male' : 'Female',
-        relationWithPolicyHolder: idCardIdx === -1
-          ? row[genderIdx + 3] ?? null
-          : row.slice(genderIdx + 3, idCardIdx).join(' ').trim(),
+        relationWithPolicyHolder: relation,
         occupation: null,
         nomineeName: null,
         nomineeRelation: null,
         basePremium: null,
-        policyTypeSelfParents: 'A',
+        policyTypeSelfParents: policyTypeSelfParentsCode(relation),
       });
     }
     cursor = optIdx + 1;

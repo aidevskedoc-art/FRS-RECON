@@ -21,3 +21,14 @@ export const loginRedirectGuard: CanActivateFn = () => {
   }
   return true;
 };
+
+/** Restricts routes outside the Automation Insurance module to Super Admin. */
+export const superAdminGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+
+  if (auth.isSuperAdmin()) {
+    return true;
+  }
+  return router.parseUrl('/insurance-policy/dashboard');
+};

@@ -6,38 +6,31 @@
   gap: var(--space-4);
 }
 
-.history__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-
-  h2 {
-    margin: 0;
-    font-size: var(--text-xl);
-    color: var(--text-primary);
-  }
-
-  p {
-    margin: var(--space-1) 0 0;
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-  }
-}
-
 .bulk-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--ai-blue-soft);
-  color: var(--ai-blue);
+  border: 1px solid var(--ai-glass-border);
+  border-radius: var(--r-xl);
+  background: var(--stat-gradient-soft);
+  color: var(--text);
   font-size: var(--text-sm);
   font-weight: 600;
   flex-wrap: wrap;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.bulk-bar__count {
+  color: var(--stat-accent);
+}
+
+.bulk-bar__spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
 }
 
 .bulk-bar__actions {
@@ -60,43 +53,26 @@
   gap: var(--space-2);
   margin-top: var(--space-2);
   padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--status-danger-bg);
-  color: var(--status-danger-fg);
+  border-radius: var(--r-md);
+  background: var(--danger-soft);
+  color: var(--danger);
   font-size: var(--text-sm);
 }
 
-.search {
-  position: relative;
-  max-width: 380px;
-
-  i {
-    position: absolute;
-    left: var(--space-3);
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-tertiary);
-    font-size: var(--text-sm);
-  }
-
-  input {
-    width: 100%;
-    padding-left: var(--space-7);
-  }
+.filter-search {
+  max-width: 420px;
 }
 
+// The card owns the rounded frame; the table scrolls inside it. Header and
+// body styling now comes from the global PrimeNG bridge — only the
+// nowrap rule is specific to this table's very wide column set.
 .history__table-wrap {
-  @include mixins.card;
   @include mixins.scrollbar-thin;
   overflow: auto;
 }
 
 :host ::ng-deep .history-table {
-  .p-datatable-thead > tr > th {
-    background: var(--surface-sunken);
-    white-space: nowrap;
-  }
-
+  .p-datatable-thead > tr > th,
   .p-datatable-tbody > tr > td {
     white-space: nowrap;
   }
@@ -107,18 +83,13 @@
   @include mixins.truncate;
 }
 
-.mono {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: var(--text-sm);
-}
-
 .status-pill {
   @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
 
-  &--success { color: var(--status-success-fg); background: var(--status-success-bg); border-color: var(--status-success-border); }
-  &--warning { color: var(--status-warning-fg); background: var(--status-warning-bg); border-color: var(--status-warning-border); }
-  &--danger { color: var(--status-danger-fg); background: var(--status-danger-bg); border-color: var(--status-danger-border); }
-  &--info { color: var(--status-info-fg); background: var(--status-info-bg); border-color: var(--status-info-border); }
+  &--success { color: var(--success); background: var(--success-soft); border-color: transparent; }
+  &--warning { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
+  &--danger { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+  &--info { color: var(--info); background: var(--info-soft); border-color: transparent; }
 }
 
 .confidence-pill {
@@ -131,11 +102,11 @@
 
 .excel-pill {
   font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  color: var(--text-subtle);
 }
 
 .excel-pill--done {
-  color: var(--status-success-fg);
+  color: var(--success);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -150,15 +121,15 @@
 .action-icon {
   border: none;
   background: none;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   cursor: pointer;
   padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-md);
   transition: background var(--transition-fast), color var(--transition-fast);
 
   &:hover:not(:disabled) {
     background: var(--surface-hover);
-    color: var(--ai-blue);
+    color: var(--brand);
   }
 
   &:disabled {
@@ -168,11 +139,5 @@
 }
 
 .action-icon--danger:hover:not(:disabled) {
-  color: var(--status-danger-fg);
-}
-
-.empty {
-  text-align: center;
-  padding: var(--space-8);
-  color: var(--text-tertiary);
+  color: var(--danger);
 }

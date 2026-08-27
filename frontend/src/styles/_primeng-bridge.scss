@@ -1,0 +1,248 @@
+// =====================================================================
+// PrimeNG bridge.
+//
+// The Aura preset in core/config/theme-preset.ts already carries the AI
+// Glass *palette* into PrimeNG's own --p-* variables. This file handles the
+// part a preset can't express: shape, density and typography — making
+// p-table read like the hand-authored .data-table, and p-dialog like .modal.
+//
+// These rules are unlayered, so they outrank the `primeng` cascade layer
+// declared in styles.scss without needing !important. Keep it that way:
+// reach for a more specific selector before reaching for !important.
+//
+// Scope note: this is the one place PrimeNG internals are targeted. Doing it
+// once here is what lets ~20 untouched table screens adopt the design system
+// without each one growing its own ::ng-deep block.
+// =====================================================================
+
+// ---------------------------------------------------------------------
+// Tables
+// ---------------------------------------------------------------------
+.p-datatable {
+  // Transparent so a table dropped inside a .glass-card doesn't paint an
+  // opaque rectangle over the glass.
+  background: transparent;
+
+  .p-datatable-table {
+    background: transparent;
+  }
+
+  .p-datatable-header,
+  .p-datatable-footer {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .p-datatable-thead > tr > th {
+    padding: 12px 16px;
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  .p-datatable-tbody > tr {
+    background: transparent;
+    color: var(--text);
+    transition: background-color 120ms var(--ease);
+
+    > td {
+      padding: 12px 16px;
+      border-color: var(--border);
+      font-size: 0.84rem;
+    }
+
+    &:hover {
+      background: var(--surface-hover);
+    }
+
+    // Last row shouldn't draw a rule against the card's own edge.
+    &:last-child > td {
+      border-bottom: none;
+    }
+  }
+
+  .p-datatable-tbody > tr.p-datatable-row-selected {
+    background: var(--brand-soft);
+    color: var(--text);
+  }
+
+  // Sort indicators follow the same subtle → brand transition as .th-sortable.
+  .p-datatable-sort-icon {
+    color: var(--text-subtle);
+    transition: color 120ms var(--ease);
+  }
+
+  .p-datatable-column-sorted .p-datatable-sort-icon,
+  .p-datatable-header-cell:hover .p-datatable-sort-icon {
+    color: var(--brand);
+  }
+
+  .p-datatable-emptymessage > td {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 40px 24px;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Paginator
+// ---------------------------------------------------------------------
+.p-paginator {
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text-muted);
+  padding: 10px 16px;
+
+  .p-paginator-page,
+  .p-paginator-first,
+  .p-paginator-prev,
+  .p-paginator-next,
+  .p-paginator-last {
+    border-radius: var(--r-md);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+
+    &:not(.p-disabled):hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+  }
+
+  .p-paginator-page.p-paginator-page-selected {
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 700;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Form controls
+// ---------------------------------------------------------------------
+.p-inputtext,
+.p-select,
+.p-multiselect,
+.p-textarea,
+.p-datepicker-input {
+  border-radius: var(--r-md);
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+
+  &::placeholder {
+    color: var(--text-subtle);
+  }
+
+  &:enabled:hover {
+    border-color: var(--text-subtle);
+  }
+
+  &:enabled:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-ring);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Buttons — PrimeNG buttons that remain in the app should read like .btn.
+// ---------------------------------------------------------------------
+.p-button {
+  border-radius: var(--r-md);
+  font-family: inherit;
+  font-weight: 600;
+  transition:
+    background-color 150ms var(--ease),
+    border-color 150ms var(--ease),
+    color 150ms var(--ease),
+    transform 150ms var(--ease);
+
+  &:active {
+    transform: translateY(1px);
+  }
+}
+
+.p-button.p-button-text:not(:disabled):hover {
+  background: var(--surface-hover);
+}
+
+// ---------------------------------------------------------------------
+// Overlays — dialogs, popovers and tooltips become glass.
+// ---------------------------------------------------------------------
+.p-dialog {
+  border: 1px solid var(--ai-glass-border);
+  border-radius: var(--r-xl);
+  background: var(--ai-glass-tint);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--ai-glass-shadow);
+
+  .p-dialog-header,
+  .p-dialog-content,
+  .p-dialog-footer {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--ai-divider);
+  }
+
+  .p-dialog-title {
+    font-size: 1rem;
+    font-weight: 700;
+  }
+}
+
+.p-dialog-mask.p-overlay-mask {
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.p-popover,
+.p-select-overlay,
+.p-multiselect-overlay,
+.p-datepicker-panel {
+  border: 1px solid var(--ai-glass-border);
+  border-radius: var(--r-xl);
+  background: var(--ai-glass-tint);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--ai-glass-shadow);
+  color: var(--text);
+}
+
+.p-tooltip .p-tooltip-text {
+  border-radius: var(--r-md);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: var(--text-xs);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+}
+
+// ---------------------------------------------------------------------
+// Misc
+// ---------------------------------------------------------------------
+.p-progressbar {
+  background: var(--surface-soft);
+  border-radius: var(--r-pill);
+
+  .p-progressbar-value {
+    background: var(--ai-gradient);
+  }
+}
+
+.p-tag {
+  border-radius: var(--r-pill);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}

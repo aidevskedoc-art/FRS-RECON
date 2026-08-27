@@ -35,6 +35,11 @@
   font-size: var(--text-sm);
 }
 
+.batch-summary .unit-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
 .notice {
   display: flex;
   align-items: center;
@@ -48,6 +53,55 @@
   color: var(--status-danger-fg);
   background: var(--status-danger-bg);
   border: 1px solid var(--status-danger-border);
+}
+
+.notice--warning {
+  color: var(--status-warning-fg);
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+}
+
+.generate-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.generate-bar__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--status-success-fg);
+  font-size: var(--text-sm);
+}
+
+.filter-tabs {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+}
+
+.filter-tab--active {
+  border-color: var(--ai-blue);
+  background: var(--ai-blue-soft);
+  color: var(--ai-blue);
+  font-weight: 600;
 }
 
 .filters {
@@ -83,6 +137,10 @@
   width: 140px;
 }
 
+p-select.filters__field {
+  width: 190px;
+}
+
 .filters__date {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);
@@ -112,7 +170,7 @@
     white-space: nowrap;
   }
 
-  .p-datatable-tbody > tr > td {
+  .p-datatable-tbody > tr > td:not(.wrap) {
     white-space: nowrap;
   }
 }
@@ -123,9 +181,23 @@
 }
 
 .wrap {
-  white-space: normal;
-  word-break: break-word;
-  max-width: 220px;
+  white-space: nowrap;
+}
+
+.status-pill {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+}
+
+.status-pill--matched {
+  @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+
+.status-pill--mismatch {
+  @include mixins.status-chip(var(--status-warning-fg), var(--status-warning-bg), var(--status-warning-border));
+}
+
+.status-pill--unmatched {
+  @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
 }
 
 .empty {

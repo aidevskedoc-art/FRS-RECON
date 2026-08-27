@@ -26,6 +26,21 @@
   }
 }
 
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+}
+
 .view-statements__table-wrap {
   @include mixins.card;
   @include mixins.scrollbar-thin;
@@ -38,7 +53,7 @@
     white-space: nowrap;
   }
 
-  .p-datatable-tbody > tr > td {
+  .p-datatable-tbody > tr:not(.detail-row) > td {
     white-space: nowrap;
   }
 }

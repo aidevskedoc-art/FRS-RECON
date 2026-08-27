@@ -6,24 +6,27 @@
   gap: var(--space-4);
   padding: var(--space-4);
   cursor: pointer;
-  @include mixins.card;
+  @include mixins.glass-card;
+  @include mixins.glass-sheen;
   @include mixins.elevate-on-hover;
 }
 
+// A document the engine is actively working on gets the brand glow, so an
+// in-flight card is distinguishable from a settled one at a glance.
 .doc-card--busy {
-  border-color: var(--ai-blue-soft);
-  box-shadow: var(--shadow-glow-blue);
+  border-color: rgba(99, 102, 241, 0.35);
+  box-shadow: var(--glow-card);
 }
 
 .doc-card__icon {
   flex: none;
-  width: 44px;
-  height: 44px;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--status-danger-bg);
-  color: var(--status-danger-fg);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-lg);
+  background: var(--danger-soft);
+  color: var(--danger);
   font-size: 1.25rem;
 }
 
@@ -36,7 +39,7 @@
   margin: 0 0 var(--space-1);
   font-weight: 600;
   font-size: var(--text-md);
-  color: var(--text-primary);
+  color: var(--text);
   @include mixins.truncate;
 }
 
@@ -45,50 +48,73 @@
   align-items: center;
   gap: var(--space-2);
   font-size: var(--text-xs);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 .doc-card__dot {
-  color: var(--text-tertiary);
+  color: var(--text-subtle);
 }
 
 .doc-card__error {
   margin: var(--space-1) 0 0;
   font-size: var(--text-xs);
-  color: var(--status-danger-fg);
+  color: var(--danger);
 }
 
 .doc-card__status {
   flex: none;
+  position: relative;
+  z-index: 1;
 }
 
+// Same five-pair vocabulary as the global .status-badge, but this pill also
+// carries an icon (including a spinner while busy), so it keeps its own rule.
 .status-pill {
-  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  border-color: var(--border);
+
+  i {
+    font-size: 0.7rem;
+  }
 
   &--success {
-    color: var(--status-success-fg);
-    background: var(--status-success-bg);
-    border-color: var(--status-success-border);
+    color: var(--success);
+    background: var(--success-soft);
+    border-color: transparent;
   }
   &--warning {
-    color: var(--status-warning-fg);
-    background: var(--status-warning-bg);
-    border-color: var(--status-warning-border);
+    color: var(--warning);
+    background: var(--warning-soft);
+    border-color: transparent;
   }
   &--danger {
-    color: var(--status-danger-fg);
-    background: var(--status-danger-bg);
-    border-color: var(--status-danger-border);
+    color: var(--danger);
+    background: var(--danger-soft);
+    border-color: transparent;
   }
   &--info {
-    color: var(--status-info-fg);
-    background: var(--status-info-bg);
-    border-color: var(--status-info-border);
+    color: var(--info);
+    background: var(--info-soft);
+    border-color: transparent;
   }
 }
 
 .doc-card__actions {
   flex: none;
+  position: relative;
+  z-index: 1;
   display: flex;
   gap: var(--space-1);
 }

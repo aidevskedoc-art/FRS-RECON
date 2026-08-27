@@ -22,7 +22,7 @@ const {
   toLines, valueAfter, indexOfLabel, indexMatching, isNoise, escapeRe,
 } = require('../lines');
 const { parseCurrency, parseDateToIso } = require('../format');
-const { tenureDays, splitRows } = require('./common');
+const { tenureDays, splitRows, policyTypeSelfParentsCode } = require('./common');
 
 const INSURER = /National Insurance Company/i;
 const INSURER_LEGAL = /^National Insurance Company/i;
@@ -70,7 +70,7 @@ function parseMembers(page2) {
       nomineeName: null,
       nomineeRelation: null,
       basePremium: null,
-      policyTypeSelfParents: 'A',
+      policyTypeSelfParents: policyTypeSelfParentsCode(row[genderIdx - 2]),
     };
   }).filter((m) => m && m.name);
 }

@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { BankStatementService } from '../../../core/services/bank-statement.service';
+import { errorMessage } from '../../../core/services/policy-document.service';
 
 @Component({
   selector: 'app-view-bank-statements',
@@ -15,12 +16,14 @@ import { BankStatementService } from '../../../core/services/bank-statement.serv
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ViewBankStatementsComponent {
+  private readonly router = inject(Router);
   protected readonly bankStatements = inject(BankStatementService);
 
   protected readonly expandedIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly error = signal<string | null>(null);
 
   constructor() {
-    this.bankStatements.refreshBatches().subscribe({ error: () => {} });
+    this.bankStatements.refreshBatches().subscribe({ error: (err) => this.error.set(errorMessage(err)) });
   }
 
   protected toggle(batchId: string): void {
@@ -37,7 +40,12 @@ export class ViewBankStatementsComponent {
     return this.expandedIds().has(batchId);
   }
 
+  protected viewRecords(batchId: string): void {
+    this.router.navigate(['/upload-online/bank-statements', batchId]);
+  }
+
   protected deleteBatch(batchId: string): void {
-    this.bankStatements.deleteBatch(batchId).subscribe({ error: () => {} });
+    this.error.set(null);
+    this.bankStatements.deleteBatch(batchId).subscribe({ error: (err) => this.error.set(errorMessage(err)) });
   }
 }

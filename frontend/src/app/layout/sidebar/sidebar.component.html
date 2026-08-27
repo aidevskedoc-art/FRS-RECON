@@ -2,31 +2,46 @@
   <div class="sidebar__backdrop" (click)="sidebarStore.closeMobile()"></div>
 }
 
-<aside class="sidebar" [class.sidebar--collapsed]="sidebarStore.collapsed()" [class.sidebar--mobile-open]="sidebarStore.mobileOpen()">
+<aside
+  class="sidebar"
+  [class.sidebar--collapsed]="sidebarStore.collapsed()"
+  [class.sidebar--mobile-open]="sidebarStore.mobileOpen()"
+>
   <div class="sidebar__brand">
-    <div class="sidebar__logo">
-      <i class="pi pi-sparkles"></i>
-    </div>
-    @if (!sidebarStore.collapsed()) {
-      <span class="sidebar__brand-text">FRS Insurance AI</span>
-    }
+    <img class="sidebar__logo" src="logo.svg" alt="Yashoda" width="34" height="34" />
+    <span class="side-label sidebar__brand-text">FRS · Recon</span>
   </div>
 
-  <nav class="sidebar__nav">
-    @for (group of navGroups; track group.label) {
-      <div class="sidebar__group">
+  <nav class="sidebar__nav" #nav>
+    <!--
+      One indicator for the whole rail. It slides between items on a spring
+      curve instead of each item painting its own active background, and it
+      takes the colour of whichever section owns the active route.
+    -->
+    <div
+      class="sidebar__indicator nav-accent--{{ activeAccent() }}"
+      [class.sidebar__indicator--visible]="indicatorVisible()"
+      [style.transform]="'translateY(' + indicatorTop() + 'px)'"
+      [style.height.px]="indicatorHeight()"
+      aria-hidden="true"
+    ></div>
+
+    @for (group of navGroups(); track group.label) {
+      <div class="sidebar__group nav-accent--{{ group.accent }}">
         @if (!sidebarStore.collapsed()) {
           <button
             type="button"
             class="sidebar__group-label"
-            [class.sidebar__group-label--expanded]="expandedGroups().has(group.label)"
+            [class.sidebar__group-label--expanded]="isExpanded(group.label)"
+            [attr.aria-expanded]="isExpanded(group.label)"
             (click)="toggleGroup(group.label)"
           >
             <span>{{ group.label }}</span>
             <i class="pi pi-angle-down"></i>
           </button>
         }
-        @if (sidebarStore.collapsed() || expandedGroups().has(group.label)) {
+
+        <div class="sidebar__group-items" [class.sidebar__group-items--open]="sidebarStore.collapsed() || isExpanded(group.label)">
           @for (item of group.items; track item.path) {
             <a
               class="sidebar__link"
@@ -36,21 +51,27 @@
               tooltipPosition="right"
               (click)="sidebarStore.closeMobile()"
             >
-              <i [class]="item.icon"></i>
-              @if (!sidebarStore.collapsed()) {
-                <span>{{ item.label }}</span>
-              }
+              <span class="sidebar__icon" appMagnetic [magneticStrength]="0.22">
+                <i [class]="item.icon"></i>
+              </span>
+              <span class="side-label">{{ item.label }}</span>
             </a>
           }
-        }
+        </div>
       </div>
     }
   </nav>
 
-  <button type="button" class="sidebar__toggle" (click)="sidebarStore.toggle()">
-    <i [class]="sidebarStore.collapsed() ? 'pi pi-angle-right' : 'pi pi-angle-left'"></i>
-    @if (!sidebarStore.collapsed()) {
-      <span>Collapse</span>
-    }
-  </button>
+  <div class="sidebar__footer">
+    <button
+      type="button"
+      class="sidebar__toggle"
+      [attr.aria-label]="sidebarStore.collapsed() ? 'Expand navigation' : 'Collapse navigation'"
+      (click)="sidebarStore.toggle()"
+    >
+      <i [class]="sidebarStore.collapsed() ? 'pi pi-angle-right' : 'pi pi-angle-left'"></i>
+      <span class="side-label">Collapse</span>
+    </button>
+    <span class="side-label sidebar__version">Recon Console · v1.0</span>
+  </div>
 </aside>

@@ -1,9 +1,15 @@
-<div class="shell">
-  <app-sidebar />
-  <div class="shell__main">
-    <app-topbar />
-    <div class="shell__content">
-      <router-outlet />
-    </div>
-  </div>
+<!--
+  Ambient layers, mounted once at the shell root and behind everything.
+  Both are pointer-events: none and pause when the tab is hidden.
+-->
+<app-aurora-background />
+<app-cursor-glow />
+
+<div class="shell" [class.shell--collapsed]="sidebarStore.collapsed()">
+  <app-topbar class="shell__topbar" />
+  <app-sidebar class="shell__sidebar" />
+
+  <main class="shell__content" [@routeFade]="routeKey()" [@.disabled]="reducedMotion.prefersReduced()">
+    <router-outlet />
+  </main>
 </div>

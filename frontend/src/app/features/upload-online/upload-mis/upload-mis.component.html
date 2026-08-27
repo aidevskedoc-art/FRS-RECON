@@ -80,6 +80,7 @@
       <div class="success__text">
         <strong>{{ batch.rowCount }} row{{ batch.rowCount === 1 ? '' : 's' }} saved</strong>
         <span>{{ batch.fileName }} — {{ batch.uploadType === 'IP_PAYMENT' ? 'IP Payments' : 'Diag Payments' }}</span>
+        @if (batch.unitName) { <span>Unit: {{ batch.unitName }}</span> }
       </div>
       <p-button label="View" icon="pi pi-eye" size="small" [outlined]="true" (onClick)="viewBatch()" />
     </div>

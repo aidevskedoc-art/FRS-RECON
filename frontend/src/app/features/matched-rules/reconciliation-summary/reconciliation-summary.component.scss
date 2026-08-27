@@ -1,0 +1,216 @@
+@use 'styles/mixins';
+
+.recon-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.recon-summary__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+}
+
+.recon-summary__generated {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+}
+
+.notice--warning {
+  color: var(--status-warning-fg);
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+}
+
+.filters {
+  @include mixins.card;
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.filters__date-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.filters__date {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+.recon-summary__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.summary-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  @include mixins.glass-card;
+  @include mixins.elevate-on-hover;
+}
+
+.summary-card__icon {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  font-size: 1.1rem;
+}
+
+.summary-card__value {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.summary-card__label {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.summary-card--blue .summary-card__icon {
+  background: var(--ai-blue-soft);
+  color: var(--ai-blue);
+}
+.summary-card--success .summary-card__icon {
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+.summary-card--warning .summary-card__icon {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+}
+.summary-card--danger .summary-card__icon {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+.summary-card--purple .summary-card__icon {
+  background: var(--ai-purple-soft);
+  color: var(--ai-purple);
+}
+.summary-card--cyan .summary-card__icon {
+  background: var(--ai-cyan-soft);
+  color: var(--ai-cyan);
+}
+
+.recon-summary__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  h3 {
+    margin: 0;
+    font-size: var(--text-lg);
+    color: var(--text-primary);
+  }
+}
+
+.table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  overflow: auto;
+}
+
+.breakdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+
+  th,
+  td {
+    padding: var(--space-3) var(--space-4);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th {
+    background: var(--surface-sunken);
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  td {
+    border-top: 1px solid var(--border-default);
+    color: var(--text-primary);
+  }
+}
+
+:host ::ng-deep .diff-table {
+  .p-datatable-thead > tr > th {
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+
+  .p-datatable-tbody > tr > td {
+    white-space: nowrap;
+  }
+}
+
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: var(--text-sm);
+}
+
+.amount {
+  text-align: right;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.diff-table__diff {
+  color: var(--status-warning-fg);
+  font-weight: 600;
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}

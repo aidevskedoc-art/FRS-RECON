@@ -1,16 +1,25 @@
 // Global styles entry point.
 //
-// Load order is deliberate — see the plan's "Styling stack coexistence"
-// section. Three libraries (Bootstrap, PrimeNG, Tailwind) all ship global
-// CSS; without explicit @layer boundaries, cascade order becomes a guessing
-// game (and per the CSS Cascade Layers spec, unlayered CSS *always* beats
-// layered CSS regardless of import order — the naive "just import Tailwind
-// last" approach does not reliably make Tailwind's utilities win). So: every
-// third-party layer is named explicitly, in one authoritative order
-// declared up front, and PrimeNG is told about that same order via its own
-// `cssLayer` option in app.config.ts.
+// Load order is deliberate — three libraries (Bootstrap, PrimeNG, Tailwind)
+// all ship global CSS; without explicit @layer boundaries, cascade order
+// becomes a guessing game (and per the CSS Cascade Layers spec, unlayered CSS
+// *always* beats layered CSS regardless of import order — the naive "just
+// import Tailwind last" approach does not reliably make Tailwind's utilities
+// win). So: every third-party layer is named explicitly, in one authoritative
+// order declared up front, and PrimeNG is told about that same order via its
+// own `cssLayer` option in app.config.ts.
+//
+// The AI Glass layer (tokens, theme, keyframes, components) is deliberately
+// UNLAYERED, so it outranks all three third-party layers — the design system
+// is the authority on colour and surface, not Bootstrap's reboot or Aura's
+// defaults.
 @use './styles/tokens';
 @use './styles/theme';
+@use './styles/nav-accents';
+@use './styles/keyframes';
+@use './styles/components';
+@use './styles/primeng-bridge';
+@use './styles/mixins';
 @import 'primeicons/primeicons.css';
 
 @layer bootstrap, primeng, tailwind-base, tailwind-utilities;
@@ -36,6 +45,9 @@
 @import 'tailwindcss/theme.css' layer(tailwind-base);
 @import 'tailwindcss/utilities.css' layer(tailwind-utilities);
 
+// ---------------------------------------------------------------------
+// Base
+// ---------------------------------------------------------------------
 html,
 body {
   height: 100%;
@@ -44,11 +56,16 @@ body {
 body {
   margin: 0;
   font-family: var(--font-sans);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
   font-size: var(--text-base);
-  color: var(--text-primary);
-  background: var(--surface-app);
+  color: var(--text);
+  // The shell is transparent so the fixed aurora canvas shows through; the
+  // body is what actually paints the ground colour under it.
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  transition: background-color 220ms var(--ease), color 220ms var(--ease);
 }
 
 * {
@@ -57,4 +74,56 @@ body {
 
 a {
   color: inherit;
+}
+
+// ---------------------------------------------------------------------
+// Focus is always visible.
+// ---------------------------------------------------------------------
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+// ---------------------------------------------------------------------
+// Themed scrollbars, app-wide.
+// ---------------------------------------------------------------------
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-subtle);
+}
+
+// ---------------------------------------------------------------------
+// Reduced motion — non-negotiable. This kills decorative animation
+// globally; components whose *behaviour* depends on motion (aurora canvas,
+// cursor glow, magnetic pull, counters) additionally check the
+// prefersReducedMotion() signal and render a real static fallback rather
+// than a zero-duration animation.
+// ---------------------------------------------------------------------
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,0 +1,107 @@
+// =====================================================================
+// Per-section navigation accents.
+//
+// Each top-level nav group owns its own electric hue, so the user can tell
+// "which world am I in" before reading a label. Every section defines a
+// triplet:
+//   --nav-color-<key>  rest-state icon glyph
+//   --nav-grad-<key>   active icon tile fill
+//   --nav-soft-<key>   active pill background
+//
+// Keys map to the SidebarComponent's NAV_GROUPS `accent` field.
+// =====================================================================
+
+:root {
+  // Automation Insurance — the primary workflow
+  --nav-color-insurance: #7c3aed;
+  --nav-grad-insurance: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+  --nav-soft-insurance: rgba(124, 58, 237, 0.14);
+
+  // Upload Online — the secondary workflow
+  --nav-color-online: #e11d48;
+  --nav-grad-online: linear-gradient(135deg, #e11d48 0%, #fb7185 100%);
+  --nav-soft-online: rgba(225, 29, 72, 0.14);
+
+  // Matched Rules — the tertiary workflow (reconciliation output)
+  --nav-color-rules: #0d9488;
+  --nav-grad-rules: linear-gradient(135deg, #0d9488 0%, #5eead4 100%);
+  --nav-soft-rules: rgba(13, 148, 136, 0.14);
+
+  // Master Data — masters / config
+  --nav-color-masters: #0ea5e9;
+  --nav-grad-masters: linear-gradient(135deg, #0ea5e9 0%, #7dd3fc 100%);
+  --nav-soft-masters: rgba(14, 165, 233, 0.14);
+
+  // Master Rules — admin-level rule authoring
+  --nav-color-admin: #ec4899;
+  --nav-grad-admin: linear-gradient(135deg, #ec4899 0%, #f9a8d4 100%);
+  --nav-soft-admin: rgba(236, 72, 153, 0.14);
+
+  // Reserved for future sections, defined up front so new nav groups can
+  // pick an accent without touching the token layer.
+  --nav-color-reports: #f97316;
+  --nav-grad-reports: linear-gradient(135deg, #f97316 0%, #fdba74 100%);
+  --nav-soft-reports: rgba(249, 115, 22, 0.14);
+
+  --nav-color-support: #10b981;
+  --nav-grad-support: linear-gradient(135deg, #10b981 0%, #6ee7b7 100%);
+  --nav-soft-support: rgba(16, 185, 129, 0.14);
+}
+
+// Dark mode uses the neon variant of each hue and a slightly hotter soft fill.
+@mixin dark-nav-accents {
+  --nav-color-insurance: #8b5cf6;
+  --nav-grad-insurance: linear-gradient(135deg, #8b5cf6 0%, #c4b5fd 100%);
+  --nav-soft-insurance: rgba(139, 92, 246, 0.18);
+
+  --nav-color-online: #fb7185;
+  --nav-grad-online: linear-gradient(135deg, #fb7185 0%, #fda4af 100%);
+  --nav-soft-online: rgba(251, 113, 133, 0.18);
+
+  --nav-color-rules: #2dd4bf;
+  --nav-grad-rules: linear-gradient(135deg, #2dd4bf 0%, #99f6e4 100%);
+  --nav-soft-rules: rgba(45, 212, 191, 0.18);
+
+  --nav-color-masters: #22d3ee;
+  --nav-grad-masters: linear-gradient(135deg, #22d3ee 0%, #a5f3fc 100%);
+  --nav-soft-masters: rgba(34, 211, 238, 0.18);
+
+  --nav-color-admin: #f472b6;
+  --nav-grad-admin: linear-gradient(135deg, #f472b6 0%, #fbcfe8 100%);
+  --nav-soft-admin: rgba(244, 114, 182, 0.18);
+
+  --nav-color-reports: #fb923c;
+  --nav-grad-reports: linear-gradient(135deg, #fb923c 0%, #fed7aa 100%);
+  --nav-soft-reports: rgba(251, 146, 60, 0.18);
+
+  --nav-color-support: #34d399;
+  --nav-grad-support: linear-gradient(135deg, #34d399 0%, #a7f3d0 100%);
+  --nav-soft-support: rgba(52, 211, 153, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    @include dark-nav-accents;
+  }
+}
+
+:root[data-theme='dark'] {
+  @include dark-nav-accents;
+}
+
+// ---------------------------------------------------------------------
+// Accent carrier classes.
+//
+// A nav group tags itself with one of these; everything inside then reads
+// the three generic --nav-accent-* properties. This is what lets the
+// sidebar's SCSS be written once against a single accent name instead of
+// branching per section — and it avoids composing `var(--nav-color-#{key})`
+// from a template-bound string, which CSS can't do.
+// ---------------------------------------------------------------------
+@each $key in (insurance, online, rules, masters, admin, reports, support) {
+  .nav-accent--#{$key} {
+    --nav-accent-color: var(--nav-color-#{$key});
+    --nav-accent-grad: var(--nav-grad-#{$key});
+    --nav-accent-soft: var(--nav-soft-#{$key});
+  }
+}

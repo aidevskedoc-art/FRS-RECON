@@ -1,14 +1,22 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { ButtonModule } from 'primeng/button';
 import { DocumentCardComponent } from '../shared/document-card/document-card.component';
-import { PolicyDocumentService, UploadDuplicate, errorMessage } from '../../../core/services/policy-document.service';
+import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
+import { CircularProgressComponent } from '../../../shared/ui/circular-progress.component';
+import { MagneticDirective } from '../../../shared/motion/magnetic.directive';
+import {
+  MAX_FILES_PER_REQUEST,
+  PolicyDocumentService,
+  UploadDuplicate,
+  UploadFailure,
+  errorMessage,
+} from '../../../core/services/policy-document.service';
 import { PolicyDocument } from '../../../core/models';
 
 @Component({
   selector: 'app-upload',
   standalone: true,
-  imports: [ButtonModule, DocumentCardComponent],
+  imports: [DocumentCardComponent, PageHeaderComponent, CircularProgressComponent, MagneticDirective],
   templateUrl: './upload.component.html',
   styleUrl: './upload.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -24,11 +32,30 @@ export class UploadComponent {
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
   protected readonly duplicates = signal<UploadDuplicate[]>([]);
+  protected readonly failed = signal<UploadFailure[]>([]);
+
+  protected readonly uploadProgress = this.policyDocuments.uploadProgress;
 
   protected readonly pendingSizeLabel = computed(() => {
     const total = this.pendingFiles().reduce((sum, f) => sum + f.size, 0);
     return total < 1024 * 1024 ? `${(total / 1024).toFixed(0)} KB` : `${(total / (1024 * 1024)).toFixed(1)} MB`;
   });
+
+  /** Files are sent in batches of this size — shown up front so a large selection isn't a surprise. */
+  protected readonly batchCount = computed(() => Math.ceil(this.pendingFiles().length / MAX_FILES_PER_REQUEST));
+
+  /** Whole-batch completion, for the dropzone's progress ring. */
+  protected readonly uploadPercent = computed(() => {
+    const progress = this.uploadProgress();
+    if (!progress || progress.filesTotal === 0) {
+      return 0;
+    }
+    return (progress.filesDone / progress.filesTotal) * 100;
+  });
+
+  /** Wall-clock duration of the last upload, reported on completion. */
+  protected readonly lastDurationLabel = signal<string | null>(null);
+  private uploadStartedAt = 0;
 
   protected readonly justUploaded = computed(() => {
     const ids = new Set(this.justUploadedIds());
@@ -79,15 +106,24 @@ export class UploadComponent {
     this.uploading.set(true);
     this.uploadError.set(null);
     this.duplicates.set([]);
+    this.failed.set([]);
+    this.lastDurationLabel.set(null);
+    this.uploadStartedAt = performance.now();
 
     this.policyDocuments.upload(this.pendingFiles()).subscribe({
-      next: ({ documents, duplicates }) => {
+      next: ({ documents, duplicates, failed }) => {
         this.justUploadedIds.update((ids) => [...documents.map((d) => d.id), ...ids]);
         this.duplicates.set(duplicates);
-        // Only successfully-uploaded files leave the pending list — a
-        // rejected duplicate stays there so it's obvious which one was skipped.
-        const duplicateNames = new Set(duplicates.map((d) => d.fileName));
-        this.pendingFiles.set(this.pendingFiles().filter((f) => duplicateNames.has(f.name)));
+        this.failed.set(failed);
+        // Only files that actually landed leave the pending list. A skipped
+        // duplicate stays so it's obvious which one it was, and a failed
+        // file stays so "Upload" retries just those.
+        const keep = new Set([
+          ...duplicates.map((d) => d.fileName),
+          ...failed.map((f) => f.fileName),
+        ]);
+        this.pendingFiles.set(this.pendingFiles().filter((f) => keep.has(f.name)));
+        this.lastDurationLabel.set(`${((performance.now() - this.uploadStartedAt) / 1000).toFixed(1)}s`);
         this.uploading.set(false);
       },
       error: (err) => {

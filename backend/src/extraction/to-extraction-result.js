@@ -1,4 +1,7 @@
 const { confidenceLevelFromScore } = require('./confidence');
+const {
+  omissionsFor, POLICY_FIELD_OMISSION, MEMBER_FIELD_OMISSION,
+} = require('./product-omissions');
 
 /**
  * Turns a format parser's output into the { policy, fields, metadata } shape
@@ -57,19 +60,24 @@ function isEmpty(value) {
 
 function toExtractionResult(parsed, { pagesAnalyzed, processingTimeMs }) {
   const fields = [];
+  // A field this product never prints isn't a gap a reviewer can close, so
+  // it's scored as settled rather than missing — see product-omissions.js.
+  const omits = omissionsFor(parsed.format);
 
   for (const spec of POLICY_FIELDS) {
     const value = parsed[spec.from];
     const present = !isEmpty(value);
-    const score = spec.rule ? RULE : present ? FOUND : MISSING;
+    const notPrinted = omits.has(POLICY_FIELD_OMISSION[spec.from]);
+    const settled = Boolean(spec.rule) || (notPrinted && !present);
+    const score = settled ? RULE : present ? FOUND : MISSING;
     fields.push({
       path: spec.path,
-      label: spec.label,
+      label: notPrinted ? `${spec.label} (not on this policy)` : spec.label,
       value: present ? value : '',
       confidence: confidenceLevelFromScore(score),
       confidenceScore: score,
       sourcePage: present ? spec.page : null,
-      verified: Boolean(spec.rule),
+      verified: settled,
     });
   }
 
@@ -77,17 +85,19 @@ function toExtractionResult(parsed, { pagesAnalyzed, processingTimeMs }) {
     for (const [key, label] of MEMBER_FIELDS) {
       const value = member[key];
       const present = !isEmpty(value);
-      // policyTypeSelfParents is the constant "A" from the output template.
+      // policyTypeSelfParents is a business-rule constant, not read from the page.
       const isRule = key === 'policyTypeSelfParents';
-      const score = isRule ? RULE : present ? FOUND : MISSING;
+      const notPrinted = omits.has(MEMBER_FIELD_OMISSION[key]);
+      const settled = isRule || (notPrinted && !present);
+      const score = settled ? RULE : present ? FOUND : MISSING;
       fields.push({
         path: `members.${i}.${key}`,
-        label: `${member.name} — ${label}`,
+        label: `${member.name} — ${notPrinted ? `${label} (not on this policy)` : label}`,
         value: present ? value : '',
         confidence: confidenceLevelFromScore(score),
         confidenceScore: score,
         sourcePage: present ? 2 : null,
-        verified: isRule,
+        verified: settled,
       });
     }
   });
