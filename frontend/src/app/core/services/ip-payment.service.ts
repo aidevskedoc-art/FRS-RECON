@@ -1,7 +1,13 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
-import { OnlinePaymentRecordsPage, OnlinePaymentRecordsQuery, OnlineUploadBatch, RecordFilterOptions } from '../models';
+import {
+  OnlinePaymentRecordsPage,
+  OnlinePaymentRecordsQuery,
+  OnlineUploadBatch,
+  RecordFilterOptions,
+  RecordStatusCounts,
+} from '../models';
 import { API_BASE_URL } from '../config/api.config';
 
 /** Dedicated IP Payments table (ip_payment_upload_batches / ip_payment_records) — Format 1 only. */
@@ -64,6 +70,11 @@ export class IpPaymentService {
   /** GET /api/ip-payments/records/filter-options?batchId= — distinct Payment Mode / Pay Type values for the filter dropdowns. */
   fetchFilterOptions(batchId: string): Observable<RecordFilterOptions> {
     return this.http.get<RecordFilterOptions>(`${API_BASE_URL}/ip-payments/records/filter-options`, { params: { batchId } });
+  }
+
+  /** GET /api/ip-payments/records/status-counts?batchId= — record counts per match verdict, for the status filter dropdown. */
+  fetchStatusCounts(batchId: string): Observable<RecordStatusCounts> {
+    return this.http.get<RecordStatusCounts>(`${API_BASE_URL}/ip-payments/records/status-counts`, { params: { batchId } });
   }
 
   /** GET /api/ip-payments/records/export.xlsx — streams the filtered set as a workbook. */

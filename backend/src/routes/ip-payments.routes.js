@@ -179,6 +179,14 @@ function buildRecordsFilter(query) {
     params.push(query.matchStatus);
     clauses.push(`r.match_status = $${params.length}`);
   }
+  // '__NONE__' = rows no rule caught (every UNMATCHED row, plus excluded rows);
+  // any other value is an exact winning-rule name from the filter-options list.
+  if (query.matchAppliedRule === '__NONE__') {
+    clauses.push('r.match_applied_rule IS NULL');
+  } else if (query.matchAppliedRule) {
+    params.push(query.matchAppliedRule);
+    clauses.push(`r.match_applied_rule = $${params.length}`);
+  }
 
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
@@ -207,20 +215,47 @@ const RECORDS_WITH_MATCH_SQL = `
     ON regexp_replace(mda.account_number, '\\D', '', 'g') = regexp_replace(bu.account_no, '\\D', '', 'g')
 `;
 
-// GET /api/ip-payments/records/filter-options?batchId= — distinct Payment Mode / Pay Type values present in a batch, for filter dropdowns.
+// GET /api/ip-payments/records/status-counts?batchId= — record counts per
+// persisted match verdict, for the batch-detail status filter. NULL match_status
+// (a rule excluded the row, or the batch has never been generated) is folded
+// into notGenerated. Same GROUP BY match_status shape as matched-rules /summary.
+router.get('/records/status-counts', async (req, res, next) => {
+  try {
+    if (!req.query.batchId) return res.status(400).json({ error: 'batchId is required' });
+    const { rows } = await db.query(
+      `SELECT match_status, COUNT(*)::int AS n FROM ip_payment_records WHERE batch_id = $1 GROUP BY match_status`,
+      [req.query.batchId],
+    );
+    const counts = { total: 0, matched: 0, amountMismatch: 0, unmatched: 0, notGenerated: 0 };
+    for (const row of rows) {
+      counts.total += row.n;
+      if (row.match_status === 'MATCHED') counts.matched += row.n;
+      else if (row.match_status === 'AMOUNT_MISMATCH') counts.amountMismatch += row.n;
+      else if (row.match_status === 'UNMATCHED') counts.unmatched += row.n;
+      else counts.notGenerated += row.n;
+    }
+    res.json(counts);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/ip-payments/records/filter-options?batchId= — distinct Payment Mode / Pay Type / winning-rule values present in a batch, for filter dropdowns.
 router.get('/records/filter-options', async (req, res, next) => {
   try {
     if (!req.query.batchId) return res.status(400).json({ error: 'batchId is required' });
     const { rows } = await db.query(
       `SELECT
          ARRAY_AGG(DISTINCT payment_mode) FILTER (WHERE payment_mode IS NOT NULL AND payment_mode <> '') AS payment_modes,
-         ARRAY_AGG(DISTINCT pay_type) FILTER (WHERE pay_type IS NOT NULL AND pay_type <> '') AS pay_types
+         ARRAY_AGG(DISTINCT pay_type) FILTER (WHERE pay_type IS NOT NULL AND pay_type <> '') AS pay_types,
+         ARRAY_AGG(DISTINCT match_applied_rule) FILTER (WHERE match_applied_rule IS NOT NULL AND match_applied_rule <> '') AS applied_rules
        FROM ip_payment_records WHERE batch_id = $1`,
       [req.query.batchId],
     );
     res.json({
       paymentModes: (rows[0].payment_modes || []).sort(),
       payTypes: (rows[0].pay_types || []).sort(),
+      appliedRules: (rows[0].applied_rules || []).sort(),
     });
   } catch (err) {
     next(err);

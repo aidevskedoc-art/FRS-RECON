@@ -10,52 +10,37 @@ import { TooltipModule } from 'primeng/tooltip';
 import { MatchingRulesService } from '../../../core/services/matching-rules.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import {
-  AMOUNT_FIELD_OPTIONS,
-  BANK_AMOUNT_SIDE_OPTIONS,
-  BANK_FIELD_OPTIONS,
-  CONFIG_FIELD_META,
-  ConfigFieldMeta,
-  ConfigOverrideField,
-  DIAG_REFERENCE_FIELD_OPTIONS,
-  GROUPING_CONFIG_FIELDS,
+  BANK_STATEMENT_FIELD_OPTIONS,
+  LEAF_KIND_OPTIONS,
   MatchingRule,
   MatchingRuleDraft,
+  PAIR_OPERATOR_OPTIONS_BY_TYPE,
+  PAYMENT_FIELD_OPTIONS,
+  PairOperator,
   RULE_ACTIONS,
   RULE_FIELDS,
   RULE_OPERATORS,
-  TIE_BREAK_OPTIONS,
+  RuleConditionGroup,
+  RuleLeaf,
 } from '../../../core/models';
 
-function emptyDraft(): MatchingRuleDraft {
+function emptyLeaf(): RuleLeaf {
   return {
-    name: '',
+    kind: 'FIELD_PAIR',
+    negate: false,
     field: null,
     operator: null,
-    value: '',
-    action: null,
-    active: true,
-    amountTolerance: null,
-    referenceFields: null,
-    suffixGrouping: null,
-    divisionScoping: null,
-    bankFields: null,
-    amountFields: null,
-    bankAmountSide: null,
-    tieBreak: null,
+    value: null,
+    sourceField: null,
+    destinationField: null,
+    pairOperator: null,
+    pairTolerance: null,
   };
 }
 
-/** Sensible starting value when a config override toggle is switched on — matches the engine's own hardcoded default for that field. */
-const OVERRIDE_DEFAULTS: Record<ConfigOverrideField, string> = {
-  amountTolerance: '1',
-  referenceFields: '',
-  suffixGrouping: 'ENABLED',
-  divisionScoping: 'ENABLED',
-  bankFields: BANK_FIELD_OPTIONS.map((o) => o.value).join(', '),
-  amountFields: AMOUNT_FIELD_OPTIONS.map((o) => o.value).join(', '),
-  bankAmountSide: 'EITHER',
-  tieBreak: 'AMOUNT_FIRST',
-};
+function emptyDraft(): MatchingRuleDraft {
+  return { name: '', action: null, active: true, conditionGroups: [[emptyLeaf()]] };
+}
 
 @Component({
   selector: 'app-diag-matching-rules',
@@ -71,11 +56,10 @@ export class DiagMatchingRulesComponent {
   protected readonly fieldOptions = RULE_FIELDS;
   protected readonly operatorOptions = RULE_OPERATORS;
   protected readonly actionOptions = RULE_ACTIONS;
-  protected readonly referenceFieldOptions = DIAG_REFERENCE_FIELD_OPTIONS;
-  protected readonly configFields = CONFIG_FIELD_META;
-  protected readonly groupingConfigFields = GROUPING_CONFIG_FIELDS;
+  protected readonly leafKindOptions = LEAF_KIND_OPTIONS;
+  protected readonly paymentFieldOptions = PAYMENT_FIELD_OPTIONS;
+  protected readonly bankFieldOptions = BANK_STATEMENT_FIELD_OPTIONS;
 
-  /** One unified, priority-ordered list — settings and exception rules are no longer separate concepts (see backend/sql/schema.sql's unified-rules migration). */
   protected readonly allRules = computed(() => this.matchingRules.diagRules());
 
   protected readonly dialogVisible = signal(false);
@@ -95,93 +79,132 @@ export class DiagMatchingRulesComponent {
     table.filterGlobal(value, 'contains');
   }
 
-  protected updateDraft(patch: Partial<MatchingRuleDraft>): void {
-    this.draft.update((d) => ({ ...d, ...patch }));
-  }
-
-  protected fieldLabel(value: string | null): string {
-    if (!value) return '—';
-    return this.fieldOptions.find((f) => f.value === value)?.label ?? value;
-  }
+  // --- table summaries --------------------------------------------------------
 
   protected actionLabel(value: string | null): string {
     if (!value) return '—';
     return this.actionOptions.find((a) => a.value === value)?.label ?? value;
   }
 
-  /** Condition summary shown in the table row — "—" when the rule always applies. */
-  protected conditionSummary(rule: MatchingRule): string {
-    if (!rule.field) return 'Always applies';
-    return `${this.fieldLabel(rule.field)} ${rule.operator === 'CONTAINS' ? 'contains' : '='} "${rule.value}"`;
+  private fieldLabel(value: string | null): string {
+    return this.fieldOptions.find((f) => f.value === value)?.label ?? (value ?? '—');
   }
 
-  /** Short summary of which config overrides a rule sets, for the table row (the dialog shows full detail). */
-  protected overrideSummary(rule: MatchingRule): string {
-    const set = this.configFields.filter((m) => this.isOverrideSetOnRule(rule, m.field)).map((m) => m.label);
-    return set.length ? set.join(', ') : '—';
+  private paymentFieldLabel(value: string | null): string {
+    return this.paymentFieldOptions.find((f) => f.value === value)?.label ?? (value ?? '—');
   }
 
-  private isOverrideSetOnRule(rule: MatchingRule, field: ConfigOverrideField): boolean {
-    const v = rule[field];
-    return v !== null && v !== undefined && v !== '';
+  private bankFieldLabel(value: string | null): string {
+    return this.bankFieldOptions.find((f) => f.value === value)?.label ?? (value ?? '—');
   }
 
-  protected hasCondition(): boolean {
-    return !!this.draft().field;
+  protected leafSummary(leaf: RuleLeaf): string {
+    const not = leaf.negate ? 'NOT ' : '';
+    if (leaf.kind === 'FIELD_PAIR') {
+      const src = this.paymentFieldLabel(leaf.sourceField);
+      const dst = this.bankFieldLabel(leaf.destinationField);
+      const op =
+        leaf.pairOperator === 'CONTAINS'
+          ? 'contains'
+          : leaf.pairOperator === 'DATE_WITHIN_DAYS'
+            ? `within ${leaf.pairTolerance ?? '?'}d of`
+            : leaf.pairOperator === 'AMOUNT_WITHIN_TOLERANCE'
+              ? `within ₹${leaf.pairTolerance ?? '?'} of`
+              : '=';
+      return `${not}${src} ${op} Bank.${dst}`;
+    }
+    return `${not}${this.fieldLabel(leaf.field)} ${leaf.operator === 'CONTAINS' ? 'contains' : '='} "${leaf.value}"`;
   }
 
-  protected toggleCondition(enabled: boolean): void {
-    if (enabled) {
-      this.updateDraft({ field: this.fieldOptions[0]?.value ?? null, operator: 'EQUALS', value: '' });
+  private groupSummary(group: RuleConditionGroup): string {
+    return group.map((l) => this.leafSummary(l)).join(' OR ');
+  }
+
+  /** One line per AND-group; groups after the first are prefixed "AND ". */
+  protected conditionLines(rule: MatchingRule): string[] {
+    const groups = rule.conditionGroups ?? [];
+    if (!groups.length) return ['No conditions'];
+    return groups.map((g, i) => (i === 0 ? '' : 'AND ') + this.groupSummary(g));
+  }
+
+  // --- draft: groups & leaves ----------------------------------------------
+
+  protected groups(): RuleConditionGroup[] {
+    return this.draft().conditionGroups ?? [];
+  }
+
+  private setGroups(groups: RuleConditionGroup[]): void {
+    this.draft.update((d) => ({ ...d, conditionGroups: groups }));
+  }
+
+  protected updateDraft(patch: Partial<MatchingRuleDraft>): void {
+    this.draft.update((d) => ({ ...d, ...patch }));
+  }
+
+  protected addGroup(): void {
+    this.setGroups([...this.groups(), [emptyLeaf()]]);
+  }
+
+  protected removeGroup(group: RuleConditionGroup): void {
+    const next = this.groups().filter((g) => g !== group);
+    this.setGroups(next.length ? next : [[emptyLeaf()]]);
+  }
+
+  protected addLeaf(group: RuleConditionGroup): void {
+    this.setGroups(this.groups().map((g) => (g === group ? [...g, emptyLeaf()] : g)));
+  }
+
+  protected removeLeaf(group: RuleConditionGroup, leaf: RuleLeaf): void {
+    this.setGroups(
+      this.groups().map((g) => {
+        if (g !== group) return g;
+        const next = g.filter((l) => l !== leaf);
+        return next.length ? next : [emptyLeaf()];
+      }),
+    );
+  }
+
+  protected updateLeaf(group: RuleConditionGroup, leaf: RuleLeaf, patch: Partial<RuleLeaf>): void {
+    this.setGroups(this.groups().map((g) => (g === group ? g.map((l) => (l === leaf ? { ...l, ...patch } : l)) : g)));
+  }
+
+  protected setLeafKind(group: RuleConditionGroup, leaf: RuleLeaf, kind: RuleLeaf['kind']): void {
+    if (kind === 'LITERAL') {
+      this.updateLeaf(group, leaf, {
+        kind: 'LITERAL',
+        field: this.fieldOptions[0]?.value ?? null,
+        operator: 'EQUALS',
+        value: '',
+        sourceField: null,
+        destinationField: null,
+        pairOperator: null,
+        pairTolerance: null,
+      });
     } else {
-      this.updateDraft({ field: null, operator: null, value: '' });
+      this.updateLeaf(group, leaf, {
+        kind: 'FIELD_PAIR',
+        field: null,
+        operator: null,
+        value: null,
+        sourceField: null,
+        destinationField: null,
+        pairOperator: null,
+        pairTolerance: null,
+      });
     }
   }
 
-  protected optionsForField(field: ConfigOverrideField): { label: string; value: string }[] {
-    if (field === 'referenceFields') return this.referenceFieldOptions;
-    if (field === 'bankFields') return BANK_FIELD_OPTIONS;
-    if (field === 'amountFields') return AMOUNT_FIELD_OPTIONS;
-    if (field === 'bankAmountSide') return BANK_AMOUNT_SIDE_OPTIONS;
-    if (field === 'tieBreak') return TIE_BREAK_OPTIONS;
-    return [];
+  protected leafPairOperatorOptions(leaf: RuleLeaf): { label: string; value: PairOperator }[] {
+    const source = this.paymentFieldOptions.find((f) => f.value === leaf.sourceField);
+    const dest = this.bankFieldOptions.find((f) => f.value === leaf.destinationField);
+    return !source || !dest || source.type !== dest.type ? [] : PAIR_OPERATOR_OPTIONS_BY_TYPE[source.type];
   }
 
-  protected isOverrideEnabled(field: ConfigOverrideField): boolean {
-    const v = this.draft()[field];
-    return v !== null && v !== undefined && v !== '';
+  protected leafPairRequiresTolerance(leaf: RuleLeaf): boolean {
+    return leaf.pairOperator === 'DATE_WITHIN_DAYS' || leaf.pairOperator === 'AMOUNT_WITHIN_TOLERANCE';
   }
 
-  /** A grouping-phase override (referenceFields/suffixGrouping) is only settable on an unconditional rule. */
-  protected isOverrideDisabled(meta: ConfigFieldMeta): boolean {
-    return this.groupingConfigFields.includes(meta.field) && this.hasCondition();
-  }
-
-  protected toggleOverride(field: ConfigOverrideField, enabled: boolean): void {
-    this.updateDraft({ [field]: enabled ? OVERRIDE_DEFAULTS[field] : null } as Partial<MatchingRuleDraft>);
-  }
-
-  /** Sets one config-override field's raw value on the draft — a template expression can't use a computed object key directly, so the toggle/number/select controls call this instead of updateDraft. */
-  protected setOverrideValue(field: ConfigOverrideField, value: string): void {
-    this.updateDraft({ [field]: value } as Partial<MatchingRuleDraft>);
-  }
-
-  protected multiSelectValuesFor(field: ConfigOverrideField): string[] {
-    const raw = this.draft()[field] as string | null;
-    return raw ? raw.split(',').map((f) => f.trim()).filter(Boolean) : [];
-  }
-
-  protected isMultiSelectChecked(field: ConfigOverrideField, value: string): boolean {
-    return this.multiSelectValuesFor(field).includes(value);
-  }
-
-  protected toggleMultiSelectValue(field: ConfigOverrideField, value: string, checked: boolean): void {
-    const current = new Set(this.multiSelectValuesFor(field));
-    if (checked) current.add(value);
-    else current.delete(value);
-    const ordered = this.optionsForField(field).map((o) => o.value).filter((v) => current.has(v));
-    this.updateDraft({ [field]: ordered.join(', ') } as Partial<MatchingRuleDraft>);
-  }
+  // --- open / save --------------------------------------------------------
 
   protected openAdd(): void {
     this.editingId.set(null);
@@ -194,55 +217,90 @@ export class DiagMatchingRulesComponent {
     this.editingId.set(rule.id);
     this.draft.set({
       name: rule.name,
-      field: rule.field,
-      operator: rule.operator ?? 'EQUALS',
-      value: rule.value ?? '',
       action: rule.action,
       active: rule.active,
-      amountTolerance: rule.amountTolerance !== null ? String(rule.amountTolerance) : null,
-      referenceFields: rule.referenceFields,
-      suffixGrouping: rule.suffixGrouping,
-      divisionScoping: rule.divisionScoping,
-      bankFields: rule.bankFields,
-      amountFields: rule.amountFields,
-      bankAmountSide: rule.bankAmountSide,
-      tieBreak: rule.tieBreak,
+      conditionGroups: (rule.conditionGroups ?? [[emptyLeaf()]]).map((g) =>
+        (g.length ? g : [emptyLeaf()]).map((l) => ({ ...emptyLeaf(), ...l, negate: l.negate === true })),
+      ),
     });
     this.formError.set(null);
     this.dialogVisible.set(true);
   }
 
+  /** A leaf that is a non-negated text field-to-field EQUALS/CONTAINS — the join key every rule needs. */
+  private isJoinLeaf(leaf: RuleLeaf): boolean {
+    if (leaf.kind !== 'FIELD_PAIR' || leaf.negate) return false;
+    if (leaf.pairOperator !== 'EQUALS' && leaf.pairOperator !== 'CONTAINS') return false;
+    const src = this.paymentFieldOptions.find((f) => f.value === leaf.sourceField);
+    const dst = this.bankFieldOptions.find((f) => f.value === leaf.destinationField);
+    return src?.type === 'text' && dst?.type === 'text';
+  }
+
   protected save(): void {
     const d = this.draft();
     if (!d.name.trim()) return this.formError.set('Name is required');
+    if (!d.action) return this.formError.set('Match Status is required');
 
-    const hasCondition = !!d.field;
-    if (hasCondition) {
-      if (!d.operator) return this.formError.set('Operator is required');
-      if (!d.value.trim()) return this.formError.set('Value is required');
+    const groups = d.conditionGroups ?? [];
+    if (!groups.length) return this.formError.set('Add at least one condition group');
+
+    for (let gi = 0; gi < groups.length; gi += 1) {
+      const g = groups[gi];
+      if (!g.length) return this.formError.set(`Condition group ${gi + 1} needs at least one condition`);
+      for (let li = 0; li < g.length; li += 1) {
+        const l = g[li];
+        const label = `Group ${gi + 1} condition ${li + 1}`;
+        if (l.kind === 'FIELD_PAIR') {
+          if (!l.sourceField) return this.formError.set(`${label}: source field is required`);
+          if (!l.destinationField) return this.formError.set(`${label}: destination field is required`);
+          if (!l.pairOperator) return this.formError.set(`${label}: operator is required`);
+          if (this.leafPairRequiresTolerance(l) && !String(l.pairTolerance ?? '').trim()) {
+            return this.formError.set(`${label}: tolerance is required for this operator`);
+          }
+        } else {
+          if (!l.field) return this.formError.set(`${label}: field is required`);
+          if (!l.operator) return this.formError.set(`${label}: operator is required`);
+          if (!String(l.value ?? '').trim()) return this.formError.set(`${label}: value is required`);
+        }
+      }
     }
 
-    const hasAction = !!d.action;
-    const hasOverride = this.configFields.some((m) => this.isOverrideEnabled(m.field));
-    if (!hasAction && !hasOverride) {
-      return this.formError.set('Set a Match Status and/or at least one matching-config override — otherwise this rule has no effect');
+    if (!groups.some((g) => g.some((l) => this.isJoinLeaf(l)))) {
+      return this.formError.set('At least one condition must be a non-negated text field-to-field match (e.g. Trans ID Equals Bank.Chq/Ref No.)');
     }
-    if (hasCondition) {
-      const blocked = this.groupingConfigFields.find((f) => this.isOverrideEnabled(f));
-      if (blocked) return this.formError.set(`"${blocked}" can only be set on a rule with no condition`);
-    }
+
+    const conditionGroups: RuleConditionGroup[] = groups.map((g) =>
+      g.map((l) =>
+        l.kind === 'FIELD_PAIR'
+          ? {
+              kind: 'FIELD_PAIR' as const,
+              negate: l.negate === true,
+              field: null,
+              operator: null,
+              value: null,
+              sourceField: l.sourceField,
+              destinationField: l.destinationField,
+              pairOperator: l.pairOperator,
+              pairTolerance: this.leafPairRequiresTolerance(l) ? String(l.pairTolerance ?? '').trim() : null,
+            }
+          : {
+              kind: 'LITERAL' as const,
+              negate: l.negate === true,
+              field: l.field,
+              operator: l.operator,
+              value: String(l.value ?? '').trim(),
+              sourceField: null,
+              destinationField: null,
+              pairOperator: null,
+              pairTolerance: null,
+            },
+      ),
+    );
 
     this.saving.set(true);
     this.formError.set(null);
 
-    const payload: MatchingRuleDraft = {
-      ...d,
-      name: d.name.trim(),
-      field: hasCondition ? d.field : null,
-      operator: hasCondition ? d.operator : null,
-      value: hasCondition ? d.value.trim() : '',
-    };
-
+    const payload: MatchingRuleDraft = { name: d.name.trim(), action: d.action, active: d.active, conditionGroups };
     const request = this.editingId()
       ? this.matchingRules.updateDiagRule(this.editingId()!, payload)
       : this.matchingRules.addDiagRule(payload);
@@ -278,7 +336,7 @@ export class DiagMatchingRulesComponent {
     return list[list.length - 1]?.id === rule.id;
   }
 
-  /** Swaps `rule` with its neighbor in the priority order and persists the new full order. Evaluation order matters for every config field and for the match-status output — see reconciliation/rules.js resolveGroupConfig. */
+  /** Swaps `rule` with its neighbor in the priority order and persists the new full order. */
   protected moveRule(rule: MatchingRule, direction: -1 | 1): void {
     const list = [...this.allRules()];
     const index = list.findIndex((r) => r.id === rule.id);

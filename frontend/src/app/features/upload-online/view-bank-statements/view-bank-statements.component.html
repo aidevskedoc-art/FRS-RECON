@@ -21,6 +21,7 @@
           <th></th>
           <th>Bank</th>
           <th>Account No</th>
+          <th>Unit Name</th>
           <th>Statement Period</th>
           <th>File Name</th>
           <th>Rows</th>
@@ -37,6 +38,7 @@
           </td>
           <td>{{ batch.bankName || '—' }}</td>
           <td class="mono">{{ batch.accountNo || '—' }}</td>
+          <td>{{ batch.unitName || '—' }}</td>
           <td>
             @if (batch.statementFrom && batch.statementTo) {
               {{ batch.statementFrom }} to {{ batch.statementTo }}
@@ -55,7 +57,7 @@
         @if (isExpanded(batch.id)) {
           <tr class="detail-row">
             <td></td>
-            <td colspan="7">
+            <td colspan="8">
               <div class="detail-grid">
                 <div><span>Branch</span><strong>{{ batch.accountBranch || '—' }}</strong></div>
                 <div><span>Uploaded By</span><strong>{{ batch.uploadedBy || '—' }}</strong></div>
@@ -67,7 +69,7 @@
       </ng-template>
       <ng-template #emptymessage>
         <tr>
-          <td colspan="8" class="empty">No bank statements uploaded yet.</td>
+          <td colspan="9" class="empty">No bank statements uploaded yet.</td>
         </tr>
       </ng-template>
     </p-table>

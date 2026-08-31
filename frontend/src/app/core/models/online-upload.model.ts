@@ -77,14 +77,28 @@ export interface OnlinePaymentRecordsQuery {
   dateTo?: string;
   /** Filters to records with this persisted match status (see batch-detail components' filter tabs). */
   matchStatus?: MatchStatus;
+  /** Exact winning-rule name (from RecordFilterOptions.appliedRules), or '__NONE__' for rows no rule caught. */
+  matchAppliedRule?: string;
   page?: number;
   pageSize?: number;
 }
 
-/** Distinct Payment Mode / Pay Type values present in one batch — populates the batch-detail filter dropdowns. */
+/** Distinct Payment Mode / Pay Type / winning-rule values present in one batch — populates the batch-detail filter dropdowns. */
 export interface RecordFilterOptions {
   paymentModes: string[];
   payTypes: string[];
+  /** Winning-rule names — returned by the IP records/filter-options endpoint; absent for Diag. */
+  appliedRules?: string[];
+}
+
+/** Record counts per persisted match verdict for one batch — feeds the batch-detail status filter. */
+export interface RecordStatusCounts {
+  total: number;
+  matched: number;
+  amountMismatch: number;
+  unmatched: number;
+  /** NULL match_status: rows a rule excluded, plus every row when the batch has never been generated. */
+  notGenerated: number;
 }
 
 export interface BankStatementUpload {
@@ -94,6 +108,8 @@ export interface BankStatementUpload {
   accountBranch: string | null;
   statementFrom: string | null;
   statementTo: string | null;
+  /** Canonical division ("Hitech City" etc.) resolved from accountNo via master_division_bank_accounts — null if the account isn't registered. */
+  unitName: string | null;
   fileName: string;
   fileSizeBytes: number;
   rowCount: number;

@@ -1,30 +1,10 @@
 const express = require('express');
 const db = require('../db');
 const { ipPaymentRecordRowToApi, diagOpRecordRowToApi, bankStatementRecordRowToApi, matchingRuleRowToApi } = require('../mappers');
-const {
-  groupBySuffix,
-  buildBankIndex,
-  findBankMatch,
-  matchedAmountField,
-  classify,
-  resolveDivision,
-} = require('../reconciliation/matcher');
-const { resolveGroupConfig, resolveGroupingConfig } = require('../reconciliation/rules');
+const { groupRecords, buildFieldIndex, candidateBankRows, resolveDivision } = require('../reconciliation/matcher');
+const { ACTION_STATUS, joinLeaves, groupsMatch, isIndexable } = require('../reconciliation/rules');
 
 const router = express.Router();
-
-// Both candidate "payment amount" fields are always summed onto every group
-// at grouping time (cheap); which one(s) actually count as a match is a
-// match-time decision (the "amountFields" config field, resolved per group —
-// see resolveGroupConfig), filtered in at buildGroupResult below rather than
-// varying what gets grouped. There is deliberately no fallback reference-
-// field list here any more — see computeMatchResults below: if no active
-// rule sets "Reference fields checked," no reference is ever extracted, full
-// stop, rather than silently falling back to a hardcoded field list.
-const ALL_AMOUNT_EXTRACTORS = {
-  billAmount: (r) => r.billAmount,
-  nonCashAmount: (r) => (Number(r.cardAmount) || 0) + (Number(r.chequeAmount) || 0) + (Number(r.onlineUpiAmount) || 0),
-};
 
 /** bank_statement_uploads.account_no is free text parsed off a statement; master_division_bank_accounts.account_number is curated — compare digits only. */
 function digitsOnly(value) {
@@ -64,79 +44,44 @@ async function loadBankRecords(dateFrom, dateTo) {
 }
 
 /**
- * Human-readable reason for a group's status when no rule's match-status
- * output overrode it — ties the result back to whatever config actually
- * applied to this group (amount tolerance, division scoping) instead of
- * leaving "Rule Applied" blank just because no *status* rule happened to fire.
+ * Verdict for one payment row: walk active rules in priority order; the first
+ * rule whose full conditionGroups hold for some bank row it can reach via its
+ * join keys wins. Among a rule's matching bank rows the earliest txn_date is
+ * taken. No rule matches -> UNMATCHED, no bank row.
+ *
+ * `rules` here is already filtered to active + indexable; `indexes` is a Map
+ * of destinationField -> the per-field bank index (buildFieldIndex).
  */
-function coreMatchBasis(status, group, tolerance, division) {
-  if (!group.baseRef) return 'No reference value found on this record';
-  // Split-payment grouping (see groupBySuffix in reconciliation/matcher.js) is
-  // otherwise invisible on the individual-records pages — every record in the
-  // group shows this same text, so a record that individually looks unmatched
-  // now says *why*: it was combined with N others under one shared reference.
-  const splitNote =
-    group.sourceRecordIds.length > 1
-      ? ` — split payment, ${group.sourceRecordIds.length} records (refs ${group.refs.join(', ')}) combined to ₹${group.amounts.billAmount}`
-      : '';
-  // Only stated for UNMATCHED — division scoping can only ever turn a
-  // would-be match into "not found," never affect an already-agreed
-  // MATCHED/AMOUNT_MISMATCH result, so it'd be noise there.
-  const divisionNote = division && status === 'UNMATCHED' ? ` within the ${division} division` : '';
-  // No active rule sets Amount Tolerance -> matcher.js requires exact
-  // equality (see amountsMatch) -> describe that honestly as ₹0, not blank.
-  const toleranceLabel = Number.isFinite(tolerance) ? tolerance : 0;
-  if (status === 'MATCHED') return `Core match — reference "${group.baseRef}" + amount within ₹${toleranceLabel}${splitNote}`;
-  if (status === 'AMOUNT_MISMATCH') return `Core match — reference "${group.baseRef}" found, amount differs by more than ₹${toleranceLabel}${splitNote}`;
-  return `No bank transaction found for reference "${group.baseRef}"${divisionNote}${splitNote}`;
-}
+function buildGroupResult(group, indexes, rules, paymentModeField) {
+  let status = 'UNMATCHED';
+  let excluded = false;
+  let appliedRuleName = null;
+  let bank = null;
 
-/** Cache key for a bankFields combo — order-independent, since {chqRefNo,narration} and {narration,chqRefNo} index identically. Empty/undefined bankFields (no active rule sets it) gets its own key, mapping to an index with nothing in it. */
-function bankFieldsKey(bankFields) {
-  return [...(bankFields || [])].sort().join(',');
-}
-
-/** Lazily builds (and caches) the bank index for a given bankFields combo — a group's resolved config can vary this field per group, so more than one index may be needed for one batch, but in practice only as many as distinct combos actually configured (almost always just one). */
-function getOrBuildBankIndex(cache, bankRecords, bankFields) {
-  const key = bankFieldsKey(bankFields);
-  if (!cache.has(key)) cache.set(key, buildBankIndex(bankRecords, bankFields));
-  return cache.get(key);
-}
-
-function buildGroupResult(group, bankIndexCache, bankRecords, rules, paymentModeField) {
-  const { config, statusOverride, excluded, appliedRuleName } = resolveGroupConfig(rules, group, paymentModeField);
-
-  // No fallback: a field no active rule sets stays exactly what
-  // resolveGroupConfig left it as (undefined) — see matcher.js for what that
-  // means for each (empty bankFields indexes nothing, undefined tolerance
-  // requires exact equality, etc.), not a hidden default substituted here.
-  const amountFields = Array.isArray(config.amountFields) ? config.amountFields : [];
-  const bankFields = Array.isArray(config.bankFields) ? config.bankFields : [];
-  const tolerance = config.amountTolerance;
-  // Only restrict by division when a rule actively turns it ON — unset means no restriction.
-  const division = config.divisionScoping === 'ENABLED' ? group.first.division : null;
-
-  const bankIndex = getOrBuildBankIndex(bankIndexCache, bankRecords, bankFields);
-  const bank = findBankMatch(group, bankIndex, tolerance, division, config.bankAmountSide, config.tieBreak, amountFields);
-  const computedStatus = classify(group, bank, tolerance, config.bankAmountSide, amountFields);
-  const status = statusOverride ?? computedStatus;
+  for (const rule of rules) {
+    const hits = candidateBankRows(joinLeaves(rule), group, indexes).filter((rec) =>
+      groupsMatch(rule.conditionGroups, group, rec, paymentModeField),
+    );
+    if (hits.length === 0) continue;
+    bank = hits.reduce((a, b) => ((a.txnDate ?? '') <= (b.txnDate ?? '') ? a : b));
+    appliedRuleName = rule.name;
+    if (rule.action === 'EXCLUDE') excluded = true;
+    else status = ACTION_STATUS[rule.action] || 'UNMATCHED';
+    break;
+  }
 
   return {
     groupId: group.sourceRecordIds.join('+'),
-    refs: group.refs,
-    baseRef: group.baseRef,
+    refs: [...new Set([group.first.transId, group.first.transactionRef1, group.first.transactionRef2].filter(Boolean))],
+    baseRef: group.first.transId || null,
     sourceRecordIds: group.sourceRecordIds,
     patientName: group.first.patientName,
     receiptNumber: group.first.receiptNumber,
-    paymentAmount: group.amounts.billAmount,
-    matchedAmountField: matchedAmountField(group, bank, tolerance, config.bankAmountSide, amountFields),
+    paymentAmount: group.first.billAmount,
+    matchedAmountField: null,
     status,
-    // Only ever a real rule's name (or null) — never generated text, so the
-    // UI can trust "Rule Applied" as "a rule you configured did this." The
-    // core engine's own reasoning for the ordinary case lives in matchReason
-    // instead, kept visibly separate from actual rules.
     appliedRuleName,
-    matchReason: excluded ? null : coreMatchBasis(status, group, tolerance, division),
+    matchReason: excluded ? null : appliedRuleName ? `Matched by rule "${appliedRuleName}"` : 'No matching rule',
     excluded,
     bank: bank
       ? {
@@ -186,43 +131,31 @@ async function computeMatchResults({ recordTable, rowToApi, rulesTable, paymentM
   const { rows } = await db.query(`SELECT * FROM ${recordTable} ${where}`, params);
   const records = rows.map(rowToApi);
 
-  // Each record's own division, resolved from its batch's unit name — lets
-  // findBankMatch refuse a same-reference bank record from a different
-  // division (see resolveDivision in reconciliation/matcher.js).
+  // Each record's own division, resolved from its batch's unit name — a rule
+  // can compare it against the bank side's divisionName (a "same unit" leaf).
   const { rows: batchRows } = await db.query(`SELECT id, unit_name FROM ${batchTable}`);
   const divisionByBatchId = new Map(batchRows.map((b) => [String(b.id), resolveDivision(b.unit_name)]));
   for (const record of records) record.division = divisionByBatchId.get(record.batchId) || null;
 
   const bankRecords = await loadBankRecords(dateFrom, dateTo);
 
-  // sort_order is the user-configurable priority set from the Manage Rules
-  // screen (see matching-rules.routes.js PUT .../reorder) — the first active
-  // rule whose condition matches (or has none), in this order, wins for each
-  // config field and for the match-status output (resolveGroupConfig /
-  // resolveGroupingConfig in reconciliation/rules.js). Comma-list fields are
-  // parsed to arrays once here so every rule consumer downstream just deals
-  // in arrays, never re-splitting strings.
+  // sort_order is the user-configurable priority (Manage Rules screen). Only
+  // active, indexable rules run — an indexable rule has at least one
+  // non-negated text field-pair leaf to key the bank index on (enforced on
+  // save; re-checked here so a legacy row can't blow up the engine).
   const { rows: ruleRows } = await db.query(`SELECT * FROM ${rulesTable} ORDER BY sort_order NULLS LAST, id`);
-  const rules = ruleRows.map(matchingRuleRowToApi).map((r) => ({
-    ...r,
-    referenceFields: r.referenceFields ? r.referenceFields.split(',').map((f) => f.trim()).filter(Boolean) : null,
-    bankFields: r.bankFields ? r.bankFields.split(',').map((f) => f.trim()).filter(Boolean) : null,
-    amountFields: r.amountFields ? r.amountFields.split(',').map((f) => f.trim()).filter(Boolean) : null,
-    amountTolerance: r.amountTolerance !== null && r.amountTolerance !== undefined ? Number(r.amountTolerance) : null,
-  }));
+  const rules = ruleRows.map(matchingRuleRowToApi).filter((r) => r.active && isIndexable(r));
 
-  // Grouping-phase config (referenceFields, suffixGrouping) is resolved once
-  // for the whole batch, before any group exists — only unconditional rows
-  // are eligible (see resolveGroupingConfig's doc comment). No fallback: if
-  // no active rule sets "Reference fields checked," refFields stays empty,
-  // so groupBySuffix.primaryRef resolves every record's ref to null.
-  const { referenceFields: refFields, suffixGrouping } = resolveGroupingConfig(rules);
+  // One bank index per distinct join-destination field across all active rules.
+  const indexes = new Map();
+  for (const rule of rules) {
+    for (const leaf of joinLeaves(rule)) {
+      if (!indexes.has(leaf.destinationField)) indexes.set(leaf.destinationField, buildFieldIndex(bankRecords, leaf.destinationField));
+    }
+  }
 
-  // Both candidate amount sums are always computed per group (cheap) —
-  // *which* one(s) count as a match is resolved per group in buildGroupResult.
-  const groups = groupBySuffix(records, refFields || [], ALL_AMOUNT_EXTRACTORS, suffixGrouping === 'ENABLED');
-  const bankIndexCache = new Map();
-  return groups.map((g) => buildGroupResult(g, bankIndexCache, bankRecords, rules, paymentModeField));
+  // One group per MIS row — split-payment merging was removed.
+  return groupRecords(records).map((g) => buildGroupResult(g, indexes, rules, paymentModeField));
 }
 
 async function runMatching(req, res, opts) {

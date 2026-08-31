@@ -17,7 +17,27 @@ const matchingRulesRouter = require('./routes/matching-rules.routes');
 
 const app = express();
 
-app.use(cors());
+// CORS_ORIGIN unset (the default) keeps the API open to every origin, as
+// before — only set it in .env to restrict which frontend origin(s) may call
+// this API from a browser. Comma-separated so more than one dev port (or a
+// deployed frontend alongside a staging one) can be allowed at once. A
+// request with no Origin header (curl, server-to-server, Postman) is always
+// allowed through — only browser cross-origin calls are ever restricted.
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
+  : null;
+
+const corsOptions = allowedOrigins
+  ? {
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+        callback(new Error(`Origin "${origin}" is not allowed by CORS_ORIGIN`));
+      },
+      credentials: true,
+    }
+  : undefined;
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(uploadDir));
 
