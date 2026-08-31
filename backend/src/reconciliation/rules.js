@@ -1,150 +1,207 @@
 /**
- * The unified matching-rules list: one row can carry a condition
- * (field/operator/value — omitted means "always applies"), a match-status
- * output (action), and/or one or more matching-config overrides. Rows are
- * evaluated in priority order (ascending sort_order); for each config field,
- * the first active row whose condition matches (or has none) AND sets that
- * field wins. There is no hardcoded fallback anywhere in this module: a
- * field no active row sets simply stays unresolved (undefined) — see
- * reconciliation/matcher.js for exactly what "unresolved" means for each
- * (e.g. no bank fields configured indexes nothing, so nothing is ever
- * found). Deactivating the last row that set a field is a real, visible
- * behavior change, not a no-op. Status/exclusion resolve the same way,
- * independently of config fields.
+ * Condition-only matching rules.
+ *
+ * A rule is { name, action, active, conditionGroups }. There is NO config
+ * layer any more — no referenceFields / bankFields / amountTolerance /
+ * suffixGrouping / divisionScoping / amountFields / bankAmountSide / tieBreak.
+ * Matching is decided entirely by a rule's conditions.
+ *
+ * `conditionGroups` is CNF: an AND-list of OR-groups. Each OR-group is a list
+ * of leaves; a leaf is LITERAL (a payment field vs a typed-in value) or
+ * FIELD_PAIR (a payment field vs a bank-statement field), each with an
+ * optional `negate`. A rule matches a (payment-row, bank-row) pair when
+ * EVERY group has AT LEAST ONE satisfied leaf.
+ *
+ * Rules are evaluated in priority order (ascending sort_order). The first
+ * active rule that fully matches some bank row wins; its `action` sets the
+ * verdict. No rule matches -> UNMATCHED. Split-payment merging is gone: one
+ * group == one MIS row (see groupRecords in matcher.js).
  */
 
-const FIELDS = ['reference', 'patientName', 'receiptNumber', 'payType', 'patType', 'paymentMode', 'userName'];
+const FIELDS = ['patientName', 'receiptNumber', 'payType', 'patType', 'paymentMode', 'userName'];
 const OPERATORS = ['EQUALS', 'CONTAINS'];
-const ACTIONS = ['FORCE_MATCHED', 'FORCE_UNMATCHED', 'FORCE_MISMATCH', 'EXCLUDE'];
+// The FORCE_MATCHED_* variants below all resolve to the same 'MATCHED' status as
+// FORCE_MATCHED — distinct actions only so a unit-scoped / tolerance rule reads
+// clearly in the UI and carries its own appliedRuleName. The unit check
+// (division ↔ Bank.divisionName) and the amount tolerance (an
+// AMOUNT_WITHIN_TOLERANCE field-pair) live in the rule's conditions, not here.
+const ACTIONS = [
+  'FORCE_MATCHED',
+  'FORCE_UNMATCHED',
+  'FORCE_MISMATCH',
+  'FORCE_MATCHED_SAME_UNIT',
+  'FORCE_MATCHED_OTHER_UNIT',
+  'FORCE_MATCHED_TOL_SAME_UNIT',
+  'FORCE_MATCHED_TOL_OTHER_UNIT',
+  'EXCLUDE',
+];
 
-// Config-override fields a row can set. GROUPING_CONFIG_FIELDS affect how
-// records are grouped — before any group exists to evaluate a condition
-// against — so those two are only ever honored on a row with no condition
-// (enforced in matching-rules.routes.js); MATCH_CONFIG_FIELDS are used after
-// grouping, evaluated per-group exactly like a status override.
-const GROUPING_CONFIG_FIELDS = ['referenceFields', 'suffixGrouping'];
-const MATCH_CONFIG_FIELDS = ['amountTolerance', 'divisionScoping', 'bankFields', 'amountFields', 'bankAmountSide', 'tieBreak'];
-const CONFIG_FIELDS = [...GROUPING_CONFIG_FIELDS, ...MATCH_CONFIG_FIELDS];
+/** action -> persisted match_status. EXCLUDE is handled separately (drops the row from the list). */
+const ACTION_STATUS = {
+  FORCE_MATCHED: 'MATCHED',
+  FORCE_MATCHED_SAME_UNIT: 'MATCHED',
+  FORCE_MATCHED_OTHER_UNIT: 'MATCHED',
+  FORCE_MATCHED_TOL_SAME_UNIT: 'MATCHED',
+  FORCE_MATCHED_TOL_OTHER_UNIT: 'MATCHED',
+  FORCE_UNMATCHED: 'UNMATCHED',
+  FORCE_MISMATCH: 'AMOUNT_MISMATCH',
+};
 
 /**
- * Reads a rule-conditionable value off a payment group's underlying record.
- * `paymentModeField` is which raw column backs the "paymentMode" condition —
- * IP payments call it paymentMode, Diag payments call it payMode.
+ * Payment-side fields a leaf may reference, tagged with a comparable data
+ * type. Keys are the camelCase names the mapped payment record actually
+ * carries (see ipPaymentRecordRowToApi / diagOpRecordRowToApi in mappers.js)
+ * plus `division`, which computeMatchResults sets on every record before
+ * matching. leafMatches reads group.first[sourceField] directly.
  */
+const PAYMENT_FIELD_CATALOG = {
+  receiptNumber: 'text',
+  yhno: 'text',
+  ipNo: 'text',
+  transId: 'text',
+  transactionRef1: 'text',
+  transactionRef2: 'text',
+  patientName: 'text',
+  payType: 'text',
+  patType: 'text',
+  paymentMode: 'text',
+  userName: 'text',
+  remarks: 'text',
+  division: 'text',
+  receiptDate: 'date',
+  billAmount: 'number',
+  cashAmount: 'number',
+  cardAmount: 'number',
+  chequeAmount: 'number',
+  onlineUpiAmount: 'number',
+};
+
+/** Bank-statement fields a FIELD_PAIR leaf's destination may reference. `divisionName` is set on every bank record in loadBankRecords. */
+const BANK_FIELD_CATALOG = {
+  chqRefNo: 'text',
+  narration: 'text',
+  divisionName: 'text',
+  txnDate: 'date',
+  valueDate: 'date',
+  withdrawalAmt: 'number',
+  depositAmt: 'number',
+  closingBalance: 'number',
+};
+
+/** Valid pairOperator values per data type — text/date/number can't be cross-compared. */
+const PAIR_OPERATORS_BY_TYPE = {
+  text: ['EQUALS', 'CONTAINS'],
+  date: ['DATE_WITHIN_DAYS'],
+  number: ['AMOUNT_WITHIN_TOLERANCE'],
+};
+
+/** Reads a LITERAL leaf's payment-side value. `paymentModeField` is paymentMode for IP, payMode for Diag. */
 function fieldValue(group, field, paymentModeField) {
   const record = group.first;
-  switch (field) {
-    case 'reference':
-      return group.refs.length ? group.refs.join(' / ') : group.baseRef || '';
-    case 'patientName':
-      return record.patientName || '';
-    case 'receiptNumber':
-      return record.receiptNumber || '';
-    case 'payType':
-      return record.payType || '';
-    case 'patType':
-      return record.patType || '';
-    case 'paymentMode':
-      return record[paymentModeField] || '';
-    case 'userName':
-      return record.userName || '';
-    default:
-      return '';
-  }
+  if (field === 'paymentMode') return record[paymentModeField] || '';
+  return record[field] || '';
 }
 
-function ruleConditionMatches(rule, group, paymentModeField) {
-  const actual = String(fieldValue(group, rule.field, paymentModeField)).toUpperCase();
-  const expected = String(rule.value).toUpperCase();
-  if (rule.operator === 'EQUALS') return actual === expected;
-  if (rule.operator === 'CONTAINS') return actual.includes(expected);
+/** LITERAL leaf: payment field vs a constant, case-insensitive. */
+function ruleConditionMatches(leaf, group, paymentModeField) {
+  const actual = String(fieldValue(group, leaf.field, paymentModeField)).toUpperCase();
+  const expected = String(leaf.value).toUpperCase();
+  if (leaf.operator === 'EQUALS') return actual === expected;
+  if (leaf.operator === 'CONTAINS') return actual.includes(expected);
   return false;
 }
 
-/** True for a row with no condition set — applies to every group/record unconditionally. */
-function isUnconditional(rule) {
-  return rule.field === null || rule.field === undefined;
+/** FIELD_PAIR leaf: payment field vs a specific bank row's field. undefined/null on either side never matches. */
+function pairConditionMatches(leaf, group, bankRecord) {
+  if (!bankRecord) return false;
+  const sourceValue = group.first[leaf.sourceField];
+  const destValue = bankRecord[leaf.destinationField];
+  if (sourceValue === undefined || sourceValue === null || destValue === undefined || destValue === null) return false;
+
+  switch (leaf.pairOperator) {
+    case 'EQUALS':
+      return String(sourceValue).trim().toUpperCase() === String(destValue).trim().toUpperCase();
+    case 'CONTAINS':
+      return String(destValue).toUpperCase().includes(String(sourceValue).trim().toUpperCase());
+    case 'DATE_WITHIN_DAYS': {
+      const days = Number(leaf.pairTolerance);
+      const diffMs = Math.abs(new Date(sourceValue).getTime() - new Date(destValue).getTime());
+      return Number.isFinite(days) && Number.isFinite(diffMs) && diffMs <= days * 24 * 60 * 60 * 1000;
+    }
+    case 'AMOUNT_WITHIN_TOLERANCE': {
+      const tolerance = Number(leaf.pairTolerance) || 0;
+      return Math.abs(Number(sourceValue) - Number(destValue)) <= tolerance;
+    }
+    default:
+      return false;
+  }
+}
+
+/** One leaf against a (group, bankRow) pair, applying `negate`. A FIELD_PAIR leaf is unanswerable — and so never matches — without a bank row. */
+function leafMatches(leaf, group, bankRecord, paymentModeField) {
+  if (leaf.kind === 'FIELD_PAIR') {
+    if (!bankRecord) return false;
+    const base = pairConditionMatches(leaf, group, bankRecord);
+    return leaf.negate === true ? !base : base;
+  }
+  const base = ruleConditionMatches(leaf, group, paymentModeField);
+  return leaf.negate === true ? !base : base;
+}
+
+/** CNF: every OR-group must have at least one satisfied leaf. */
+function groupsMatch(conditionGroups, group, bankRecord, paymentModeField) {
+  if (!Array.isArray(conditionGroups) || conditionGroups.length === 0) return false;
+  return conditionGroups.every(
+    (orGroup) =>
+      Array.isArray(orGroup) &&
+      orGroup.length > 0 &&
+      orGroup.some((leaf) => leafMatches(leaf, group, bankRecord, paymentModeField)),
+  );
 }
 
 /**
- * Resolves a group's effective match-time config and status/exclusion by
- * walking active rules in priority order once. A MATCH_CONFIG_FIELDS field
- * no active row sets stays undefined on the returned config — there is no
- * fallback value substituted here. Grouping-phase fields (referenceFields/
- * suffixGrouping) are NOT resolved here — see resolveGroupingConfig below,
- * which runs once for the whole batch before any group exists.
+ * The rule's join keys: every non-negated text FIELD_PAIR leaf with an
+ * EQUALS/CONTAINS operator. These drive the O(1) bank index (candidateBankRows
+ * in matcher.js); the remaining leaves are checked per candidate by
+ * groupsMatch. A rule with no join key can't be evaluated efficiently and is
+ * rejected on save (validateRuleBody in matching-rules.routes.js).
  */
-function resolveGroupConfig(rules, group, paymentModeField) {
-  const config = {};
-  const resolvedFields = new Set();
-  let status = null;
-  let excluded = false;
-  let appliedRuleName = null;
-
-  for (const rule of rules) {
-    if (!rule.active) continue;
-    if (!isUnconditional(rule) && !ruleConditionMatches(rule, group, paymentModeField)) continue;
-
-    for (const field of MATCH_CONFIG_FIELDS) {
-      if (resolvedFields.has(field)) continue;
-      if (rule[field] !== null && rule[field] !== undefined && rule[field] !== '') {
-        config[field] = rule[field];
-        resolvedFields.add(field);
-      }
-    }
-
-    if (status === null && !excluded && rule.action) {
-      if (rule.action === 'EXCLUDE') {
-        excluded = true;
-        appliedRuleName = rule.name;
-      } else if (rule.action === 'FORCE_MATCHED') {
-        status = 'MATCHED';
-        appliedRuleName = rule.name;
-      } else if (rule.action === 'FORCE_UNMATCHED') {
-        status = 'UNMATCHED';
-        appliedRuleName = rule.name;
-      } else if (rule.action === 'FORCE_MISMATCH') {
-        status = 'AMOUNT_MISMATCH';
-        appliedRuleName = rule.name;
+function joinLeaves(rule) {
+  const out = [];
+  for (const orGroup of rule.conditionGroups || []) {
+    for (const leaf of orGroup || []) {
+      if (
+        leaf &&
+        leaf.kind === 'FIELD_PAIR' &&
+        leaf.negate !== true &&
+        (leaf.pairOperator === 'EQUALS' || leaf.pairOperator === 'CONTAINS') &&
+        PAYMENT_FIELD_CATALOG[leaf.sourceField] === 'text' &&
+        BANK_FIELD_CATALOG[leaf.destinationField] === 'text'
+      ) {
+        out.push(leaf);
       }
     }
   }
-
-  return { config, statusOverride: status, excluded, appliedRuleName };
+  return out;
 }
 
-/**
- * Resolves the batch-wide grouping config (referenceFields, suffixGrouping)
- * once, before any group exists — only unconditional rows are eligible,
- * highest priority first. A field no active unconditional row sets stays
- * undefined — no fallback value.
- */
-function resolveGroupingConfig(rules) {
-  const config = {};
-  const resolvedFields = new Set();
-  for (const rule of rules) {
-    if (!rule.active || !isUnconditional(rule)) continue;
-    for (const field of GROUPING_CONFIG_FIELDS) {
-      if (resolvedFields.has(field)) continue;
-      if (rule[field] !== null && rule[field] !== undefined && rule[field] !== '') {
-        config[field] = rule[field];
-        resolvedFields.add(field);
-      }
-    }
-  }
-  return config;
+function isIndexable(rule) {
+  return joinLeaves(rule).length > 0;
 }
 
 module.exports = {
   FIELDS,
   OPERATORS,
   ACTIONS,
-  GROUPING_CONFIG_FIELDS,
-  MATCH_CONFIG_FIELDS,
-  CONFIG_FIELDS,
+  ACTION_STATUS,
+  PAYMENT_FIELD_CATALOG,
+  BANK_FIELD_CATALOG,
+  PAIR_OPERATORS_BY_TYPE,
   fieldValue,
   ruleConditionMatches,
-  isUnconditional,
-  resolveGroupConfig,
-  resolveGroupingConfig,
+  pairConditionMatches,
+  leafMatches,
+  groupsMatch,
+  joinLeaves,
+  isIndexable,
 };

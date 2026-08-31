@@ -2,7 +2,7 @@
   <div class="matching-rules__header">
     <div>
       <h2>Diagnostics Payment Matching Rules</h2>
-      <p>{{ allRules().length }} rule{{ allRules().length === 1 ? '' : 's' }} — settings and exceptions share one prioritized list</p>
+      <p>{{ allRules().length }} rule{{ allRules().length === 1 ? '' : 's' }} — evaluated top to bottom; the first that matches wins</p>
     </div>
     <p-button label="Add Rule" icon="pi pi-plus" (onClick)="openAdd()" />
   </div>
@@ -16,7 +16,7 @@
 
   <span class="search">
     <i class="pi pi-search"></i>
-    <input pInputText type="text" placeholder="Search rule name, condition, status…" (input)="onSearchInput($event, dt)" />
+    <input pInputText type="text" placeholder="Search rule name, status…" (input)="onSearchInput($event, dt)" />
   </span>
 
   <div class="matching-rules__table-wrap">
@@ -26,16 +26,15 @@
       dataKey="id"
       [paginator]="allRules().length > 10"
       [rows]="10"
-      [globalFilterFields]="['name', 'field', 'value', 'action']"
+      [globalFilterFields]="['name', 'action']"
       styleClass="p-datatable-sm rules-table"
     >
       <ng-template #header>
         <tr>
-          <th class="priority-col" pTooltip="Evaluation order — the first active rule whose condition matches (or has none) wins, per field">Priority</th>
+          <th class="priority-col" pTooltip="Evaluation order — the first active rule that matches a bank row wins">Priority</th>
           <th>Name</th>
-          <th>Condition</th>
+          <th>Conditions</th>
           <th>Match Status</th>
-          <th>Config Overrides</th>
           <th>Active</th>
           <th class="actions-col">Actions</th>
         </tr>
@@ -51,9 +50,12 @@
             </button>
           </td>
           <td>{{ rule.name }}</td>
-          <td class="mono wrap">{{ conditionSummary(rule) }}</td>
+          <td class="mono wrap condition-cell">
+            @for (line of conditionLines(rule); track $index) {
+              <div class="condition-cell__line">{{ line }}</div>
+            }
+          </td>
           <td>{{ actionLabel(rule.action) }}</td>
-          <td class="wrap" [pTooltip]="overrideSummary(rule)">{{ overrideSummary(rule) }}</td>
           <td>
             <button
               type="button"
@@ -73,7 +75,7 @@
       </ng-template>
       <ng-template #emptymessage>
         <tr>
-          <td colspan="7" class="empty">No rules yet.</td>
+          <td colspan="6" class="empty">No rules yet.</td>
         </tr>
       </ng-template>
     </p-table>
@@ -84,7 +86,7 @@
     [visible]="dialogVisible()"
     (visibleChange)="dialogVisible.set($event)"
     [modal]="true"
-    [style]="{ width: '34rem' }"
+    [style]="{ width: '38rem' }"
   >
     <div class="form">
       @if (formError(); as err) {
@@ -95,47 +97,8 @@
       }
       <label>
         <span>Name</span>
-        <input pInputText type="text" [ngModel]="draft().name" (ngModelChange)="updateDraft({ name: $event })" placeholder="e.g. Exclude cash payments" />
+        <input pInputText type="text" [ngModel]="draft().name" (ngModelChange)="updateDraft({ name: $event })" placeholder="e.g. Online: ref = bank chq/ref, same amount" />
       </label>
-
-      <section class="form-section">
-        <label class="form__switch">
-          <span>Only apply when a condition matches</span>
-          <p-toggleswitch [ngModel]="hasCondition()" (ngModelChange)="toggleCondition($event)" />
-        </label>
-        @if (hasCondition()) {
-          <label>
-            <span>Field</span>
-            <p-select
-              [options]="fieldOptions"
-              optionLabel="label"
-              optionValue="value"
-              [ngModel]="draft().field"
-              (ngModelChange)="updateDraft({ field: $event })"
-              appendTo="body"
-              styleClass="full-width"
-            />
-          </label>
-          <label>
-            <span>Operator</span>
-            <p-select
-              [options]="operatorOptions"
-              optionLabel="label"
-              optionValue="value"
-              [ngModel]="draft().operator"
-              (ngModelChange)="updateDraft({ operator: $event })"
-              appendTo="body"
-              styleClass="full-width"
-            />
-          </label>
-          <label>
-            <span>Value</span>
-            <input pInputText type="text" [ngModel]="draft().value" (ngModelChange)="updateDraft({ value: $event })" placeholder="e.g. CASH" />
-          </label>
-        } @else {
-          <p class="form-section__hint">No condition — this rule always applies.</p>
-        }
-      </section>
 
       <section class="form-section">
         <label>
@@ -146,8 +109,7 @@
             optionValue="value"
             [ngModel]="draft().action"
             (ngModelChange)="updateDraft({ action: $event })"
-            placeholder="No match-status override"
-            [showClear]="true"
+            placeholder="Choose what a match sets"
             appendTo="body"
             styleClass="full-width"
           />
@@ -155,65 +117,141 @@
       </section>
 
       <section class="form-section">
-        <p class="form-section__title">Matching config overrides</p>
-        <p class="form-section__hint">Only used when this rule's condition matches (or always, if it has none). Off = inherit from the next rule, or the engine default.</p>
-        @for (meta of configFields; track meta.field) {
-          <div class="config-row" [class.config-row--disabled]="isOverrideDisabled(meta)">
-            <label class="form__switch">
-              <span>{{ meta.label }}</span>
-              <p-toggleswitch
-                [ngModel]="isOverrideEnabled(meta.field)"
-                (ngModelChange)="toggleOverride(meta.field, $event)"
-                [disabled]="isOverrideDisabled(meta)"
-              />
-            </label>
-            @if (isOverrideDisabled(meta)) {
-              <p class="config-row__hint">Requires no condition — this setting affects how records are grouped.</p>
-            } @else if (isOverrideEnabled(meta.field)) {
-              @if (meta.kind === 'toggle') {
-                <label class="form__switch config-row__control">
-                  <span>Enabled</span>
-                  <p-toggleswitch
-                    [ngModel]="draft()[meta.field] === 'ENABLED'"
-                    (ngModelChange)="setOverrideValue(meta.field, $event ? 'ENABLED' : 'DISABLED')"
-                  />
-                </label>
-              } @else if (meta.kind === 'number') {
-                <input
-                  pInputText
-                  type="number"
-                  min="0"
-                  class="config-row__control"
-                  [ngModel]="draft()[meta.field]"
-                  (ngModelChange)="setOverrideValue(meta.field, $event)"
-                />
-              } @else if (meta.kind === 'select') {
-                <p-select
-                  [options]="meta.selectOptions"
-                  optionLabel="label"
-                  optionValue="value"
-                  class="config-row__control"
-                  [ngModel]="draft()[meta.field]"
-                  (ngModelChange)="setOverrideValue(meta.field, $event)"
-                  appendTo="body"
-                  styleClass="full-width"
-                />
-              } @else if (meta.kind === 'multiSelect') {
-                <div class="config-row__control">
-                  @for (opt of optionsForField(meta.field); track opt.value) {
-                    <label class="form__switch">
-                      <span>{{ opt.label }}</span>
-                      <p-toggleswitch
-                        [ngModel]="isMultiSelectChecked(meta.field, opt.value)"
-                        (ngModelChange)="toggleMultiSelectValue(meta.field, opt.value, $event)"
+        <p class="form-section__title">Conditions</p>
+        <p class="form-section__hint">
+          A rule matches a payment ↔ bank row when <strong>every</strong> group holds. Within a group any one alternative is enough (OR).
+          At least one condition must be a non-negated text field-to-field match — that's the join key.
+        </p>
+
+        @for (group of groups(); track $index) {
+          <div class="cond-group">
+            <div class="cond-group__head">
+              <span class="cond-group__num">{{ $index === 0 ? 'Group 1' : 'AND · Group ' + ($index + 1) }}</span>
+              <button
+                type="button"
+                class="action-icon action-icon--danger"
+                [disabled]="groups().length === 1"
+                (click)="removeGroup(group)"
+                pTooltip="Remove group"
+              >
+                <i class="pi pi-times"></i>
+              </button>
+            </div>
+
+            @for (leaf of group; track $index) {
+              <div class="leaf">
+                @if ($index > 0) {
+                  <div class="leaf__or">OR</div>
+                }
+                <div class="leaf__toolbar">
+                  <div class="leaf-kind-toggle">
+                    @for (opt of leafKindOptions; track opt.value) {
+                      <button type="button" [class.active]="leaf.kind === opt.value" (click)="setLeafKind(group, leaf, opt.value)">{{ opt.label }}</button>
+                    }
+                  </div>
+                  <label class="leaf__not">
+                    <span>NOT</span>
+                    <p-toggleswitch [ngModel]="leaf.negate" (ngModelChange)="updateLeaf(group, leaf, { negate: $event })" />
+                  </label>
+                  <button
+                    type="button"
+                    class="action-icon action-icon--danger"
+                    [disabled]="group.length === 1"
+                    (click)="removeLeaf(group, leaf)"
+                    pTooltip="Remove condition"
+                  >
+                    <i class="pi pi-trash"></i>
+                  </button>
+                </div>
+
+                @if (leaf.kind === 'LITERAL') {
+                  <label>
+                    <span>Payment field</span>
+                    <p-select
+                      [options]="fieldOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.field"
+                      (ngModelChange)="updateLeaf(group, leaf, { field: $event })"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  <label>
+                    <span>Operator</span>
+                    <p-select
+                      [options]="operatorOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.operator"
+                      (ngModelChange)="updateLeaf(group, leaf, { operator: $event })"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  <label>
+                    <span>Value</span>
+                    <input pInputText type="text" [ngModel]="leaf.value" (ngModelChange)="updateLeaf(group, leaf, { value: $event })" placeholder="e.g. Online" />
+                  </label>
+                } @else {
+                  <label>
+                    <span>Source field (payment)</span>
+                    <p-select
+                      [options]="paymentFieldOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.sourceField"
+                      (ngModelChange)="updateLeaf(group, leaf, { sourceField: $event, pairOperator: null })"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  <label>
+                    <span>Destination field (bank statement)</span>
+                    <p-select
+                      [options]="bankFieldOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.destinationField"
+                      (ngModelChange)="updateLeaf(group, leaf, { destinationField: $event, pairOperator: null })"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  <label>
+                    <span>Operator</span>
+                    <p-select
+                      [options]="leafPairOperatorOptions(leaf)"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.pairOperator"
+                      (ngModelChange)="updateLeaf(group, leaf, { pairOperator: $event })"
+                      placeholder="Select source and destination fields first"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  @if (leafPairRequiresTolerance(leaf)) {
+                    <label>
+                      <span>{{ leaf.pairOperator === 'DATE_WITHIN_DAYS' ? 'Days tolerance' : 'Amount tolerance (₹)' }}</span>
+                      <input
+                        pInputText
+                        type="number"
+                        min="0"
+                        [ngModel]="leaf.pairTolerance"
+                        (ngModelChange)="updateLeaf(group, leaf, { pairTolerance: $event })"
                       />
                     </label>
                   }
-                </div>
-              }
+                }
+              </div>
             }
+
+            <p-button label="Add alternative (OR)" icon="pi pi-plus" [text]="true" (onClick)="addLeaf(group)" />
           </div>
         }
+
+        <p-button label="Add condition group (AND)" icon="pi pi-plus-circle" [text]="true" (onClick)="addGroup()" />
       </section>
 
       <label class="form__switch">

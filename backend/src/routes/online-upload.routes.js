@@ -210,10 +210,21 @@ router.post('/bank-statement', upload.single('file'), async (req, res, next) => 
   }
 });
 
+// Resolves each statement's "unit" (division) by matching its parsed account_no
+// against the curated master_division_bank_accounts — digits only, since
+// account_no is free text off the statement (same rule as loadBankRecords in
+// matched-rules.routes.js).
+const BANK_STATEMENT_WITH_UNIT = `
+  SELECT u.*, m.division_name
+    FROM bank_statement_uploads u
+    LEFT JOIN master_division_bank_accounts m
+      ON regexp_replace(u.account_no, '[^0-9]', '', 'g')
+       = regexp_replace(m.account_number, '[^0-9]', '', 'g')`;
+
 // GET /api/online-upload/bank-statement/batches
 router.get('/bank-statement/batches', async (req, res, next) => {
   try {
-    const { rows } = await db.query('SELECT * FROM bank_statement_uploads ORDER BY uploaded_at DESC');
+    const { rows } = await db.query(`${BANK_STATEMENT_WITH_UNIT} ORDER BY u.uploaded_at DESC`);
     res.json(rows.map(bankStatementUploadRowToApi));
   } catch (err) {
     next(err);
@@ -223,7 +234,7 @@ router.get('/bank-statement/batches', async (req, res, next) => {
 // GET /api/online-upload/bank-statement/batches/:id
 router.get('/bank-statement/batches/:id', async (req, res, next) => {
   try {
-    const { rows } = await db.query('SELECT * FROM bank_statement_uploads WHERE id = $1', [req.params.id]);
+    const { rows } = await db.query(`${BANK_STATEMENT_WITH_UNIT} WHERE u.id = $1`, [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
     res.json(bankStatementUploadRowToApi(rows[0]));
   } catch (err) {

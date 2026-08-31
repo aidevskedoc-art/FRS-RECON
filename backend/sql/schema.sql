@@ -349,96 +349,91 @@ ON CONFLICT (account_number) DO NOTHING;
 ALTER TABLE ip_payment_upload_batches ADD COLUMN IF NOT EXISTS unit_name VARCHAR(255);
 ALTER TABLE diag_op_upload_batches ADD COLUMN IF NOT EXISTS unit_name VARCHAR(255);
 
+
 -- ---------------------------------------------------------------------------
--- Master Rules: exception rules layered on top of the bank-statement <->
--- IP/Diag payment matching in reconciliation/matcher.js. Each rule is a
--- condition (field/operator/value) plus an action, applied in id order —
--- the first active rule whose condition matches a payment group wins. IP and
--- Diag rules are kept in separate tables, same convention as their payment
--- records already being separate tables rather than one shared, typed table.
+-- Matching rules (condition-only engine). A rule is name + action +
+-- condition_groups. condition_groups is CNF: a JSON array of OR-groups, each
+-- an array of leaves; a leaf is { kind:'LITERAL', field, operator, value,
+-- negate? } or { kind:'FIELD_PAIR', sourceField, destinationField,
+-- pairOperator, pairTolerance?, negate? }. A rule matches a (payment, bank)
+-- pair when every OR-group has >=1 satisfied leaf; the first active rule (by
+-- sort_order) that matches some bank row wins and its action sets the
+-- verdict. There is no config layer — see reconciliation/rules.js. IP and
+-- Diag rules live in separate tables, same convention as their record tables.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS ip_payment_matching_rules (
-  id           SERIAL PRIMARY KEY,
-  name         VARCHAR(255) NOT NULL,
-  field        VARCHAR(32) NOT NULL,
-  operator     VARCHAR(16) NOT NULL,
-  value        VARCHAR(255) NOT NULL,
-  action       VARCHAR(16) NOT NULL,
-  active       BOOLEAN NOT NULL DEFAULT true,
-  created_at   TIMESTAMP NOT NULL DEFAULT now(),
-  updated_at   TIMESTAMP NOT NULL DEFAULT now()
+  id                SERIAL PRIMARY KEY,
+  name              VARCHAR(255) NOT NULL,
+  action            VARCHAR(32) NOT NULL,
+  active            BOOLEAN NOT NULL DEFAULT true,
+  sort_order        INTEGER,
+  condition_groups  JSONB,
+  created_at        TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS diag_payment_matching_rules (
-  id           SERIAL PRIMARY KEY,
-  name         VARCHAR(255) NOT NULL,
-  field        VARCHAR(32) NOT NULL,
-  operator     VARCHAR(16) NOT NULL,
-  value        VARCHAR(255) NOT NULL,
-  action       VARCHAR(16) NOT NULL,
-  active       BOOLEAN NOT NULL DEFAULT true,
-  created_at   TIMESTAMP NOT NULL DEFAULT now(),
-  updated_at   TIMESTAMP NOT NULL DEFAULT now()
+  id                SERIAL PRIMARY KEY,
+  name              VARCHAR(255) NOT NULL,
+  action            VARCHAR(32) NOT NULL,
+  active            BOOLEAN NOT NULL DEFAULT true,
+  sort_order        INTEGER,
+  condition_groups  JSONB,
+  created_at        TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMP NOT NULL DEFAULT now()
 );
 
--- ---------------------------------------------------------------------------
--- System rows: the core matching engine's own parameters (amount tolerance,
--- split-payment grouping, which reference fields are checked), surfaced as
--- protected rows in the same table instead of hardcoded constants in
--- reconciliation/matcher.js — so they're visible and (for the safe ones)
--- editable from the same Manage Rules screen as the exception rules above.
--- is_system rows are seeded once, can't be created via the API, and can only
--- ever have their `value` column changed (see matching-rules.routes.js).
--- ---------------------------------------------------------------------------
+-- Migrate an older rule table (config-layer era) to the shape above: widen
+-- `action`, add the new columns, fold any legacy `conditions` JSON into
+-- `condition_groups` (each old AND entry becomes its own single-leaf
+-- OR-group), then drop every abandoned column. Guarded so this file stays
+-- idempotent against a fresh DB and every prior version.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['ip_payment_matching_rules', 'diag_payment_matching_rules'] LOOP
+    EXECUTE format('ALTER TABLE %I ALTER COLUMN action TYPE VARCHAR(32)', t);
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS sort_order INTEGER', t);
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS condition_groups JSONB', t);
+    EXECUTE format('UPDATE %I SET sort_order = id WHERE sort_order IS NULL', t);
 
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT false;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = t AND column_name = 'conditions') THEN
+      EXECUTE format(
+        'UPDATE %I SET condition_groups = (
+           SELECT jsonb_agg(jsonb_build_array(e)) FROM jsonb_array_elements(conditions::jsonb) e
+         ) WHERE conditions IS NOT NULL AND conditions <> '''' AND condition_groups IS NULL', t);
+    END IF;
 
--- 'SET_SYSTEM_SETTING' (19 chars) exceeds the original VARCHAR(16) sized for
--- the exception-rule actions (FORCE_MATCHED/FORCE_UNMATCHED/EXCLUDE).
-ALTER TABLE ip_payment_matching_rules ALTER COLUMN action TYPE VARCHAR(32);
-ALTER TABLE diag_payment_matching_rules ALTER COLUMN action TYPE VARCHAR(32);
-
-INSERT INTO ip_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Amount tolerance (₹)', 'amountTolerance', 'EQUALS', '1', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Amount tolerance (₹)');
-
-INSERT INTO ip_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Split-payment grouping (same ref ending in a letter)', 'suffixGrouping', 'EQUALS', 'ENABLED', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Split-payment grouping (same ref ending in a letter)');
-
-INSERT INTO ip_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Reference fields checked (in priority order)', 'referenceFields', 'EQUALS', 'transId, transactionRef1, transactionRef2', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Reference fields checked (in priority order)');
-
-INSERT INTO diag_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Amount tolerance (₹)', 'amountTolerance', 'EQUALS', '1', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Amount tolerance (₹)');
-
-INSERT INTO diag_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Split-payment grouping (same ref ending in a letter)', 'suffixGrouping', 'EQUALS', 'ENABLED', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Split-payment grouping (same ref ending in a letter)');
-
-INSERT INTO diag_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Reference fields checked (in priority order)', 'referenceFields', 'EQUALS', 'transactionRef1, transactionRef2, transactionRef3', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Reference fields checked (in priority order)');
-
-INSERT INTO ip_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Restrict matching to the same division', 'divisionScoping', 'EQUALS', 'ENABLED', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Restrict matching to the same division');
-
-INSERT INTO diag_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Restrict matching to the same division', 'divisionScoping', 'EQUALS', 'ENABLED', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Restrict matching to the same division');
+    EXECUTE format(
+      'ALTER TABLE %I
+         DROP COLUMN IF EXISTS conditions,
+         DROP COLUMN IF EXISTS field,
+         DROP COLUMN IF EXISTS operator,
+         DROP COLUMN IF EXISTS value,
+         DROP COLUMN IF EXISTS condition_kind,
+         DROP COLUMN IF EXISTS source_field,
+         DROP COLUMN IF EXISTS destination_field,
+         DROP COLUMN IF EXISTS pair_operator,
+         DROP COLUMN IF EXISTS pair_tolerance,
+         DROP COLUMN IF EXISTS is_system,
+         DROP COLUMN IF EXISTS amount_tolerance,
+         DROP COLUMN IF EXISTS reference_fields,
+         DROP COLUMN IF EXISTS suffix_grouping,
+         DROP COLUMN IF EXISTS division_scoping,
+         DROP COLUMN IF EXISTS bank_fields,
+         DROP COLUMN IF EXISTS amount_fields,
+         DROP COLUMN IF EXISTS bank_amount_side,
+         DROP COLUMN IF EXISTS tie_break', t);
+  END LOOP;
+END $$;
 
 -- ---------------------------------------------------------------------------
--- Persisted match results: the Generate button (matched-rules.routes.js
--- POST .../generate) runs the reconciliation engine once and writes its
--- verdict onto every record it covers, instead of recomputing live on every
--- page view. NULL match_status means "never generated yet" for that record.
--- matched_at on the batch tables tells the batch-detail page whether to
--- require pressing Generate at all.
+-- Persisted match results: POST .../generate runs the engine once and writes
+-- the verdict onto every record it covers. NULL match_status = never
+-- generated. match_applied_rule is the winning rule's name; match_reason is
+-- 'Matched by rule "<name>"' / 'No matching rule'. match_amount_field is
+-- retained but always NULL now (no amount-field concept).
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE ip_payment_upload_batches ADD COLUMN IF NOT EXISTS matched_at TIMESTAMP;
@@ -448,48 +443,22 @@ ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_status VARCHAR(20)
 ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_applied_rule VARCHAR(255);
 ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_amount_field VARCHAR(64);
 ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_bank_record_id INTEGER REFERENCES bank_statement_records(id) ON DELETE SET NULL;
+ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_reason TEXT;
 CREATE INDEX IF NOT EXISTS ip_payment_records_match_status_idx ON ip_payment_records(match_status);
 
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_status VARCHAR(20);
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_applied_rule VARCHAR(255);
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_amount_field VARCHAR(64);
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_bank_record_id INTEGER REFERENCES bank_statement_records(id) ON DELETE SET NULL;
+ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_reason TEXT;
 CREATE INDEX IF NOT EXISTS diag_op_payment_records_match_status_idx ON diag_op_payment_records(match_status);
 
--- match_applied_rule is reserved for a REAL exception rule's name (Force
--- Matched/Unmatched/Exclude, configured in Manage Rules) — never populated
--- with generated text, so the UI can trust it as "a rule you configured did
--- this." match_reason instead carries the core engine's own explanation
--- (reference used, tolerance, split-payment grouping) for the ordinary case
--- where no exception rule fired. TEXT, not VARCHAR: a split group's reason
--- lists every combined reference and can run long.
-ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_reason TEXT;
-ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_reason TEXT;
-
 -- ---------------------------------------------------------------------------
--- Rule priority: explicit, user-configurable evaluation order for exception
--- rules (Manage Rules screen), instead of the implicit "creation order = id"
--- the engine used before. NULL for existing rows is backfilled to their id
--- (preserves current behavior exactly); new rows get one past the current
--- max on insert (see matching-rules.routes.js). System rows never use this —
--- they're always listed first via is_system DESC and never reordered.
--- ---------------------------------------------------------------------------
-
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS sort_order INTEGER;
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS sort_order INTEGER;
-
-UPDATE ip_payment_matching_rules SET sort_order = id WHERE sort_order IS NULL;
-UPDATE diag_payment_matching_rules SET sort_order = id WHERE sort_order IS NULL;
-
--- ---------------------------------------------------------------------------
--- Bank-side match tracking: mirrors the ip/diag *_records match_status
--- columns above, but on bank_statement_records instead — lets "Generate" be
--- run from the Bank Statement batch-detail page too, so a bank transaction
--- that no IP/Diag payment ever claimed can be identified and shown as
--- unmatched ("available only in the Bank Statement"), not just inferred.
--- match_payment_record_id deliberately has no FK: it points into either
--- ip_payment_records or diag_op_payment_records depending on
--- match_payment_type, and Postgres FKs can't target "one of two tables."
+-- Bank-side match tracking: mirrors the payment-side match_status columns on
+-- bank_statement_records, so "Generate" can run from the Bank Statement
+-- batch-detail page and a bank row nothing claimed shows as UNMATCHED.
+-- match_payment_record_id has no FK (points into ip or diag records per
+-- match_payment_type).
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS match_status VARCHAR(20);
@@ -498,131 +467,3 @@ ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS match_payment_record
 CREATE INDEX IF NOT EXISTS bank_statement_records_match_status_idx ON bank_statement_records(match_status);
 
 ALTER TABLE bank_statement_uploads ADD COLUMN IF NOT EXISTS matched_at TIMESTAMP;
-
--- ---------------------------------------------------------------------------
--- Additional system rows: the matching mechanics that used to be hardcoded
--- constants in reconciliation/matcher.js (which bank fields are indexed,
--- which payment amount fields are checked, which bank column counts as "the"
--- amount, and how a multi-candidate tie is broken) — now surfaced the same
--- way as the original four system rows above. Every default value below
--- matches the prior hardcoded behavior exactly, so seeding these changes
--- nothing until an admin edits one from Manage Rules.
--- ---------------------------------------------------------------------------
-
-INSERT INTO ip_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Bank fields checked', 'bankFields', 'EQUALS', 'chqRefNo, narration', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Bank fields checked');
-
-INSERT INTO ip_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Amount fields checked', 'amountFields', 'EQUALS', 'billAmount, nonCashAmount', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Amount fields checked');
-
-INSERT INTO ip_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Bank amount side', 'bankAmountSide', 'EQUALS', 'EITHER', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Bank amount side');
-
-INSERT INTO ip_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Tie-break order', 'tieBreak', 'EQUALS', 'AMOUNT_FIRST', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Tie-break order');
-
-INSERT INTO diag_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Bank fields checked', 'bankFields', 'EQUALS', 'chqRefNo, narration', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Bank fields checked');
-
-INSERT INTO diag_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Amount fields checked', 'amountFields', 'EQUALS', 'billAmount, nonCashAmount', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Amount fields checked');
-
-INSERT INTO diag_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Bank amount side', 'bankAmountSide', 'EQUALS', 'EITHER', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Bank amount side');
-
-INSERT INTO diag_payment_matching_rules (name, field, operator, value, action, active, is_system)
-SELECT 'Tie-break order', 'tieBreak', 'EQUALS', 'AMOUNT_FIRST', 'SET_SYSTEM_SETTING', true, true
-WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Tie-break order');
-
--- ---------------------------------------------------------------------------
--- Unified rules list: settings and exception rules used to be two separate
--- concepts (protected, single-instance "system" rows vs. unlimited,
--- prioritized condition/action rows). They're now one list — every row can
--- optionally carry a condition (field/operator/value, now nullable: null
--- means "always applies") and/or a match-status output (action, now
--- nullable) and/or one or more matching-config overrides below. Multiple
--- rows can set the same config field; the highest-priority (lowest
--- sort_order) active row whose condition matches — or has none — wins for
--- that field, same first-match-wins evaluation the exception rules already
--- used. A field no row sets falls back to its original hardcoded default
--- (DEFAULT_AMOUNT_TOLERANCE etc. in reconciliation/matcher.js), so deleting
--- every row here is safe, not a broken state.
---
--- reference_fields and suffix_grouping affect how records are GROUPED,
--- before any group exists to evaluate a condition against — so those two
--- columns are only honored on a row with no condition (enforced in
--- matching-rules.routes.js), i.e. they stay effectively global.
--- ---------------------------------------------------------------------------
-
-ALTER TABLE ip_payment_matching_rules ALTER COLUMN field DROP NOT NULL;
-ALTER TABLE ip_payment_matching_rules ALTER COLUMN operator DROP NOT NULL;
-ALTER TABLE ip_payment_matching_rules ALTER COLUMN value DROP NOT NULL;
-ALTER TABLE ip_payment_matching_rules ALTER COLUMN action DROP NOT NULL;
-ALTER TABLE diag_payment_matching_rules ALTER COLUMN field DROP NOT NULL;
-ALTER TABLE diag_payment_matching_rules ALTER COLUMN operator DROP NOT NULL;
-ALTER TABLE diag_payment_matching_rules ALTER COLUMN value DROP NOT NULL;
-ALTER TABLE diag_payment_matching_rules ALTER COLUMN action DROP NOT NULL;
-
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS amount_tolerance NUMERIC(10,2);
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS reference_fields VARCHAR(255);
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS suffix_grouping VARCHAR(20);
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS division_scoping VARCHAR(20);
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS bank_fields VARCHAR(255);
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS amount_fields VARCHAR(255);
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS bank_amount_side VARCHAR(20);
-ALTER TABLE ip_payment_matching_rules ADD COLUMN IF NOT EXISTS tie_break VARCHAR(20);
-
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS amount_tolerance NUMERIC(10,2);
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS reference_fields VARCHAR(255);
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS suffix_grouping VARCHAR(20);
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS division_scoping VARCHAR(20);
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS bank_fields VARCHAR(255);
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS amount_fields VARCHAR(255);
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS bank_amount_side VARCHAR(20);
-ALTER TABLE diag_payment_matching_rules ADD COLUMN IF NOT EXISTS tie_break VARCHAR(20);
-
--- One-time data migration: fold each existing is_system row's field/value
--- into its matching new override column, clear the now-unneeded
--- condition/action columns, and drop its protected status — it's an
--- ordinary unconditional row from here on. Guarded by "override column still
--- NULL" so this only ever fires once per row, safe to run on every startup.
-UPDATE ip_payment_matching_rules SET amount_tolerance = value::numeric, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'amountTolerance' AND amount_tolerance IS NULL;
-UPDATE ip_payment_matching_rules SET reference_fields = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'referenceFields' AND reference_fields IS NULL;
-UPDATE ip_payment_matching_rules SET suffix_grouping = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'suffixGrouping' AND suffix_grouping IS NULL;
-UPDATE ip_payment_matching_rules SET division_scoping = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'divisionScoping' AND division_scoping IS NULL;
-UPDATE ip_payment_matching_rules SET bank_fields = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'bankFields' AND bank_fields IS NULL;
-UPDATE ip_payment_matching_rules SET amount_fields = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'amountFields' AND amount_fields IS NULL;
-UPDATE ip_payment_matching_rules SET bank_amount_side = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'bankAmountSide' AND bank_amount_side IS NULL;
-UPDATE ip_payment_matching_rules SET tie_break = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'tieBreak' AND tie_break IS NULL;
-
-UPDATE diag_payment_matching_rules SET amount_tolerance = value::numeric, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'amountTolerance' AND amount_tolerance IS NULL;
-UPDATE diag_payment_matching_rules SET reference_fields = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'referenceFields' AND reference_fields IS NULL;
-UPDATE diag_payment_matching_rules SET suffix_grouping = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'suffixGrouping' AND suffix_grouping IS NULL;
-UPDATE diag_payment_matching_rules SET division_scoping = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'divisionScoping' AND division_scoping IS NULL;
-UPDATE diag_payment_matching_rules SET bank_fields = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'bankFields' AND bank_fields IS NULL;
-UPDATE diag_payment_matching_rules SET amount_fields = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'amountFields' AND amount_fields IS NULL;
-UPDATE diag_payment_matching_rules SET bank_amount_side = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'bankAmountSide' AND bank_amount_side IS NULL;
-UPDATE diag_payment_matching_rules SET tie_break = value, field = NULL, operator = NULL, value = NULL, action = NULL, is_system = false
-  WHERE is_system = true AND field = 'tieBreak' AND tie_break IS NULL;

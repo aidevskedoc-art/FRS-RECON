@@ -203,6 +203,10 @@ function bankStatementUploadRowToApi(row) {
     accountBranch: row.account_branch,
     statementFrom: toDateOnly(row.statement_from),
     statementTo: toDateOnly(row.statement_to),
+    // Canonical division ("Hitech City" etc.) the account is registered under
+    // in master_division_bank_accounts — only present when the query joined it
+    // (see bank-statement/batches routes); undefined without that join -> null.
+    unitName: row.division_name ?? null,
     fileName: row.file_name,
     fileSizeBytes: row.file_size_bytes,
     rowCount: row.row_count,
@@ -374,31 +378,30 @@ function divisionBankAccountRowToApi(row) {
   };
 }
 
+/**
+ * matching_rules.condition_groups (JSONB) -> CNF array: an AND-list of
+ * OR-groups of leaves (see reconciliation/rules.js). pg hands JSONB back as a
+ * parsed JS value; a legacy JSON string is parsed too. Anything not a
+ * non-empty array becomes null.
+ */
+function parseConditionGroups(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) && parsed.length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function matchingRuleRowToApi(row) {
   return {
     id: String(row.id),
     name: row.name,
-    // Condition — all three null means "always applies" (see reconciliation/rules.js isUnconditional).
-    field: row.field,
-    operator: row.operator,
-    value: row.value,
-    // Match-status output — null means this row doesn't set one (a pure config-override row).
     action: row.action,
     active: row.active,
-    isSystem: row.is_system,
     sortOrder: row.sort_order,
-    // Matching-config overrides — each null unless this row sets it. Comma-list
-    // fields (referenceFields/bankFields/amountFields) stay raw strings here;
-    // matched-rules.routes.js parses them to arrays once when building the
-    // live rules list for the engine.
-    amountTolerance: row.amount_tolerance === null || row.amount_tolerance === undefined ? null : Number(row.amount_tolerance),
-    referenceFields: row.reference_fields ?? null,
-    suffixGrouping: row.suffix_grouping ?? null,
-    divisionScoping: row.division_scoping ?? null,
-    bankFields: row.bank_fields ?? null,
-    amountFields: row.amount_fields ?? null,
-    bankAmountSide: row.bank_amount_side ?? null,
-    tieBreak: row.tie_break ?? null,
+    conditionGroups: parseConditionGroups(row.condition_groups),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
