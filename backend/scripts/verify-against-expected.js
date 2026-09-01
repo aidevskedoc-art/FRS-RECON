@@ -43,8 +43,8 @@ function normalise(value, key) {
 
 (async () => {
   const buffer = fs.readFileSync(path.join(FIXTURES, 'real-policy.pdf'));
-  const { fullText, pageTexts } = await extractPages(buffer);
-  const policy = parseByFormat({ fullText, pageTexts });
+  const { fullText, pageTexts, pageItems } = await extractPages(buffer);
+  const policy = parseByFormat({ fullText, pageTexts, pageItems });
   const actualRows = toExcelRows([policy]);
 
   const wb = XLSX.readFile(path.join(FIXTURES, 'output-template.xlsx'));

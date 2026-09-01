@@ -72,7 +72,7 @@ function toExtractionResult(parsed, { pagesAnalyzed, processingTimeMs }) {
     const score = settled ? RULE : present ? FOUND : MISSING;
     fields.push({
       path: spec.path,
-      label: notPrinted ? `${spec.label} (not on this policy)` : spec.label,
+      label: notPrinted && !present ? `${spec.label} (not on this policy)` : spec.label,
       value: present ? value : '',
       confidence: confidenceLevelFromScore(score),
       confidenceScore: score,
@@ -92,7 +92,7 @@ function toExtractionResult(parsed, { pagesAnalyzed, processingTimeMs }) {
       const score = settled ? RULE : present ? FOUND : MISSING;
       fields.push({
         path: `members.${i}.${key}`,
-        label: `${member.name} — ${notPrinted ? `${label} (not on this policy)` : label}`,
+        label: `${member.name} — ${notPrinted && !present ? `${label} (not on this policy)` : label}`,
         value: present ? value : '',
         confidence: confidenceLevelFromScore(score),
         confidenceScore: score,

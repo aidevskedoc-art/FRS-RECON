@@ -1,0 +1,171 @@
+<div class="unit-matches">
+  <header class="unit-matches__head">
+    <div>
+      <h1>Unit Matches</h1>
+      <p class="unit-matches__sub">
+        Transactions grouped by a shared Unit Identifier and reconciled on their combined amount.
+        One row per unit — the batch screen shows the same data one row per transaction.
+      </p>
+    </div>
+  </header>
+
+  @if (error()) {
+    <div class="notice notice--danger">{{ error() }}</div>
+  }
+
+  <div class="unit-matches__filters">
+    <p-select
+      [options]="paymentTypeOptions"
+      optionLabel="label"
+      optionValue="value"
+      [ngModel]="paymentType()"
+      (ngModelChange)="setPaymentType($event)"
+    />
+    <p-select
+      [options]="statusOptions"
+      optionLabel="label"
+      optionValue="value"
+      [ngModel]="statusFilter()"
+      (ngModelChange)="setStatus($event)"
+    />
+    @if (batchId()) {
+      <button type="button" class="chip" (click)="clearBatch()">
+        Batch {{ batchId() }} <i class="pi pi-times"></i>
+      </button>
+    }
+    <p-button label="Refresh" icon="pi pi-refresh" size="small" [loading]="loading()" (onClick)="load()" />
+  </div>
+
+  @if (!loading() && units().length > 0) {
+    <div class="unit-matches__tally">
+      <span>{{ total() }} units</span>
+      <span class="tally--matched">{{ matchedCount() }} matched</span>
+      <span class="tally--mismatch">{{ mismatchCount() }} amount mismatch</span>
+      <span class="tally--ambiguous">{{ ambiguousCount() }} ambiguous</span>
+    </div>
+  }
+
+  <div class="unit-matches__table-wrap">
+    <p-table
+      [value]="units()"
+      dataKey="unitKey"
+      [loading]="loading()"
+      styleClass="p-datatable-sm"
+      (onRowExpand)="onRowExpand($event.data)"
+    >
+      <ng-template #header>
+        <tr>
+          <th class="expander-col"></th>
+          <th>Status</th>
+          <th>Unit</th>
+          <th class="num">Transactions</th>
+          <th class="num">Unit Total</th>
+          <th>Bank Reference</th>
+          <th class="num">Bank Amount</th>
+          <th class="num">Difference</th>
+          <th>Unit / Division</th>
+          <th>Match Rule</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-unit let-expanded="expanded">
+        <tr>
+          <td class="expander-col">
+            @if (isExpandable()) {
+              <button type="button" pRipple [pRowToggler]="unit" class="expander" [attr.aria-label]="expanded ? 'Hide transactions' : 'Show transactions'">
+                <i class="pi" [class.pi-chevron-down]="expanded" [class.pi-chevron-right]="!expanded"></i>
+              </button>
+            }
+          </td>
+          <td>
+            <span
+              class="status-pill"
+              [class.status-pill--matched]="unit.status === 'MATCHED'"
+              [class.status-pill--mismatch]="unit.status === 'AMOUNT_MISMATCH'"
+              [class.status-pill--unmatched]="unit.status === 'UNMATCHED'"
+              [class.status-pill--ambiguous]="unit.status === 'AMBIGUOUS_MATCH'"
+            >{{ statusLabel(unit.status) }}</span>
+          </td>
+          <td class="mono">{{ unit.unitKey }}</td>
+          <td class="num">
+            {{ unit.transactionCount }}
+            @if (isPartial(unit)) {
+              <span class="partial" title="Some transactions of this unit are not in the selected batch">
+                ({{ unit.rowsInBatch }} here)
+              </span>
+            }
+          </td>
+          <td class="num strong">{{ amount(unit.unitTotal) }}</td>
+          <td class="mono">{{ unit.bank?.chqRefNo || '—' }}</td>
+          <td class="num">{{ amount(unit.bank?.amount) }}</td>
+          <td class="num" [class.diff]="unit.difference">{{ amount(unit.difference) }}</td>
+          <td>{{ unit.divisionName || '—' }}</td>
+          <td class="wrap">{{ unit.appliedRule || '—' }}</td>
+        </tr>
+      </ng-template>
+
+      <ng-template #expandedrow let-unit>
+        <tr class="member-row">
+          <td colspan="10">
+            <div class="members">
+              @if (isMembersLoading(unit)) {
+                <p class="members__empty">Loading the transactions in this unit…</p>
+              } @else if (membersOf(unit).length === 0) {
+                <p class="members__empty">No transactions returned for this unit.</p>
+              } @else {
+                <table class="members__table">
+                  <thead>
+                    <tr>
+                      <th>Receipt</th>
+                      <th>Patient</th>
+                      <th>Transaction Ref</th>
+                      <th class="num">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (m of membersOf(unit); track m.id) {
+                      <tr>
+                        <td class="mono">{{ m.receiptNumber || '—' }}</td>
+                        <td>{{ m.patientName || '—' }}</td>
+                        <td class="mono">{{ refOf(m) }}</td>
+                        <td class="num">{{ amount(m.billAmount) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="3">Unit total</td>
+                      <td class="num">{{ amount(unit.unitTotal) }}</td>
+                    </tr>
+                    @if (unit.bank) {
+                      <tr>
+                        <td colspan="3">
+                          Matched with {{ unit.bank.chqRefNo || unit.bank.narration || 'bank transaction' }}
+                          @if (unit.bank.txnDate) { <span class="members__meta">on {{ unit.bank.txnDate }}</span> }
+                        </td>
+                        <td class="num">{{ amount(unit.bank.amount) }}</td>
+                      </tr>
+                    }
+                    <tr class="members__diff">
+                      <td colspan="3">Difference</td>
+                      <td class="num">{{ amount(unit.difference) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              }
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="10" class="empty">
+            No unit matches found. Units appear here once a batch has been generated and the
+            rule has grouped two or more transactions.
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

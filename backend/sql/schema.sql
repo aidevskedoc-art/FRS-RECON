@@ -365,7 +365,7 @@ ALTER TABLE diag_op_upload_batches ADD COLUMN IF NOT EXISTS unit_name VARCHAR(25
 CREATE TABLE IF NOT EXISTS ip_payment_matching_rules (
   id                SERIAL PRIMARY KEY,
   name              VARCHAR(255) NOT NULL,
-  action            VARCHAR(32) NOT NULL,
+  action            VARCHAR(64) NOT NULL,
   active            BOOLEAN NOT NULL DEFAULT true,
   sort_order        INTEGER,
   condition_groups  JSONB,
@@ -376,7 +376,7 @@ CREATE TABLE IF NOT EXISTS ip_payment_matching_rules (
 CREATE TABLE IF NOT EXISTS diag_payment_matching_rules (
   id                SERIAL PRIMARY KEY,
   name              VARCHAR(255) NOT NULL,
-  action            VARCHAR(32) NOT NULL,
+  action            VARCHAR(64) NOT NULL,
   active            BOOLEAN NOT NULL DEFAULT true,
   sort_order        INTEGER,
   condition_groups  JSONB,
@@ -393,7 +393,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['ip_payment_matching_rules', 'diag_payment_matching_rules'] LOOP
-    EXECUTE format('ALTER TABLE %I ALTER COLUMN action TYPE VARCHAR(32)', t);
+    EXECUTE format('ALTER TABLE %I ALTER COLUMN action TYPE VARCHAR(64)', t);
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS sort_order INTEGER', t);
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS condition_groups JSONB', t);
     EXECUTE format('UPDATE %I SET sort_order = id WHERE sort_order IS NULL', t);
@@ -429,6 +429,178 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
+-- Retire the first attempt at "Transaction Amount Match on Same Unit".
+--
+-- It was seeded as an ordinary CNF rule whose conditions grouped payments by
+-- their reference with the trailing letter STRIPPED, so ACCOUNT001A and
+-- ACCOUNT001B fell into one group. The requirement is the opposite: rows
+-- group only when their ending identifier is the SAME, and A must never merge
+-- with B (§9 / AC-04). The rule is therefore deleted rather than adjusted -
+-- its logic is inverted, not incomplete.
+--
+-- Matched on BOTH name and action so only the rule this file created is
+-- removed; a hand-written rule that merely shares the name is left alone.
+-- Superseded by the UNIT_AGGREGATION rule kind below.
+-- ---------------------------------------------------------------------------
+DELETE FROM ip_payment_matching_rules
+ WHERE name = 'Transaction Amount Match on Same Unit'
+   AND action = 'FORCE_MATCHED_TXN_AMOUNT_SAME_UNIT';
+
+DELETE FROM diag_payment_matching_rules
+ WHERE name = 'Transaction Amount Match on Same Unit'
+   AND action = 'FORCE_MATCHED_TXN_AMOUNT_SAME_UNIT';
+
+-- ...and clear the numbers it wrote. The match_group_* columns now hold the
+-- UNIT the row was aggregated into, but they still contain values computed by
+-- the deleted rule under its inverted semantics. Left in place they would be
+-- displayed under the new "Unit / Unit Total / Unit Size" headings — old wrong
+-- data wearing new labels, which is worse than showing nothing. Cleared here so
+-- the columns read blank until the next Generate recomputes them honestly.
+-- Only the aggregation columns are touched; match_status and the rest of the
+-- verdict are left exactly as they were.
+UPDATE ip_payment_records
+   SET match_group_base_ref = NULL, match_group_member_count = NULL,
+       match_group_total = NULL, match_group_difference = NULL
+ WHERE match_group_base_ref IS NOT NULL
+    OR match_group_member_count IS NOT NULL
+    OR match_group_total IS NOT NULL;
+
+UPDATE diag_op_payment_records
+   SET match_group_base_ref = NULL, match_group_member_count = NULL,
+       match_group_total = NULL, match_group_difference = NULL
+ WHERE match_group_base_ref IS NOT NULL
+    OR match_group_member_count IS NOT NULL
+    OR match_group_total IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- "Transaction Amount Match on Same Unit" lives in the SAME tables as every
+-- other rule, so it is managed from the one Master Rules screen rather than a
+-- place of its own.
+--
+-- Two rule shapes now share a table, told apart by `kind`:
+--
+--   CNF               condition_groups holds an AND-list of OR-groups,
+--                     evaluated per (payment row, bank row) pair. Every
+--                     pre-existing rule is this, which is why `kind` defaults
+--                     to 'CNF' — an untouched row keeps behaving exactly as
+--                     before.
+--   UNIT_AGGREGATION  unit_config holds the aggregation settings. It has no
+--                     conditions: it groups many rows and compares one total,
+--                     which no per-pair condition can express.
+--
+-- The CHECK enforces that each kind carries its own payload and not the other,
+-- so a half-filled row cannot reach the engine. Constraints are dropped and
+-- re-added rather than guarded, so re-running this file converges from any
+-- state; both are satisfied by every existing row, which matters because
+-- schema.sql is applied as a SINGLE statement and one violated constraint
+-- would abort the whole thing.
+-- ---------------------------------------------------------------------------
+DO $kind$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['ip_payment_matching_rules', 'diag_payment_matching_rules'] LOOP
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS kind VARCHAR(32) NOT NULL DEFAULT ''CNF''', t);
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS unit_config JSONB', t);
+    EXECUTE format('ALTER TABLE %I ALTER COLUMN condition_groups DROP NOT NULL', t);
+
+    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_kind_chk');
+    EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (kind IN (''CNF'', ''UNIT_AGGREGATION''))', t, t || '_kind_chk');
+
+    -- Deliberately one-sided: it constrains UNIT_AGGREGATION rows only.
+    --
+    -- The symmetric version (CNF must have condition_groups) looks tidier and
+    -- breaks the application: rules predating the condition_groups column can
+    -- legitimately hold NULL there — the config-era migration above only fills
+    -- it when a legacy `conditions` value existed — so the constraint failed
+    -- on real rows. schema.sql runs as ONE statement, so that single failure
+    -- aborted the entire file and the server could not boot. A NULL-condition
+    -- CNF rule is already handled: isIndexable rejects it and it never runs.
+    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_payload_chk');
+    EXECUTE format(
+      'ALTER TABLE %I ADD CONSTRAINT %I
+         CHECK (kind <> ''UNIT_AGGREGATION'' OR unit_config IS NOT NULL)',
+      t, t || '_payload_chk');
+  END LOOP;
+END $kind$;
+
+-- Carry across anything already configured in the standalone table this
+-- replaces, so an edit made there is not silently lost. Matched on name, so a
+-- re-run cannot duplicate the rule.
+DO $migrate$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'unit_matching_rules') THEN
+    INSERT INTO ip_payment_matching_rules (name, action, active, kind, condition_groups, unit_config, sort_order)
+    SELECT u.name, 'UNIT_AGGREGATION', u.active, 'UNIT_AGGREGATION', NULL,
+           jsonb_build_object(
+             'direction', u.direction, 'unitKeyMode', u.unit_key_mode, 'scope', u.scope,
+             'tolerance', u.tolerance, 'useNarration', u.use_narration,
+             'paymentRefField', COALESCE(u.payment_ref_field, 'AUTO'),
+             'bankRefField', COALESCE(u.bank_ref_field, 'chqRefNo')),
+           (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM ip_payment_matching_rules)
+      FROM unit_matching_rules u
+     WHERE u.payment_type = 'IP_PAYMENT'
+       AND NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules r WHERE r.name = u.name AND r.kind = 'UNIT_AGGREGATION');
+
+    INSERT INTO diag_payment_matching_rules (name, action, active, kind, condition_groups, unit_config, sort_order)
+    SELECT u.name, 'UNIT_AGGREGATION', u.active, 'UNIT_AGGREGATION', NULL,
+           jsonb_build_object(
+             'direction', u.direction, 'unitKeyMode', u.unit_key_mode, 'scope', u.scope,
+             'tolerance', u.tolerance, 'useNarration', u.use_narration,
+             'paymentRefField', COALESCE(u.payment_ref_field, 'AUTO'),
+             'bankRefField', COALESCE(u.bank_ref_field, 'chqRefNo')),
+           (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diag_payment_matching_rules)
+      FROM unit_matching_rules u
+     WHERE u.payment_type = 'DIAG_PAYMENT'
+       AND NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules r WHERE r.name = u.name AND r.kind = 'UNIT_AGGREGATION');
+
+    DROP TABLE unit_matching_rules;
+  END IF;
+END $migrate$;
+
+-- Seed for a database that never had the standalone table. EXACT and DIVISION
+-- as specified: identical identifiers group, different ones never merge, and a
+-- unit can never span two units.
+INSERT INTO ip_payment_matching_rules (name, action, active, kind, condition_groups, unit_config, sort_order)
+SELECT 'Transaction Amount Match on Same Unit', 'UNIT_AGGREGATION', true, 'UNIT_AGGREGATION', NULL,
+       '{"direction":"MIS_TO_BANK","unitKeyMode":"EXACT","scope":"DIVISION","tolerance":0,"useNarration":true,"paymentRefField":"AUTO","bankRefField":"chqRefNo"}'::jsonb,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM ip_payment_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE kind = 'UNIT_AGGREGATION');
+
+INSERT INTO diag_payment_matching_rules (name, action, active, kind, condition_groups, unit_config, sort_order)
+SELECT 'Transaction Amount Match on Same Unit', 'UNIT_AGGREGATION', true, 'UNIT_AGGREGATION', NULL,
+       '{"direction":"MIS_TO_BANK","unitKeyMode":"EXACT","scope":"DIVISION","tolerance":0,"useNarration":true,"paymentRefField":"AUTO","bankRefField":"chqRefNo"}'::jsonb,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diag_payment_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE kind = 'UNIT_AGGREGATION');
+
+-- ---------------------------------------------------------------------------
+-- "Transaction Amount Match on Other Units" — the same aggregation with the
+-- unit boundary lifted, so transactions sharing an identifier are summed even
+-- when they belong to DIFFERENT divisions.
+--
+-- Seeded AFTER the same-unit rule and therefore lower priority, which is what
+-- keeps the two from competing: the stricter rule claims what it can first,
+-- and this one only ever sees what is still unmatched. A settlement that sits
+-- entirely inside one division is therefore always reported as a same-unit
+-- match, never as a cross-unit one.
+--
+-- Seeded INACTIVE. Summing across units is a real reconciliation decision -
+-- it can pair a Somajiguda receipt with a Hitech City credit - so it is
+-- switched on deliberately from Manage Rules rather than silently changing
+-- everyone's numbers on upgrade.
+-- ---------------------------------------------------------------------------
+INSERT INTO ip_payment_matching_rules (name, action, active, kind, condition_groups, unit_config, sort_order)
+SELECT 'Transaction Amount Match on Other Units', 'UNIT_AGGREGATION', false, 'UNIT_AGGREGATION', NULL,
+       '{"direction":"MIS_TO_BANK","unitKeyMode":"EXACT","scope":"NONE","tolerance":0,"useNarration":true,"paymentRefField":"AUTO","bankRefField":"chqRefNo"}'::jsonb,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM ip_payment_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM ip_payment_matching_rules WHERE name = 'Transaction Amount Match on Other Units');
+
+INSERT INTO diag_payment_matching_rules (name, action, active, kind, condition_groups, unit_config, sort_order)
+SELECT 'Transaction Amount Match on Other Units', 'UNIT_AGGREGATION', false, 'UNIT_AGGREGATION', NULL,
+       '{"direction":"MIS_TO_BANK","unitKeyMode":"EXACT","scope":"NONE","tolerance":0,"useNarration":true,"paymentRefField":"AUTO","bankRefField":"chqRefNo"}'::jsonb,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diag_payment_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Transaction Amount Match on Other Units');
+
+-- ---------------------------------------------------------------------------
 -- Persisted match results: POST .../generate runs the engine once and writes
 -- the verdict onto every record it covers. NULL match_status = never
 -- generated. match_applied_rule is the winning rule's name; match_reason is
@@ -452,6 +624,30 @@ ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_amount_field 
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_bank_record_id INTEGER REFERENCES bank_statement_records(id) ON DELETE SET NULL;
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_reason TEXT;
 CREATE INDEX IF NOT EXISTS diag_op_payment_records_match_status_idx ON diag_op_payment_records(match_status);
+
+-- Suffix-family facts behind a verdict, persisted by POST .../generate so the
+-- batch-detail table can show WHY a 50,000 payment matched a 2,81,897 credit
+-- (see applySuffixFamilyTotals in reconciliation/matcher.js). Always written,
+-- not only for group rules: an unsplit payment is a family of one, so it gets
+-- member_count = 1 and total = its own bill amount.
+--
+-- match_group_total holds the summed BILL amount specifically. A rule may be
+-- edited to compare a different column (Cash / Card / Cheque / Online-UPI) —
+-- the verdict follows the rule, while this column stays the bill total, which
+-- is what the UI shows beside Bill Amount.
+--
+-- Added to both record tables so the shared bulk-update path in
+-- matched-rules.routes.js stays uniform; only the IP batch-detail screen
+-- surfaces them today.
+ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_group_base_ref VARCHAR(255);
+ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_group_member_count INTEGER;
+ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_group_total NUMERIC(14,2);
+ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_group_difference NUMERIC(14,2);
+
+ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_group_base_ref VARCHAR(255);
+ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_group_member_count INTEGER;
+ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_group_total NUMERIC(14,2);
+ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_group_difference NUMERIC(14,2);
 
 -- ---------------------------------------------------------------------------
 -- Bank-side match tracking: mirrors the payment-side match_status columns on

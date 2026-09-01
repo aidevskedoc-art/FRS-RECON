@@ -105,6 +105,7 @@
               [class.status-pill--matched]="record.matchStatus === 'MATCHED'"
               [class.status-pill--mismatch]="record.matchStatus === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="record.matchStatus === 'UNMATCHED'"
+              [class.status-pill--ambiguous]="record.matchStatus === 'AMBIGUOUS_MATCH'"
               [pTooltip]="statusTooltip(record)"
             >{{ record.matchStatus ? statusLabel(record.matchStatus) : (matchesGenerated() ? 'Excluded' : 'Not generated') }}</span>
           </td>

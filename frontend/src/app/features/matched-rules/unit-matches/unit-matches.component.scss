@@ -1,0 +1,183 @@
+@use 'styles/mixins';
+
+.unit-matches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.unit-matches__head h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.unit-matches__sub {
+  margin: var(--space-1) 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  max-width: 62ch;
+}
+
+.unit-matches__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.unit-matches__tally {
+  display: flex;
+  gap: var(--space-4);
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+}
+
+.tally--matched { color: var(--status-success-fg); }
+.tally--mismatch { color: var(--status-warning-fg); }
+.tally--ambiguous { color: var(--status-neutral-fg); }
+
+.unit-matches__table-wrap {
+  overflow-x: auto;
+}
+
+.expander-col {
+  width: 2.5rem;
+  text-align: center;
+}
+
+.expander {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: var(--space-1);
+  line-height: 1;
+
+  &:hover { color: var(--text-primary); }
+}
+
+.mono {
+  font-family: var(--font-mono, monospace);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.strong {
+  font-weight: 600;
+}
+
+// A non-zero difference is the number a reviewer is looking for.
+.diff:not(:empty) {
+  color: var(--status-warning-fg);
+}
+
+.partial {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  margin-left: var(--space-1);
+}
+
+.wrap {
+  white-space: nowrap;
+}
+
+.status-pill {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+}
+
+.status-pill--matched {
+  @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+
+.status-pill--mismatch {
+  @include mixins.status-chip(var(--status-warning-fg), var(--status-warning-bg), var(--status-warning-border));
+}
+
+.status-pill--unmatched {
+  @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
+}
+
+// Neutral, not danger: an ambiguous result is a decision waiting on a person,
+// not a failure.
+.status-pill--ambiguous {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+}
+
+.member-row > td {
+  background: var(--surface-soft);
+  padding: 0;
+}
+
+.members {
+  padding: var(--space-4) var(--space-6);
+}
+
+.members__table {
+  border-collapse: collapse;
+  min-width: 34rem;
+
+  th,
+  td {
+    padding: var(--space-2) var(--space-4);
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  th {
+    color: var(--text-tertiary);
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .num { text-align: right; }
+
+  tfoot td {
+    font-weight: 600;
+    border-bottom: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+.members__diff td {
+  color: var(--status-warning-fg);
+}
+
+.members__meta,
+.members__empty {
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}
+
+.notice--danger {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md, 6px);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+  border: 1px solid var(--status-danger-border);
+}

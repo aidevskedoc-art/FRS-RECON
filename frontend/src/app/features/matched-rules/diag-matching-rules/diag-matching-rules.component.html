@@ -100,6 +100,117 @@
         <input pInputText type="text" [ngModel]="draft().name" (ngModelChange)="updateDraft({ name: $event })" placeholder="e.g. Online: ref = bank chq/ref, same amount" />
       </label>
 
+      <label>
+        <span>Rule Type</span>
+        <p-select
+          [options]="ruleKindOptions"
+          optionLabel="label"
+          optionValue="value"
+          [ngModel]="draft().kind"
+          (ngModelChange)="setRuleKind($event)"
+          appendTo="body"
+          styleClass="full-width"
+        />
+      </label>
+
+      @if (draft().kind === 'UNIT_AGGREGATION') {
+        <section class="form-section">
+          <p class="form-section__title">Unit Aggregation</p>
+          <p class="form-section__hint">
+            Transactions sharing the same Unit Identifier are added together, and the
+            <strong>combined</strong> amount is compared with a single transaction on the other
+            statement. This rule has no conditions — it runs after the condition rules, on whatever
+            they left unmatched, and never changes a match they already made.
+          </p>
+
+          <label>
+            <span>Unit Identifier comes from</span>
+            <p-select
+              [options]="unitPaymentRefOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().unitConfig?.paymentRefField"
+              (ngModelChange)="updateUnitConfig({ paymentRefField: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>Grouping</span>
+            <p-select
+              [options]="unitKeyModeOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().unitConfig?.unitKeyMode"
+              (ngModelChange)="updateUnitConfig({ unitKeyMode: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>Direction</span>
+            <p-select
+              [options]="unitDirectionOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().unitConfig?.direction"
+              (ngModelChange)="updateUnitConfig({ direction: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>A unit may never cross</span>
+            <p-select
+              [options]="unitScopeOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().unitConfig?.scope"
+              (ngModelChange)="updateUnitConfig({ scope: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>Bank side matched on</span>
+            <p-select
+              [options]="unitBankRefOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().unitConfig?.bankRefField"
+              (ngModelChange)="updateUnitConfig({ bankRefField: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>Amount tolerance (₹)</span>
+            <input
+              pInputText
+              type="number"
+              min="0"
+              [ngModel]="draft().unitConfig?.tolerance"
+              (ngModelChange)="updateUnitConfig({ tolerance: $event })"
+            />
+          </label>
+
+          <label class="form__switch">
+            <span>Also search the bank narration for the reference</span>
+            <p-toggleswitch
+              [ngModel]="draft().unitConfig?.useNarration"
+              (ngModelChange)="updateUnitConfig({ useNarration: $event })"
+            />
+          </label>
+        </section>
+      }
+
+      @if (draft().kind === 'CNF') {
+
       <section class="form-section">
         <label>
           <span>Match Status</span>
@@ -253,6 +364,7 @@
 
         <p-button label="Add condition group (AND)" icon="pi pi-plus-circle" [text]="true" (onClick)="addGroup()" />
       </section>
+      }
 
       <label class="form__switch">
         <span>Active</span>

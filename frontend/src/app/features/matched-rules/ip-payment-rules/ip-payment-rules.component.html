@@ -71,6 +71,7 @@
               [class.status-pill--matched]="row.status === 'MATCHED'"
               [class.status-pill--mismatch]="row.status === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="row.status === 'UNMATCHED'"
+              [class.status-pill--ambiguous]="row.status === 'AMBIGUOUS_MATCH'"
             >{{ statusLabel(row.status) }}</span>
           </td>
           <td class="wrap">{{ row.bank ? (row.bank.bankName || '—') + ' · ' + (row.bank.accountNo || '—') : '—' }}</td>

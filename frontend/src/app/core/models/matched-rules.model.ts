@@ -1,4 +1,18 @@
-export type MatchStatus = 'MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED';
+/**
+ * A reconciliation verdict.
+ *
+ * AMBIGUOUS_MATCH comes only from the unit-aggregation rule: the unit total
+ * matched more than one candidate, so none was selected automatically and a
+ * person has to choose. It is deliberately NOT folded into UNMATCHED —
+ * "several possibilities, awaiting a decision" is a different business state
+ * from "nothing found".
+ *
+ * Render it through a Record<MatchStatus, ...> lookup rather than an if-chain
+ * ending in a fallback: a bare `else` silently absorbs any status added later,
+ * whereas the lookup makes the compiler point at every site that needs
+ * updating.
+ */
+export type MatchStatus = 'MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED' | 'AMBIGUOUS_MATCH';
 
 export interface MatchedBankInfo {
   recordId: string;
@@ -42,6 +56,51 @@ export interface MatchedRulesQuery {
   status?: MatchStatus;
   dateFrom?: string;
   dateTo?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** The bank transaction a unit was reconciled against. */
+export interface UnitMatchBank {
+  recordId: string;
+  chqRefNo: string | null;
+  narration: string | null;
+  txnDate: string | null;
+  amount: number | null;
+  accountNo: string | null;
+}
+
+/**
+ * One aggregated unit (GET /api/matched-rules/unit-matches).
+ *
+ * `transactionCount` is the unit's true size as the engine computed it;
+ * `rowsInBatch` counts how many of those rows are in the current selection.
+ * They differ when a unit spans uploads — worth showing, not hiding.
+ */
+export interface UnitMatch {
+  unitKey: string;
+  transactionCount: number | null;
+  rowsInBatch: number;
+  unitTotal: number | null;
+  difference: number | null;
+  status: MatchStatus | null;
+  appliedRule: string | null;
+  batchId: string | null;
+  divisionName: string | null;
+  bank: UnitMatchBank | null;
+}
+
+export interface UnitMatchesPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  results: UnitMatch[];
+}
+
+export interface UnitMatchesQuery {
+  paymentType?: 'IP_PAYMENT' | 'DIAG_PAYMENT';
+  batchId?: string;
+  status?: MatchStatus;
   page?: number;
   pageSize?: number;
 }

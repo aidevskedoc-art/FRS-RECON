@@ -59,6 +59,16 @@
       <i class="pi pi-search"></i>
       <input pInputText type="text" placeholder="Search patient, receipt, reference, user…" [(ngModel)]="search" (keyup.enter)="applyFilters()" />
     </span>
+    <button
+      type="button"
+      class="filters__toggle"
+      [class.filters__toggle--on]="groupedOnly()"
+      (click)="toggleGroupedOnly()"
+      title="Show only transactions the unit rule grouped together"
+    >
+      <i class="pi" [class.pi-check-square]="groupedOnly()" [class.pi-stop]="!groupedOnly()"></i>
+      Grouped only
+    </button>
     <p-select [options]="paymentModeOptions()" optionLabel="label" optionValue="value" [(ngModel)]="paymentMode" (onChange)="applyFilters()" class="filters__field" />
     <p-select [options]="payTypeOptions()" optionLabel="label" optionValue="value" [(ngModel)]="payType" (onChange)="applyFilters()" class="filters__field" />
     <p-select
@@ -103,10 +113,12 @@
       [scrollable]="true"
       scrollDirection="both"
       styleClass="p-datatable-sm records-table"
+      (onRowExpand)="onRowExpand($event.data)"
       (onLazyLoad)="onLazyLoad($event)"
     >
       <ng-template #header>
         <tr>
+          <th class="expander-col"></th>
           <th>Status</th>
           <th>Matched Bank A/C No</th>
           @for (col of columns; track col.key) {
@@ -115,30 +127,128 @@
           <th>Rule Applied</th>
         </tr>
       </ng-template>
-      <ng-template #body let-record>
+      <ng-template #body let-record let-expanded="expanded">
         <tr>
+          <td class="expander-col">
+            @if (isAggregated(record)) {
+              <button
+                type="button"
+                pRipple
+                [pRowToggler]="record"
+                class="expander"
+                [attr.aria-label]="expanded ? 'Hide the transactions in this unit' : 'Show the transactions in this unit'"
+              >
+                <i class="pi" [class.pi-chevron-down]="expanded" [class.pi-chevron-right]="!expanded"></i>
+              </button>
+            }
+          </td>
           <td>
             <span
               class="status-pill"
               [class.status-pill--matched]="record.matchStatus === 'MATCHED'"
               [class.status-pill--mismatch]="record.matchStatus === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="record.matchStatus === 'UNMATCHED'"
+              [class.status-pill--ambiguous]="record.matchStatus === 'AMBIGUOUS_MATCH'"
               [pTooltip]="statusTooltip(record)"
             >{{ record.matchStatus ? statusLabel(record.matchStatus) : (matchesGenerated() ? 'Excluded' : 'Not generated') }}</span>
           </td>
           <td class="mono">{{ record.matchedBank?.accountNo || (matchesGenerated() ? '—' : '') }}</td>
           @for (col of columns; track col.key) {
             <td
-              [class.mono]="col.key === 'receiptNumber' || col.key === 'yhno'"
+              [class.mono]="col.key === 'receiptNumber' || col.key === 'yhno' || col.key === 'unitRefSource' || col.key === 'matchUnitKey'"
               [class.wrap]="col.key === 'patientName'"
             >{{ cellValue(record, col) }}</td>
           }
           <td class="wrap" [title]="record.matchAppliedRule">{{ record.matchAppliedRule || (matchesGenerated() ? '—' : '') }}</td>
         </tr>
       </ng-template>
+
+      <!--
+        Section 22 - the audit drill-down. Answers "why was this matched?" by
+        listing every transaction that went into the unit total, so the sum can
+        be checked by eye against the amount it was compared with.
+      -->
+      <ng-template #expandedrow let-record>
+        <tr class="unit-detail-row">
+          <td [attr.colspan]="columns.length + 4">
+            <div class="unit-detail">
+              <div class="unit-detail__head">
+                <span class="unit-detail__label">Unit</span>
+                <span class="unit-detail__key">{{ record.matchUnitKey }}</span>
+                <span class="unit-detail__meta">{{ record.matchUnitCount }} transactions</span>
+                @if (unitsInvolved(record).length) {
+                  <span class="unit-detail__units" [class.unit-detail__units--cross]="isCrossUnit(record)">
+                    <i class="pi" [class.pi-sitemap]="isCrossUnit(record)" [class.pi-building]="!isCrossUnit(record)"></i>
+                    {{ unitsInvolved(record).join(' + ') }}
+                    @if (isCrossUnit(record)) { <strong>· across units</strong> }
+                  </span>
+                }
+              </div>
+
+              @if (isMembersLoading(record)) {
+                <p class="unit-detail__empty">Loading the transactions in this unit…</p>
+              } @else if (membersOf(record).length === 0) {
+                <p class="unit-detail__empty">No member transactions returned for this unit.</p>
+              } @else {
+                <table class="unit-detail__table">
+                  <thead>
+                    <tr>
+                      <th>Receipt</th>
+                      <th>Unit</th>
+                      <th>Upload</th>
+                      <th>Patient</th>
+                      <th>Transaction Id</th>
+                      <th class="num">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (m of membersOf(record); track m.id) {
+                      <tr [class.unit-detail__self]="m.id === record.id">
+                        <td class="mono">{{ m.receiptNumber || '—' }}</td>
+                        <td [class.unit-detail__other]="m.division !== record.division">{{ m.division || '—' }}</td>
+                        <td [class.unit-detail__other]="m.batchId !== record.batchId">
+                          Batch {{ m.batchId }}@if (m.batchId !== record.batchId) { <span class="unit-detail__meta">(other upload)</span> }
+                        </td>
+                        <td>{{ m.patientName || '—' }}</td>
+                        <td class="mono">{{ m.transactionRef1 || m.transactionRef2 || m.transactionRef3 || '—' }}</td>
+                        <td class="num">{{ amount(m.billAmount) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="5">Unit total</td>
+                      <td class="num">{{ amount(record.matchUnitTotal) }}</td>
+                    </tr>
+                    @if (record.matchedBank) {
+                      <tr>
+                        <td colspan="5">
+                          Matched with {{ record.matchedBank.chqRefNo || record.matchedBank.narration || 'bank transaction' }}
+                          @if (record.matchedBank.txnDate) { <span class="unit-detail__meta">on {{ record.matchedBank.txnDate }}</span> }
+                        </td>
+                        <td class="num">{{ amount(record.matchedBank.depositAmt ?? record.matchedBank.withdrawalAmt) }}</td>
+                      </tr>
+                    }
+                    <tr class="unit-detail__diff">
+                      <td colspan="5">Difference</td>
+                      <td class="num">{{ amount(record.matchUnitDifference) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+                @if (membersOf(record).length !== record.matchUnitCount) {
+                  <p class="unit-detail__warn">
+                    Showing {{ membersOf(record).length }} of {{ record.matchUnitCount }} transactions in this unit.
+                  </p>
+                }
+              }
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+
       <ng-template #emptymessage>
         <tr>
-          <td [attr.colspan]="columns.length + 3" class="empty">No records match this filter.</td>
+          <td [attr.colspan]="columns.length + 4" class="empty">No records match this filter.</td>
         </tr>
       </ng-template>
     </p-table>

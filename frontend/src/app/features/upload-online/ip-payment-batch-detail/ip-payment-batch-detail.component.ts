@@ -7,15 +7,18 @@ import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
+import { Ripple } from 'primeng/ripple';
 import { IpPaymentService } from '../../../core/services/ip-payment.service';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import { MatchStatus, OnlinePaymentRecord, OnlineUploadBatch, RecordFilterOptions, RecordStatusCounts } from '../../../core/models';
 
 interface ColumnDef {
-  key: keyof OnlinePaymentRecord;
+  key: string;
   header: string;
   kind?: 'amount' | 'date';
+  /** Derives the cell from the record when it is not a plain field. */
+  get?: (record: OnlinePaymentRecord) => unknown;
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -25,21 +28,49 @@ const COLUMNS: ColumnDef[] = [
   { key: 'ipNo', header: 'IPNO' },
   { key: 'patientName', header: 'Patient Name' },
   { key: 'transId', header: 'Trans Id' },
+  // The reference the unit rule actually keys on, shown with its ending
+  // identifier intact. "Trans Id" above is a display MERGE built at upload
+  // time — "REF-A / REF-B" when a row carries both ids — so it is not the
+  // value anything is grouped by, and reading it as such is misleading.
+  {
+    key: 'unitRefSource',
+    header: 'Transaction Ref',
+    get: (r) => r.transactionRef1 || r.transactionRef2 || r.transactionRef3,
+  },
   { key: 'paymentMode', header: 'Payment Mode' },
   { key: 'payType', header: 'Pay Type' },
   { key: 'remarks', header: 'Remarks' },
   { key: 'paymentRemarks', header: 'Payment Remarks' },
   { key: 'patType', header: 'Pat Type' },
   { key: 'billAmount', header: 'Bill Amount', kind: 'amount' },
+  // Unit-aggregation columns, beside Bill Amount so an aggregated match reads
+  // at a glance: every row of a unit shows the SAME Unit Total and Unit Size
+  // while its own Bill Amount is a fraction of it. Blank on rows an ordinary
+  // rule matched — those belong to no unit.
+  { key: 'matchUnitKey', header: 'Unit' },
+  { key: 'matchUnitTotal', header: 'Unit Total', kind: 'amount' },
+  { key: 'matchUnitCount', header: 'Unit Size' },
+  { key: 'matchUnitDifference', header: 'Difference', kind: 'amount' },
   { key: 'onlineUpiAmount', header: 'Online Amount', kind: 'amount' },
   { key: 'userId', header: 'User ID' },
   { key: 'userName', header: 'User Name' },
 ];
 
+/**
+ * Exhaustive by type: adding a MatchStatus without a label here is a compile
+ * error, which the previous if-chain's fallback `return` silently swallowed.
+ */
+const STATUS_LABELS: Record<MatchStatus, string> = {
+  MATCHED: 'Matched',
+  AMOUNT_MISMATCH: 'Amount Mismatch',
+  UNMATCHED: 'Unmatched',
+  AMBIGUOUS_MATCH: 'Ambiguous Match',
+};
+
 @Component({
   selector: 'app-ip-payment-batch-detail',
   standalone: true,
-  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, InputTextModule, SelectModule, TooltipModule],
+  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, InputTextModule, SelectModule, TooltipModule, Ripple],
   templateUrl: './ip-payment-batch-detail.component.html',
   styleUrl: './ip-payment-batch-detail.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -70,6 +101,17 @@ export class IpPaymentBatchDetailComponent {
   protected readonly dateFrom = signal('');
   protected readonly dateTo = signal('');
   protected readonly statusFilter = signal<'ALL' | MatchStatus>('ALL');
+  /** Show only rows the unit rule aggregated — otherwise they are a handful of rows among thousands. */
+  protected readonly groupedOnly = signal(false);
+
+  /**
+   * Expanded-row state for the unit drill-down (§22). Members are fetched on
+   * expand rather than shipped with every page: only a few rows are ever
+   * expanded, and a unit's members are not necessarily on the current page.
+   */
+  protected readonly unitMembers = signal<Record<string, OnlinePaymentRecord[]>>({});
+  protected readonly unitMembersLoading = signal<string | null>(null);
+
 
   /** Per-verdict record counts for the whole batch — null until fetched; drives the count shown against each status option. */
   protected readonly statusCounts = signal<RecordStatusCounts | null>(null);
@@ -81,6 +123,7 @@ export class IpPaymentBatchDetailComponent {
       { label: withCount('Matched', c?.matched), value: 'MATCHED' as const },
       { label: withCount('Amount Mismatch', c?.amountMismatch), value: 'AMOUNT_MISMATCH' as const },
       { label: withCount('Unmatched', c?.unmatched), value: 'UNMATCHED' as const },
+      { label: withCount('Ambiguous Match', c?.ambiguous), value: 'AMBIGUOUS_MATCH' as const },
     ];
   });
 
@@ -148,9 +191,7 @@ export class IpPaymentBatchDetailComponent {
   }
 
   protected statusLabel(status: MatchStatus): string {
-    if (status === 'MATCHED') return 'Matched';
-    if (status === 'AMOUNT_MISMATCH') return 'Amount Mismatch';
-    return 'Unmatched';
+    return STATUS_LABELS[status] ?? status;
   }
 
   protected statusTooltip(record: OnlinePaymentRecord): string {
@@ -185,6 +226,70 @@ export class IpPaymentBatchDetailComponent {
     this.loadPage();
   }
 
+  protected toggleGroupedOnly(): void {
+    this.groupedOnly.update((v) => !v);
+    this.page = 1;
+    this.loadPage();
+  }
+
+  /** True when this row was aggregated into a unit, so it has something to expand. */
+  protected isAggregated(record: OnlinePaymentRecord): boolean {
+    return !!record.matchUnitKey && (record.matchUnitCount ?? 0) > 1;
+  }
+
+  /**
+   * Loads every member of the expanded row's unit. Re-queried from the server
+   * rather than assembled from the loaded page, so the drill-down shows the
+   * unit's true membership even when a filter or page boundary hides some of
+   * it — which is exactly when a reviewer needs to see the whole thing.
+   */
+  protected onRowExpand(record: OnlinePaymentRecord): void {
+    const key = record.matchUnitKey;
+    if (!key || this.unitMembers()[key]) return;
+    this.unitMembersLoading.set(key);
+    this.ipPayments
+      // Deliberately NOT scoped to this batch: a unit can span uploads, and the
+      // member from another batch is precisely the row a reviewer is looking
+      // for when the total exceeds what this batch accounts for.
+      .fetchRecords({ matchUnitKey: key, pageSize: 200 })
+      .subscribe({
+        next: (result) => {
+          this.unitMembers.update((m) => ({ ...m, [key]: result.records }));
+          this.unitMembersLoading.set(null);
+        },
+        error: (err) => {
+          this.error.set(errorMessage(err));
+          this.unitMembersLoading.set(null);
+        },
+      });
+  }
+
+  protected membersOf(record: OnlinePaymentRecord): OnlinePaymentRecord[] {
+    return record.matchUnitKey ? (this.unitMembers()[record.matchUnitKey] ?? []) : [];
+  }
+
+  protected isMembersLoading(record: OnlinePaymentRecord): boolean {
+    return this.unitMembersLoading() === record.matchUnitKey;
+  }
+
+  /**
+   * The distinct units the members of a unit come from. One name means an
+   * ordinary same-unit match; two or more is a cross-unit settlement, which is
+   * the thing a reviewer most needs told explicitly.
+   */
+  protected unitsInvolved(record: OnlinePaymentRecord): string[] {
+    return [...new Set(this.membersOf(record).map((m) => m.division || 'Unknown unit'))];
+  }
+
+  protected isCrossUnit(record: OnlinePaymentRecord): boolean {
+    return this.unitsInvolved(record).length > 1;
+  }
+
+  /** The members' own amounts must add up to the unit total — shown so a reviewer can check it. */
+  protected membersSum(record: OnlinePaymentRecord): number {
+    return this.membersOf(record).reduce((sum, m) => sum + (Number(m.billAmount) || 0), 0);
+  }
+
   protected setStatus(status: 'ALL' | MatchStatus): void {
     this.statusFilter.set(status);
     this.page = 1;
@@ -204,6 +309,7 @@ export class IpPaymentBatchDetailComponent {
         payType: this.payType() || undefined,
         patType: this.patType() || undefined,
         matchAppliedRule: this.appliedRule() || undefined,
+        groupedOnly: this.groupedOnly() || undefined,
         dateFrom: this.dateFrom() || undefined,
         dateTo: this.dateTo() || undefined,
         matchStatus: status === 'ALL' ? undefined : status,
@@ -244,6 +350,7 @@ export class IpPaymentBatchDetailComponent {
         payType: this.payType() || undefined,
         patType: this.patType() || undefined,
         matchAppliedRule: this.appliedRule() || undefined,
+        groupedOnly: this.groupedOnly() || undefined,
         dateFrom: this.dateFrom() || undefined,
         dateTo: this.dateTo() || undefined,
         matchStatus: status === 'ALL' ? undefined : status,
@@ -255,8 +362,13 @@ export class IpPaymentBatchDetailComponent {
     this.router.navigate(['/upload-online/ip-payments']);
   }
 
+  /** Rupee formatting for the expanded unit rows, which are not driven by a ColumnDef. */
+  protected amount(value: number | null | undefined): string {
+    return value === null || value === undefined ? '—' : Number(value).toLocaleString('en-IN');
+  }
+
   protected cellValue(record: OnlinePaymentRecord, column: ColumnDef): string {
-    const value = record[column.key];
+    const value = column.get ? column.get(record) : (record as unknown as Record<string, unknown>)[column.key];
     if (value === null || value === undefined || value === '') return '—';
     if (column.kind === 'amount') return Number(value).toLocaleString('en-IN');
     if (column.kind === 'date') return new Date(String(value)).toLocaleString('en-IN');

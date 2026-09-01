@@ -94,6 +94,16 @@ every parser returns the same shape.
 | Format | Status |
 |---|---|
 | `UNITED_INDIA_FAMILY_MEDICARE` | Verified cell-for-cell against the client's expected output |
+| `CARE_GROUP_CERTIFICATE` | Verified against 29 real certificates by `npm run test-care` |
+| `CARE_HEALTH_POLICY_CERTIFICATE` | Verified against 6 real schedules (both member-table layouts) by `npm run test-care` |
+| the rest | One real sample each; no automated per-field check yet |
+
+`npm run test-care` parses every Care PDF under `uploads/` and checks each
+member row against the shape its column must hold — a date where a date
+belongs, a relationship word where a relationship belongs. That check is the
+point of the script: a member table read one column out still produces a full
+set of plausible values, so "nothing came back null" is not evidence that a
+table parsed correctly.
 
 An unrecognised layout returns HTTP 422 with a clear message and marks the
 document Failed, rather than silently producing blank fields.
@@ -149,10 +159,17 @@ npm run smoke-test             # full API round trip
 
 ## Known limits
 
-- **One insurer format so far.** Other insurers need a parser module; the
-  registry and the shared line helpers are the reusable part.
-- **Text-based PDFs only.** A scanned schedule has no text layer and would need
-  OCR.
+- **Text-based PDFs only.** A scanned schedule has no text layer; those go to
+  the AI fallback, which reads the pages visually, and are reported as needing
+  OCR if that isn't configured.
+- **Table-shaped sections are read by coordinate, not by line order.** See
+  `src/extraction/table.js`. Only the Care parsers use it so far; the other
+  insurers still count lines forward from a label, which is the failure mode
+  it was written to remove, so they are worth migrating as their layouts
+  change under them.
+- **`PLAN CHOSEN` is the constant `"BASIC"` for every insurer**, by business
+  rule. Care prints a real plan name ("Care Supreme", "Group Care 360" and so
+  on) that is currently discarded.
 - **`POLICY TYPE - SELF/PARENTS` is `"B"` when a member's relation to the
   policyholder is Mother, Father, or Parent, and `"A"` otherwise** — a rule
   given directly by the client, not derived from any sample output (no

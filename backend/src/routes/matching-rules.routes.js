@@ -10,6 +10,12 @@ const {
   PAIR_OPERATORS_BY_TYPE,
   isIndexable,
 } = require('../reconciliation/rules');
+const { UNIT_KEY_MODES } = require('../reconciliation/unit-groups');
+const { DIRECTIONS, SCOPES, PAYMENT_REF_FIELDS, BANK_REF_FIELDS } = require('../reconciliation/unit-pass');
+
+const RULE_KINDS = ['CNF', 'UNIT_AGGREGATION'];
+/** A unit rule has no action of its own; the verdict comes from the comparison. */
+const UNIT_ACTION = 'UNIT_AGGREGATION';
 
 const router = express.Router();
 
@@ -56,15 +62,47 @@ function validateLeaf(leaf, label) {
 }
 
 /**
+ * Validates a UNIT_AGGREGATION rule's settings.
+ *
+ * These rules carry no conditions, so none of the CNF checks apply — in
+ * particular isIndexable, which asks for a join key a unit rule does not have
+ * and does not need (it groups by an identifier rather than probing a bank
+ * index per pair).
+ */
+function validateUnitRuleBody(body) {
+  const cfg = body.unitConfig;
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return 'unitConfig is required for a unit-aggregation rule';
+  if (!DIRECTIONS.includes(cfg.direction)) return `unitConfig.direction must be one of: ${DIRECTIONS.join(', ')}`;
+  if (!UNIT_KEY_MODES.includes(cfg.unitKeyMode)) return `unitConfig.unitKeyMode must be one of: ${UNIT_KEY_MODES.join(', ')}`;
+  if (!SCOPES.includes(cfg.scope)) return `unitConfig.scope must be one of: ${SCOPES.join(', ')}`;
+  if (!PAYMENT_REF_FIELDS.includes(cfg.paymentRefField)) {
+    return `unitConfig.paymentRefField must be one of: ${PAYMENT_REF_FIELDS.join(', ')}`;
+  }
+  if (!BANK_REF_FIELDS.includes(cfg.bankRefField)) {
+    return `unitConfig.bankRefField must be one of: ${BANK_REF_FIELDS.join(', ')}`;
+  }
+  const tolerance = Number(cfg.tolerance);
+  if (!Number.isFinite(tolerance) || tolerance < 0) return 'unitConfig.tolerance must be a number >= 0';
+  if (cfg.useNarration !== undefined && typeof cfg.useNarration !== 'boolean') {
+    return 'unitConfig.useNarration must be a boolean';
+  }
+  return null;
+}
+
+/**
  * Validates a candidate rule (POST body, or a PATCH's existing row merged with
- * its body). A rule is name + action + conditionGroups (CNF: an AND-list of
- * OR-groups of leaves — see reconciliation/rules.js). Every rule must set an
- * action and must have at least one non-negated text FIELD_PAIR leaf
- * (`isIndexable`) — that leaf keys the bank index; a rule with only literal /
- * amount / date / negated leaves can't be evaluated efficiently.
+ * its body), dispatching on `kind`.
+ *
+ * CNF is the default so every rule written before the kind column existed
+ * validates exactly as it always did.
  */
 function validateRuleBody(body) {
   if (!body.name || !String(body.name).trim()) return 'name is required';
+
+  const kind = body.kind ?? 'CNF';
+  if (!RULE_KINDS.includes(kind)) return `kind must be one of: ${RULE_KINDS.join(', ')}`;
+  if (kind === 'UNIT_AGGREGATION') return validateUnitRuleBody(body);
+
   if (!isSet(body.action) || !ACTIONS.includes(body.action)) return `action must be one of: ${ACTIONS.join(', ')}`;
 
   const groups = body.conditionGroups;
@@ -79,7 +117,7 @@ function validateRuleBody(body) {
   }
 
   if (!isIndexable({ conditionGroups: groups })) {
-    return 'a rule needs at least one non-negated text field-to-field match (EQUALS/CONTAINS) to be evaluated';
+    return 'a rule needs at least one non-negated text field-to-field match (EQUALS/CONTAINS) against Chq/Ref No. or Narration to be evaluated';
   }
   return null;
 }
@@ -103,11 +141,19 @@ function mountRuleCrud(basePath, tableName) {
       const validationError = validateRuleBody(body);
       if (validationError) return res.status(400).json({ error: validationError });
 
+      const isUnit = (body.kind ?? 'CNF') === 'UNIT_AGGREGATION';
       const { rows } = await db.query(
-        `INSERT INTO ${tableName} (name, action, active, condition_groups, sort_order)
-         VALUES ($1, $2, $3, $4::jsonb, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM ${tableName}))
+        `INSERT INTO ${tableName} (name, action, active, kind, condition_groups, unit_config, sort_order)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM ${tableName}))
          RETURNING *`,
-        [String(body.name).trim(), body.action, body.active ?? true, JSON.stringify(body.conditionGroups)],
+        [
+          String(body.name).trim(),
+          isUnit ? UNIT_ACTION : body.action,
+          body.active ?? true,
+          isUnit ? 'UNIT_AGGREGATION' : 'CNF',
+          isUnit ? null : JSON.stringify(body.conditionGroups),
+          isUnit ? JSON.stringify(body.unitConfig) : null,
+        ],
       );
       res.status(201).json(matchingRuleRowToApi(rows[0]));
     } catch (err) {
@@ -160,10 +206,11 @@ function mountRuleCrud(basePath, tableName) {
         ['action', 'action'],
         ['active', 'active'],
         ['conditionGroups', 'condition_groups'],
+        ['unitConfig', 'unit_config'],
       ];
       for (const [apiField, column] of patch) {
         if (req.body[apiField] === undefined) continue;
-        if (apiField === 'conditionGroups') {
+        if (apiField === 'conditionGroups' || apiField === 'unitConfig') {
           values.push(JSON.stringify(req.body[apiField]));
           setClauses.push(`${column} = $${values.length}::jsonb`);
         } else if (apiField === 'name') {

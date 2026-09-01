@@ -51,13 +51,16 @@ function validate({ policy, fields }) {
       // Nominees are per member on a real schedule, so this passes only when
       // every member has one — a single missing nominee is a real gap.
       passed: members.length > 0 && members.every((m) => !!m.nomineeName),
-      omitted: omits.has('nominee'),
+      // Dropped only when this document really carries no nominee. The same
+      // product prints one on some certificates and not others, so keying
+      // purely off the format would drop a check that can genuinely pass.
+      omitted: omits.has('nominee') && !members.some((m) => m.nomineeName),
     },
     {
       id: 'base-premium-total',
       label: 'Member base premiums reconcile to Total Basic Premium',
       passed: reconciles(members, policy.premium?.totalBasicPremium),
-      omitted: omits.has('memberBasePremium'),
+      omitted: omits.has('memberBasePremium') && !members.some((m) => m.basePremium),
     },
   ].filter((c) => !c.omitted).map(({ omitted, ...check }) => check);
 

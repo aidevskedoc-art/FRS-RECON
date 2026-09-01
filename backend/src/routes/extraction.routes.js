@@ -332,13 +332,13 @@ router.post('/:id/extract', async (req, res, next) => {
     const startedAt = Date.now();
     const filePath = path.join(uploadDir, document.file_path);
     const buffer = fs.readFileSync(filePath);
-    const { fullText, pageTexts } = await extractPages(buffer);
+    const { fullText, pageTexts, pageItems } = await extractPages(buffer);
 
     let parsed;
     let usedAiFallback = false;
     let aiDiagnostics = null;
     try {
-      parsed = parseByFormat({ fullText, pageTexts });
+      parsed = parseByFormat({ fullText, pageTexts, pageItems });
     } catch (parseErr) {
       if (parseErr.code !== 'UNKNOWN_FORMAT') throw parseErr;
 

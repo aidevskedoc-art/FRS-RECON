@@ -41,11 +41,37 @@ export type RuleConditionGroup = RuleLeaf[];
  * one satisfied leaf. First active rule (by sortOrder) that matches some bank
  * row wins; its `action` sets the verdict. There is no config layer.
  */
+/**
+ * Settings for a UNIT_AGGREGATION rule. It has no conditions: it groups rows
+ * sharing a Unit Identifier and compares their combined amount to a single
+ * transaction on the other statement.
+ */
+export interface UnitRuleConfig {
+  /** MIS_TO_BANK sums payment rows against one credit; BANK_TO_MIS is the reverse. */
+  direction: 'MIS_TO_BANK' | 'BANK_TO_MIS';
+  /** EXACT: ACCOUNT001A groups only with ACCOUNT001A. BASE: a trailing letter is stripped first, so A and B combine. */
+  unitKeyMode: 'EXACT' | 'BASE';
+  /** The boundary a unit may never cross. */
+  scope: 'DIVISION' | 'BATCH' | 'NONE';
+  /** Rupees of slack on the amount comparison. */
+  tolerance: number;
+  /** Also key bank rows on narration tokens — an inward remittance files its reference only there. */
+  useNarration: boolean;
+  /** AUTO walks Transaction Id 1 → 2 → 3 and takes the first non-null. */
+  paymentRefField: 'AUTO' | 'transactionRef1' | 'transactionRef2' | 'transactionRef3' | 'receiptNumber' | 'yhno' | 'ipNo';
+  bankRefField: 'chqRefNo' | 'narration';
+}
+
+export type RuleKind = 'CNF' | 'UNIT_AGGREGATION';
+
 export interface MatchingRule {
   id: string;
   name: string;
   action: RuleAction;
   active: boolean;
+  /** CNF = the condition rules below. UNIT_AGGREGATION = unitConfig instead. */
+  kind: RuleKind;
+  unitConfig: UnitRuleConfig | null;
   /** Evaluation priority — lower runs first. Set via PUT .../reorder. */
   sortOrder: number | null;
   conditionGroups: RuleConditionGroup[];
@@ -57,8 +83,56 @@ export interface MatchingRuleDraft {
   name: string;
   action: RuleAction | null;
   active: boolean;
+  kind: RuleKind;
   conditionGroups: RuleConditionGroup[];
+  unitConfig: UnitRuleConfig | null;
 }
+
+export const RULE_KIND_OPTIONS: { label: string; value: RuleKind }[] = [
+  { label: 'Condition rule', value: 'CNF' },
+  { label: 'Transaction Amount Match on Same Unit', value: 'UNIT_AGGREGATION' },
+];
+
+export const UNIT_DIRECTION_OPTIONS = [
+  { label: 'Sum payments → one bank credit', value: 'MIS_TO_BANK' as const },
+  { label: 'Sum bank rows → one payment', value: 'BANK_TO_MIS' as const },
+];
+
+export const UNIT_KEY_MODE_OPTIONS = [
+  { label: 'Exact — ACCOUNT001A groups only with ACCOUNT001A', value: 'EXACT' as const },
+  { label: 'Base — strip a trailing letter, so A and B combine', value: 'BASE' as const },
+];
+
+export const UNIT_SCOPE_OPTIONS = [
+  { label: 'Same unit (division)', value: 'DIVISION' as const },
+  { label: 'Same upload batch', value: 'BATCH' as const },
+  { label: 'Any unit — sums across divisions', value: 'NONE' as const },
+];
+
+export const UNIT_PAYMENT_REF_OPTIONS = [
+  { label: 'Transaction Id (1 → 2 → 3)', value: 'AUTO' as const },
+  { label: 'Transaction Id 1', value: 'transactionRef1' as const },
+  { label: 'Transaction Id 2', value: 'transactionRef2' as const },
+  { label: 'Transaction Id 3', value: 'transactionRef3' as const },
+  { label: 'Receipt Number', value: 'receiptNumber' as const },
+  { label: 'YH No', value: 'yhno' as const },
+  { label: 'IP No', value: 'ipNo' as const },
+];
+
+export const UNIT_BANK_REF_OPTIONS = [
+  { label: 'Chq/Ref No.', value: 'chqRefNo' as const },
+  { label: 'Narration', value: 'narration' as const },
+];
+
+export const DEFAULT_UNIT_CONFIG: UnitRuleConfig = {
+  direction: 'MIS_TO_BANK',
+  unitKeyMode: 'EXACT',
+  scope: 'DIVISION',
+  tolerance: 0,
+  useNarration: true,
+  paymentRefField: 'AUTO',
+  bankRefField: 'chqRefNo',
+};
 
 export const RULE_FIELDS: { label: string; value: RuleField }[] = [
   { label: 'Patient Name', value: 'patientName' },
@@ -118,6 +192,8 @@ export const PAYMENT_FIELD_OPTIONS: { label: string; value: string; type: FieldD
 
 /** Bank-statement fields a FIELD_PAIR leaf's destination may reference — must match BANK_FIELD_CATALOG in backend/src/reconciliation/rules.js. */
 export const BANK_STATEMENT_FIELD_OPTIONS: { label: string; value: string; type: FieldDataType }[] = [
+  // chqRefNo and narration are the only fields a join key may target — see
+  // JOIN_DESTINATION_FIELDS in backend/src/reconciliation/rules.js.
   { label: 'Chq/Ref No.', value: 'chqRefNo', type: 'text' },
   { label: 'Narration', value: 'narration', type: 'text' },
   { label: 'Unit (division)', value: 'divisionName', type: 'text' },

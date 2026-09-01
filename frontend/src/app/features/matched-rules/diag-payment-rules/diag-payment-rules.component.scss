@@ -129,6 +129,12 @@
   @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
 }
 
+// Neutral, not danger: an ambiguous result is not a failure, it is a decision
+// waiting on a person. Colouring it red would read as "broken".
+.status-pill--ambiguous {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+}
+
 .empty {
   text-align: center;
   padding: var(--space-8);

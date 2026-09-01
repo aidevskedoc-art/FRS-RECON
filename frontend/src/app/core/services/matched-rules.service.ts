@@ -1,7 +1,14 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { MatchedRulesPage, MatchedRulesQuery, ReconciliationSummary, ReconciliationSummaryQuery } from '../models';
+import {
+  MatchedRulesPage,
+  MatchedRulesQuery,
+  ReconciliationSummary,
+  ReconciliationSummaryQuery,
+  UnitMatchesPage,
+  UnitMatchesQuery,
+} from '../models';
 import { API_BASE_URL } from '../config/api.config';
 
 /** Counts of records by verdict from a POST .../generate run — see matched-rules.routes.js generateForBatch. */
@@ -52,13 +59,25 @@ export class MatchedRulesService {
     });
   }
 
+  /**
+   * GET /api/matched-rules/unit-matches — one row per aggregated unit.
+   *
+   * Read back from the persisted verdicts, so it always agrees with the
+   * batch grid rather than recomputing and risking a different answer.
+   */
+  fetchUnitMatches(query: UnitMatchesQuery = {}): Observable<UnitMatchesPage> {
+    return this.http.get<UnitMatchesPage>(`${API_BASE_URL}/matched-rules/unit-matches`, {
+      params: toHttpParams(query as Record<string, unknown>),
+    });
+  }
+
   /** GET /api/matched-rules/summary?dateFrom=&dateTo= — the reconciliation summary dashboard's data. */
   fetchSummary(query: ReconciliationSummaryQuery = {}): Observable<ReconciliationSummary> {
     return this.http.get<ReconciliationSummary>(`${API_BASE_URL}/matched-rules/summary`, { params: toHttpParams(query) });
   }
 }
 
-function toHttpParams(query: MatchedRulesQuery | ReconciliationSummaryQuery): HttpParams {
+function toHttpParams(query: MatchedRulesQuery | ReconciliationSummaryQuery | Record<string, unknown>): HttpParams {
   let params = new HttpParams();
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null && value !== '') params = params.set(key, String(value));

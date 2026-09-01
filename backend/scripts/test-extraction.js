@@ -18,7 +18,7 @@ const target = process.argv[2] || path.join(__dirname, '..', 'test-fixtures', 'r
 (async () => {
   const buffer = fs.readFileSync(target);
   const started = Date.now();
-  const { fullText, pageTexts } = await extractPages(buffer);
+  const { fullText, pageTexts, pageItems } = await extractPages(buffer);
 
   const format = detectFormat(fullText);
   console.log(`file   : ${path.basename(target)}`);
@@ -30,7 +30,7 @@ const target = process.argv[2] || path.join(__dirname, '..', 'test-fixtures', 'r
     process.exit(1);
   }
 
-  const parsed = parseByFormat({ fullText, pageTexts });
+  const parsed = parseByFormat({ fullText, pageTexts, pageItems });
   const { policy, fields, metadata } = toExtractionResult(parsed, {
     pagesAnalyzed: pageTexts.length,
     processingTimeMs: Date.now() - started,

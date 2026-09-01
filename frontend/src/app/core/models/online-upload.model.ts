@@ -56,6 +56,25 @@ export interface OnlinePaymentRecord {
   matchAppliedRule: string | null;
   /** Core engine's own explanation for the ordinary (no exception rule) case — kept separate from matchAppliedRule. */
   matchReason: string | null;
+  /**
+   * Unit-aggregation facts behind the verdict, written by the last Generate run
+   * (see reconciliation/unit-pass.js). Null on a row an ordinary rule matched:
+   * only an aggregated row belongs to a unit. When present, matchUnitTotal is
+   * the summed amount of every transaction in the unit — larger than this row's
+   * own billAmount — and matchUnitDifference is that total minus the amount it
+   * was compared against.
+   */
+  /**
+   * The payment's own unit, from the batch it arrived in. Only populated by
+   * queries that join the batch (the records endpoints do). A unit match
+   * spanning divisions is unreadable without it.
+   */
+  unitName: string | null;
+  division: string | null;
+  matchUnitKey: string | null;
+  matchUnitCount: number | null;
+  matchUnitTotal: number | null;
+  matchUnitDifference: number | null;
   matchedBank: MatchedBankInfo | null;
 }
 
@@ -79,6 +98,10 @@ export interface OnlinePaymentRecordsQuery {
   matchStatus?: MatchStatus;
   /** Exact winning-rule name (from RecordFilterOptions.appliedRules), or '__NONE__' for rows no rule caught. */
   matchAppliedRule?: string;
+  /** Every row aggregated into this unit — how the expandable audit view fetches a unit's members. */
+  matchUnitKey?: string;
+  /** Only rows the unit rule aggregated (unit size 2+), whatever their verdict. */
+  groupedOnly?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -97,6 +120,8 @@ export interface RecordStatusCounts {
   matched: number;
   amountMismatch: number;
   unmatched: number;
+  /** Unit-aggregation rule found several candidates and selected none — awaiting a human decision. */
+  ambiguous: number;
   /** NULL match_status: rows a rule excluded, plus every row when the batch has never been generated. */
   notGenerated: number;
 }

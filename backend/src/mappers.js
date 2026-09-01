@@ -12,6 +12,8 @@ function toDateOnly(value) {
   return iso.slice(0, 10);
 }
 
+const { resolveDivision } = require('./reconciliation/matcher');
+
 function toNumber(value) {
   if (value === null || value === undefined) return null;
   const n = Number(value);
@@ -349,6 +351,18 @@ function matchFieldsToApi(row) {
     matchStatus: row.match_status ?? null,
     matchAppliedRule: row.match_applied_rule ?? null,
     matchReason: row.match_reason ?? null,
+    // Unit-aggregation facts behind the verdict, written by the unit pass.
+    // Null on a row an ordinary rule matched: only an aggregated row belongs
+    // to a unit. Column names still read match_group_* for continuity.
+    matchUnitKey: row.match_group_base_ref ?? null,
+    matchUnitCount: row.match_group_member_count ?? null,
+    matchUnitTotal: toNumber(row.match_group_total),
+    matchUnitDifference: toNumber(row.match_group_difference),
+    // The payment's own unit, present only when the query joined its batch
+    // (see RECORDS_WITH_MATCH_SQL). Undefined elsewhere, which correctly reads
+    // as "not asked for" rather than "no unit".
+    unitName: row.batch_unit_name ?? null,
+    division: row.batch_unit_name === undefined ? null : resolveDivision(row.batch_unit_name),
     matchedBank:
       hasBankJoin && row.match_bank_record_id
         ? {
@@ -394,6 +408,21 @@ function parseConditionGroups(raw) {
   }
 }
 
+/**
+ * A rule's unit_config. parseConditionGroups cannot be reused: it rejects
+ * anything that is not a non-empty ARRAY, so an object-shaped config would
+ * silently come back null and the rule would look unconfigured.
+ */
+function parseUnitConfig(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function matchingRuleRowToApi(row) {
   return {
     id: String(row.id),
@@ -401,7 +430,11 @@ function matchingRuleRowToApi(row) {
     action: row.action,
     active: row.active,
     sortOrder: row.sort_order,
+    // 'CNF' when the column is absent, so a row written before the kind
+    // column existed still reads as the condition rule it has always been.
+    kind: row.kind || 'CNF',
     conditionGroups: parseConditionGroups(row.condition_groups),
+    unitConfig: parseUnitConfig(row.unit_config),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };

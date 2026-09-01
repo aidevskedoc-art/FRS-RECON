@@ -55,6 +55,16 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'Matched Rules',
+    accent: 'rules',
+    items: [
+      { label: 'Reconciliation Summary', icon: 'pi pi-chart-bar', path: '/matched-rules/summary' },
+      { label: 'Unit Matches', icon: 'pi pi-sitemap', path: '/matched-rules/unit-matches' },
+      { label: 'IP Payment Rules', icon: 'pi pi-list-check', path: '/matched-rules/ip-payment-rules' },
+      { label: 'Diagnostics Payment Rules', icon: 'pi pi-list-check', path: '/matched-rules/diagnostics-payment-rules' },
+    ],
+  },
+  {
     label: 'Master Data',
     accent: 'masters',
     items: [{ label: 'Division & Bank A/C', icon: 'pi pi-sitemap', path: '/master-data/division-bank-accounts' }],

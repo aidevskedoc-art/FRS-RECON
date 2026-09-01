@@ -78,6 +78,7 @@
               [class.status-pill--matched]="record.matchStatus === 'MATCHED'"
               [class.status-pill--mismatch]="record.matchStatus === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="record.matchStatus === 'UNMATCHED'"
+              [class.status-pill--ambiguous]="record.matchStatus === 'AMBIGUOUS_MATCH'"
               [pTooltip]="record.matchPaymentType ? ('Matched to a ' + (record.matchPaymentType === 'IP_PAYMENT' ? 'IP payment' : 'Diag OP payment') + ' record') : ''"
             >{{ record.matchStatus ? statusLabel(record.matchStatus) : (matchesGenerated() ? '—' : 'Not generated') }}</span>
           </td>

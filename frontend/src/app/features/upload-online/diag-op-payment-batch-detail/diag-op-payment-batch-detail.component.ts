@@ -36,6 +36,17 @@ const COLUMNS: ColumnDef[] = [
   { key: 'userName', header: 'User Name' },
 ];
 
+/**
+ * Exhaustive by type: adding a MatchStatus without a label here is a compile
+ * error, which the previous if-chain's fallback `return` silently swallowed.
+ */
+const STATUS_LABELS: Record<MatchStatus, string> = {
+  MATCHED: 'Matched',
+  AMOUNT_MISMATCH: 'Amount Mismatch',
+  UNMATCHED: 'Unmatched',
+  AMBIGUOUS_MATCH: 'Ambiguous Match',
+};
+
 @Component({
   selector: 'app-diag-op-payment-batch-detail',
   standalone: true,
@@ -114,9 +125,7 @@ export class DiagOpPaymentBatchDetailComponent {
   }
 
   protected statusLabel(status: MatchStatus): string {
-    if (status === 'MATCHED') return 'Matched';
-    if (status === 'AMOUNT_MISMATCH') return 'Amount Mismatch';
-    return 'Unmatched';
+    return STATUS_LABELS[status] ?? status;
   }
 
   protected statusTooltip(record: OnlinePaymentRecord): string {

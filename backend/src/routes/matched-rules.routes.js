@@ -2,7 +2,9 @@ const express = require('express');
 const db = require('../db');
 const { ipPaymentRecordRowToApi, diagOpRecordRowToApi, bankStatementRecordRowToApi, matchingRuleRowToApi } = require('../mappers');
 const { groupRecords, buildFieldIndex, candidateBankRows, resolveDivision } = require('../reconciliation/matcher');
+const { runUnitPass } = require('../reconciliation/unit-pass');
 const { ACTION_STATUS, joinLeaves, groupsMatch, isIndexable } = require('../reconciliation/rules');
+const { UNIT_STATUSES } = require('../reconciliation/unit-groups');
 
 const router = express.Router();
 
@@ -79,6 +81,14 @@ function buildGroupResult(group, indexes, rules, paymentModeField) {
     receiptNumber: group.first.receiptNumber,
     paymentAmount: group.first.billAmount,
     matchedAmountField: null,
+    // Unit-aggregation facts. Null unless the unit pass claimed this row (see
+    // runUnitPass / applyUnitPatches). A row settled by an ordinary CNF rule
+    // belongs to no unit, which is why these default to null rather than to
+    // the row's own values.
+    unitKey: null,
+    unitTotal: null,
+    unitCount: null,
+    unitDifference: null,
     status,
     appliedRuleName,
     matchReason: excluded ? null : appliedRuleName ? `Matched by rule "${appliedRuleName}"` : 'No matching rule',
@@ -144,7 +154,29 @@ async function computeMatchResults({ recordTable, rowToApi, rulesTable, paymentM
   // non-negated text field-pair leaf to key the bank index on (enforced on
   // save; re-checked here so a legacy row can't blow up the engine).
   const { rows: ruleRows } = await db.query(`SELECT * FROM ${rulesTable} ORDER BY sort_order NULLS LAST, id`);
-  const rules = ruleRows.map(matchingRuleRowToApi).filter((r) => r.active && isIndexable(r));
+  const allRules = ruleRows.map(matchingRuleRowToApi);
+  // Both rule kinds share this table. Only CNF rules drive the per-pair engine;
+  // the aggregation rule runs afterwards, over what they leave unmatched.
+  const rules = allRules.filter((r) => r.active && r.kind === 'CNF' && isIndexable(r));
+  const unitRules = allRules.filter((r) => r.active && r.kind === 'UNIT_AGGREGATION').map(toUnitRule).filter(Boolean);
+
+  // A unit whose members were uploaded in different batches can only be seen
+  // if the rule is shown those other rows. When this call is scoped to ONE
+  // batch and a unit rule is allowed to look beyond it, the remaining rows are
+  // loaded as CONTEXT: they take part in forming units and in the totals, but
+  // they get no verdict here and never appear in this call's results. Their own
+  // batch's Generate is what records their verdict — which is symmetric, so
+  // generating either batch reports the same unit total.
+  //
+  // Without this, a settlement split across two uploads was silently short by
+  // whatever the other batch held, and read as an AMOUNT_MISMATCH.
+  const contextRecords = await loadUnitContextRecords({
+    recordTable,
+    rowToApi,
+    batchId,
+    unitRules,
+    divisionByBatchId,
+  });
 
   // One bank index per distinct join-destination field across all active rules.
   const indexes = new Map();
@@ -155,7 +187,118 @@ async function computeMatchResults({ recordTable, rowToApi, rulesTable, paymentM
   }
 
   // One group per MIS row — split-payment merging was removed.
-  return groupRecords(records).map((g) => buildGroupResult(g, indexes, rules, paymentModeField));
+  const groupResults = groupRecords(records).map((g) => buildGroupResult(g, indexes, rules, paymentModeField));
+
+  // "Transaction Amount Match on Same Unit" runs LAST, over whatever the CNF
+  // rules could not match. It can turn an UNMATCHED row into MATCHED,
+  // AMOUNT_MISMATCH or AMBIGUOUS_MATCH; it can never disturb a row an earlier
+  // rule already settled (§20 / AC-05 — guarded in runUnitPass and again in
+  // applyUnitPatches).
+  //
+  // Scope note: a unit forms only within the record set this call loaded. A
+  // per-batch Generate therefore aggregates inside that batch, while the live
+  // list and /summary aggregate across every batch in the date range — so a
+  // settlement split across two uploads only totals in the latter.
+  // Each unit rule in turn, in the priority order set on the Manage Rules
+  // screen. Patches are applied between rules, so a later rule sees the
+  // earlier one's results and its "only what is still unmatched" guard
+  // naturally keeps them from competing: a stricter same-unit rule placed
+  // first claims what it can, and a broader other-units rule picks up only
+  // the remainder.
+  // Context rows are offered to the rule as already-unmatched, so they are
+  // eligible to join a unit. applyUnitPatches only ever writes onto
+  // groupResults, which holds this batch's rows alone, so a context row can
+  // contribute to a total without acquiring a verdict it was not generated for.
+  const unitRecords = contextRecords.length ? records.concat(contextRecords) : records;
+  const unitVerdicts = contextRecords.length
+    ? groupResults.concat(contextRecords.map((r) => ({ sourceRecordIds: [String(r.id)], status: 'UNMATCHED', excluded: false, bank: null })))
+    : groupResults;
+
+  for (const rule of unitRules) {
+    const { patches } = runUnitPass({ groupResults: unitVerdicts, records: unitRecords, bankRecords, rule });
+    applyUnitPatches(groupResults, patches, bankRecords);
+  }
+
+  return groupResults;
+}
+
+/**
+ * Payment rows OUTSIDE the batch being generated, loaded only so a unit that
+ * spans uploads can still be summed in full.
+ *
+ * Returns nothing unless all three hold, so the common case pays nothing:
+ *   - this call is scoped to a single batch,
+ *   - at least one active unit rule is allowed to look past that batch
+ *     (scope BATCH means the user asked for batch boundaries to hold), and
+ *   - there is something outside the batch to load.
+ */
+async function loadUnitContextRecords({ recordTable, rowToApi, batchId, unitRules, divisionByBatchId }) {
+  if (!batchId || unitRules.length === 0) return [];
+  if (!unitRules.some((r) => r.scope !== 'BATCH')) return [];
+
+  const { rows } = await db.query(`SELECT * FROM ${recordTable} WHERE batch_id <> $1`, [batchId]);
+  const records = rows.map(rowToApi);
+  for (const record of records) record.division = divisionByBatchId.get(record.batchId) || null;
+  return records;
+}
+
+/**
+ * Flattens a UNIT_AGGREGATION rule row into the shape runUnitPass expects.
+ * Returns null for anything unusable, so a half-configured row simply does not
+ * run rather than running on defaults nobody chose.
+ */
+function toUnitRule(rule) {
+  if (!rule || !rule.unitConfig) return null;
+  return { name: rule.name, ...rule.unitConfig };
+}
+
+/**
+ * Applies the unit pass's patches onto the per-record results.
+ *
+ * The last of the three override guards, and the one that decides what a later
+ * rule may change:
+ *
+ *   MATCHED           never touched — a settled reconciliation is final (AC-05)
+ *   UNMATCHED         freely claimable, nothing was found before
+ *   AMOUNT_MISMATCH   may be UPGRADED to MATCHED, nothing else
+ *   AMBIGUOUS_MATCH   likewise
+ *
+ * Allowing only upgrades keeps rule order meaningful: a broader rule can
+ * resolve what a stricter one left unresolved, but cannot overwrite its answer
+ * with an equally unresolved one of its own.
+ */
+function applyUnitPatches(groupResults, patches, bankRecords) {
+  if (!patches || patches.size === 0) return;
+  const bankById = new Map(bankRecords.map((b) => [String(b.id), b]));
+  for (const result of groupResults) {
+    if (result.excluded || result.status === 'MATCHED') continue;
+    const patch = patches.get(String(result.sourceRecordIds[0]));
+    if (!patch) continue;
+    if (result.status !== 'UNMATCHED' && patch.status !== 'MATCHED') continue;
+
+    result.status = patch.status;
+    result.appliedRuleName = patch.appliedRuleName;
+    result.matchReason = patch.matchReason;
+    result.unitKey = patch.unitKey;
+    result.unitTotal = patch.unitTotal;
+    result.unitCount = patch.unitCount;
+    result.unitDifference = patch.unitDifference;
+
+    const bank = patch.bankRecordId ? bankById.get(patch.bankRecordId) : null;
+    if (bank) {
+      result.bank = {
+        recordId: bank.id,
+        txnDate: bank.txnDate,
+        narration: bank.narration,
+        chqRefNo: bank.chqRefNo,
+        depositAmt: bank.depositAmt,
+        withdrawalAmt: bank.withdrawalAmt,
+        accountNo: bank.accountNo,
+        bankName: bank.bankName,
+        divisionName: bank.divisionName,
+      };
+    }
+  }
 }
 
 async function runMatching(req, res, opts) {
@@ -178,7 +321,18 @@ function flattenToRecordRows(results) {
     const amountField = group.excluded ? null : group.matchedAmountField;
     const bankRecordId = !group.excluded && group.bank ? Number(group.bank.recordId) : null;
     for (const id of group.sourceRecordIds) {
-      rows.push([Number(id), status, group.appliedRuleName, group.matchReason, amountField, bankRecordId]);
+      rows.push([
+        Number(id),
+        status,
+        group.appliedRuleName,
+        group.matchReason,
+        amountField,
+        bankRecordId,
+        group.unitKey,
+        group.unitCount,
+        group.unitTotal,
+        group.unitDifference,
+      ]);
     }
   }
   return rows;
@@ -186,19 +340,21 @@ function flattenToRecordRows(results) {
 
 /** Chunked bulk UPDATE via VALUES — same chunking rationale as insertRecordsChunked in ip-payments.routes.js (stays well under Postgres's ~65535 param limit). */
 async function bulkUpdateMatchStatus(client, recordTable, rows, chunkSize = 500) {
-  const cols = 6;
+  const cols = 10;
   for (let start = 0; start < rows.length; start += chunkSize) {
     const chunk = rows.slice(start, start + chunkSize);
     const valuesSql = chunk
       .map(
         (_, i) =>
-          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::text, $${i * cols + 5}::varchar, $${i * cols + 6}::int)`,
+          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::text, $${i * cols + 5}::varchar, $${i * cols + 6}::int, $${i * cols + 7}::varchar, $${i * cols + 8}::int, $${i * cols + 9}::numeric, $${i * cols + 10}::numeric)`,
       )
       .join(', ');
     await client.query(
       `UPDATE ${recordTable} AS t
-       SET match_status = v.status, match_applied_rule = v.rule, match_reason = v.reason, match_amount_field = v.amount_field, match_bank_record_id = v.bank_id
-       FROM (VALUES ${valuesSql}) AS v(id, status, rule, reason, amount_field, bank_id)
+       SET match_status = v.status, match_applied_rule = v.rule, match_reason = v.reason, match_amount_field = v.amount_field, match_bank_record_id = v.bank_id,
+           match_group_base_ref = v.unit_key, match_group_member_count = v.unit_count, match_group_total = v.unit_total,
+           match_group_difference = v.unit_difference
+       FROM (VALUES ${valuesSql}) AS v(id, status, rule, reason, amount_field, bank_id, unit_key, unit_count, unit_total, unit_difference)
        WHERE t.id = v.id`,
       chunk.flat(),
     );
@@ -312,11 +468,14 @@ async function generateForBankBatch(req, res, next) {
 
     const { rows: bankRows } = await db.query('SELECT id FROM bank_statement_records WHERE batch_id = $1', [batchId]);
 
-    const counts = { MATCHED: 0, AMOUNT_MISMATCH: 0, UNMATCHED: 0 };
+    // Seeded from UNIT_STATUSES and accumulated with `|| 0`: `counts[status] += 1`
+    // on an unseeded key yields undefined + 1 = NaN, which JSON.stringify emits
+    // as null, so a whole verdict silently disappears from the response.
+    const counts = Object.fromEntries(UNIT_STATUSES.map((s) => [s, 0]));
     const updateRows = bankRows.map(({ id }) => {
       const claim = claims.get(id);
       const status = claim ? claim.status : 'UNMATCHED';
-      counts[status] += 1;
+      counts[status] = (counts[status] || 0) + 1;
       return [id, status, claim ? claim.paymentType : null, claim ? claim.paymentRecordId : null];
     });
 
@@ -395,6 +554,102 @@ router.post('/diag-op-payments/generate', async (req, res, next) => {
 router.post('/bank-statements/generate', generateForBankBatch);
 
 /**
+ * GET /api/matched-rules/unit-matches?paymentType=&batchId=&status=&page=&pageSize=
+ *
+ * One row per aggregated UNIT, rather than one row per transaction. The batch
+ * grid lists MIS records and always will — its counts have to agree with the
+ * uploaded row count — so a unit spanning three receipts appears there three
+ * times. This endpoint is the other view of the same data: the unit as a
+ * single reconciled item, which is the shape §7 lists fields for and §22
+ * draws.
+ *
+ * Read from the PERSISTED verdict columns rather than by re-running the
+ * engine, so this screen can never disagree with the grid beside it. That
+ * also means it shows nothing until Generate has been run, which is the same
+ * contract every other match view has.
+ *
+ * `transactionCount` is the unit's true size as the engine computed it;
+ * `rowsInBatch` counts the rows actually present here. The two differ when a
+ * unit spans batches, and that gap is worth seeing rather than hiding.
+ */
+router.get('/unit-matches', async (req, res, next) => {
+  try {
+    const paymentType = req.query.paymentType === 'DIAG_PAYMENT' ? 'DIAG_PAYMENT' : 'IP_PAYMENT';
+    const recordTable = paymentType === 'DIAG_PAYMENT' ? 'diag_op_payment_records' : 'ip_payment_records';
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
+
+    const clauses = ['r.match_group_member_count > 1'];
+    const params = [];
+    if (req.query.batchId) {
+      params.push(req.query.batchId);
+      clauses.push(`r.batch_id = $${params.length}`);
+    }
+    if (req.query.status) {
+      params.push(req.query.status);
+      clauses.push(`r.match_status = $${params.length}`);
+    }
+
+    // One row per unit. The aggregates are MAX() over a column that is
+    // identical across a unit's members by construction, so MAX is just "the
+    // value" — it is there to satisfy GROUP BY, not to pick between values.
+    const { rows } = await db.query(
+      `SELECT r.match_group_base_ref                       AS unit_key,
+              MAX(r.match_group_member_count)              AS transaction_count,
+              COUNT(*)::int                                AS rows_in_batch,
+              MAX(r.match_group_total)                     AS unit_total,
+              MAX(r.match_group_difference)                AS difference,
+              MAX(r.match_status)                          AS status,
+              MAX(r.match_applied_rule)                    AS applied_rule,
+              MIN(r.batch_id)                              AS batch_id,
+              MAX(r.match_bank_record_id)                  AS bank_record_id,
+              MAX(mb.chq_ref_no)                           AS bank_chq_ref_no,
+              MAX(mb.narration)                            AS bank_narration,
+              MAX(mb.txn_date)                             AS bank_txn_date,
+              MAX(COALESCE(mb.deposit_amt, mb.withdrawal_amt)) AS bank_amount,
+              MAX(bu.account_no)                           AS bank_account_no,
+              MAX(mda.division_name)                       AS division_name
+         FROM ${recordTable} r
+         LEFT JOIN bank_statement_records mb ON mb.id = r.match_bank_record_id
+         LEFT JOIN bank_statement_uploads bu ON bu.id = mb.batch_id
+         LEFT JOIN master_division_bank_accounts mda
+           ON regexp_replace(mda.account_number, '\\D', '', 'g') = regexp_replace(bu.account_no, '\\D', '', 'g')
+        WHERE ${clauses.join(' AND ')}
+        GROUP BY r.match_group_base_ref
+        ORDER BY MAX(r.match_group_total) DESC NULLS LAST`,
+      params,
+    );
+
+    const results = rows.map((row) => ({
+      unitKey: row.unit_key,
+      transactionCount: row.transaction_count === null ? null : Number(row.transaction_count),
+      rowsInBatch: row.rows_in_batch,
+      unitTotal: row.unit_total === null ? null : Number(row.unit_total),
+      difference: row.difference === null ? null : Number(row.difference),
+      status: row.status,
+      appliedRule: row.applied_rule,
+      batchId: row.batch_id === null ? null : String(row.batch_id),
+      divisionName: row.division_name,
+      bank: row.bank_record_id
+        ? {
+            recordId: String(row.bank_record_id),
+            chqRefNo: row.bank_chq_ref_no,
+            narration: row.bank_narration,
+            txnDate: row.bank_txn_date,
+            amount: row.bank_amount === null ? null : Number(row.bank_amount),
+            accountNo: row.bank_account_no,
+          }
+        : null,
+    }));
+
+    const start = (page - 1) * pageSize;
+    res.json({ total: results.length, page, pageSize, results: results.slice(start, start + pageSize) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/matched-rules/summary?dateFrom=&dateTo= — the reconciliation-wide
  * picture: per-payment-type totals/matched/mismatched/unmatched, how many
  * bank statement rows nothing has claimed, and the amount differences behind
@@ -429,14 +684,19 @@ router.get('/summary', async (req, res, next) => {
       }),
     ]);
 
+    // Ambiguous is counted in its own bucket, never folded into unmatched: an
+    // ambiguous group HAS candidate matches and is waiting on a human, which is
+    // a different business state from "nothing found". The previous bare `else`
+    // absorbed any status it did not know about.
     const summarize = (results) => {
-      const counts = { total: 0, matched: 0, mismatched: 0, unmatched: 0, excluded: 0 };
+      const counts = { total: 0, matched: 0, mismatched: 0, unmatched: 0, ambiguous: 0, excluded: 0 };
       for (const group of results) {
         const n = group.sourceRecordIds.length;
         counts.total += n;
         if (group.excluded) counts.excluded += n;
         else if (group.status === 'MATCHED') counts.matched += n;
         else if (group.status === 'AMOUNT_MISMATCH') counts.mismatched += n;
+        else if (group.status === 'AMBIGUOUS_MATCH') counts.ambiguous += n;
         else counts.unmatched += n;
       }
       return counts;
@@ -481,12 +741,17 @@ router.get('/summary', async (req, res, next) => {
       `SELECT match_status, COUNT(*)::int AS n FROM bank_statement_records ${where} GROUP BY match_status`,
       params,
     );
-    const bank = { total: 0, matched: 0, mismatched: 0, unmatched: 0, notGenerated: 0 };
+    // notGenerated must mean NULL match_status and nothing else — it drives the
+    // "click Generate" banner on the summary screen. Without an explicit
+    // ambiguous branch, generated-but-ambiguous rows landed here and told the
+    // user to re-run Generate on a statement that had already been generated.
+    const bank = { total: 0, matched: 0, mismatched: 0, unmatched: 0, ambiguous: 0, notGenerated: 0 };
     for (const row of bankCountRows) {
       bank.total += row.n;
       if (row.match_status === 'MATCHED') bank.matched += row.n;
       else if (row.match_status === 'AMOUNT_MISMATCH') bank.mismatched += row.n;
       else if (row.match_status === 'UNMATCHED') bank.unmatched += row.n;
+      else if (row.match_status === 'AMBIGUOUS_MATCH') bank.ambiguous += row.n;
       else bank.notGenerated += row.n;
     }
 
@@ -506,6 +771,7 @@ router.get('/summary', async (req, res, next) => {
         totalMatched: ip.matched + diag.matched,
         totalMismatched: ip.mismatched + diag.mismatched,
         totalUnmatched: ip.unmatched + diag.unmatched,
+        totalAmbiguous: ip.ambiguous + diag.ambiguous,
         totalExcluded: ip.excluded + diag.excluded,
         onlyInBankStatement: bank.unmatched,
         onlyInPaymentStatements: ip.unmatched + diag.unmatched,

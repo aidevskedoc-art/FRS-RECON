@@ -31,6 +31,7 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/upload-online/payments', { title: 'Payments', subtitle: 'IP & Diagnostics' }],
 
   ['/matched-rules/summary', { title: 'Reconciliation', subtitle: 'Summary' }],
+  ['/matched-rules/unit-matches', { title: 'Unit Matches', subtitle: 'Matched' }],
   ['/matched-rules/ip-payment-rules/manage', { title: 'Matching Rules', subtitle: 'IP payments' }],
   ['/matched-rules/ip-payment-rules', { title: 'IP Payment Rules', subtitle: 'Matched' }],
   [

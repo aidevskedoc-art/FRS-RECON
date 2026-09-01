@@ -21,7 +21,16 @@ import {
   RULE_FIELDS,
   RULE_OPERATORS,
   RuleConditionGroup,
+  RuleKind,
   RuleLeaf,
+  UnitRuleConfig,
+  RULE_KIND_OPTIONS,
+  UNIT_DIRECTION_OPTIONS,
+  UNIT_KEY_MODE_OPTIONS,
+  UNIT_SCOPE_OPTIONS,
+  UNIT_PAYMENT_REF_OPTIONS,
+  UNIT_BANK_REF_OPTIONS,
+  DEFAULT_UNIT_CONFIG,
 } from '../../../core/models';
 
 function emptyLeaf(): RuleLeaf {
@@ -39,7 +48,7 @@ function emptyLeaf(): RuleLeaf {
 }
 
 function emptyDraft(): MatchingRuleDraft {
-  return { name: '', action: null, active: true, conditionGroups: [[emptyLeaf()]] };
+  return { name: '', action: null, active: true, kind: 'CNF', conditionGroups: [[emptyLeaf()]], unitConfig: null };
 }
 
 @Component({
@@ -57,6 +66,12 @@ export class IpMatchingRulesComponent {
   protected readonly operatorOptions = RULE_OPERATORS;
   protected readonly actionOptions = RULE_ACTIONS;
   protected readonly leafKindOptions = LEAF_KIND_OPTIONS;
+  protected readonly ruleKindOptions = RULE_KIND_OPTIONS;
+  protected readonly unitDirectionOptions = UNIT_DIRECTION_OPTIONS;
+  protected readonly unitKeyModeOptions = UNIT_KEY_MODE_OPTIONS;
+  protected readonly unitScopeOptions = UNIT_SCOPE_OPTIONS;
+  protected readonly unitPaymentRefOptions = UNIT_PAYMENT_REF_OPTIONS;
+  protected readonly unitBankRefOptions = UNIT_BANK_REF_OPTIONS;
   protected readonly paymentFieldOptions = PAYMENT_FIELD_OPTIONS;
   protected readonly bankFieldOptions = BANK_STATEMENT_FIELD_OPTIONS;
 
@@ -81,8 +96,14 @@ export class IpMatchingRulesComponent {
 
   // --- table summaries --------------------------------------------------------
 
+  /**
+   * A unit rule has no action of its own — its verdict comes from comparing the
+   * unit total, so it stores a sentinel rather than one of the CNF actions.
+   * Without this branch the list column would print that sentinel raw.
+   */
   protected actionLabel(value: string | null): string {
     if (!value) return '—';
+    if (value === 'UNIT_AGGREGATION') return 'Match / Mismatch on unit total';
     return this.actionOptions.find((a) => a.value === value)?.label ?? value;
   }
 
@@ -120,11 +141,53 @@ export class IpMatchingRulesComponent {
     return group.map((l) => this.leafSummary(l)).join(' OR ');
   }
 
-  /** One line per AND-group; groups after the first are prefixed "AND ". */
+  /**
+   * One line per AND-group; groups after the first are prefixed "AND ".
+   *
+   * A unit rule has no conditions at all, so it is summarised from its
+   * settings instead — otherwise the list column would read "No conditions"
+   * and look broken.
+   */
   protected conditionLines(rule: MatchingRule): string[] {
+    if (rule.kind === 'UNIT_AGGREGATION') return this.unitSummary(rule.unitConfig);
     const groups = rule.conditionGroups ?? [];
     if (!groups.length) return ['No conditions'];
     return groups.map((g, i) => (i === 0 ? '' : 'AND ') + this.groupSummary(g));
+  }
+
+  private labelOf(options: { label: string; value: string }[], value: string | undefined): string {
+    return options.find((o) => o.value === value)?.label ?? (value ?? '—');
+  }
+
+  /** Plain-language description of what a unit rule will do. */
+  protected unitSummary(cfg: UnitRuleConfig | null): string[] {
+    if (!cfg) return ['Not configured'];
+    const key = this.labelOf(this.unitPaymentRefOptions, cfg.paymentRefField);
+    const lines = [
+      `Group by ${key}` + (cfg.unitKeyMode === 'BASE' ? ' (trailing letter stripped)' : ' (exact match)'),
+      `AND ${this.labelOf(this.unitDirectionOptions, cfg.direction)}`,
+      `AND within ${this.labelOf(this.unitScopeOptions, cfg.scope)}`,
+    ];
+    lines.push(`AND amounts equal` + (Number(cfg.tolerance) > 0 ? ` within ₹${cfg.tolerance}` : ' exactly'));
+    return lines;
+  }
+
+  protected isUnitRule(rule: MatchingRule): boolean {
+    return rule.kind === 'UNIT_AGGREGATION';
+  }
+
+  protected updateUnitConfig(patch: Partial<UnitRuleConfig>): void {
+    this.draft.update((d) => ({ ...d, unitConfig: { ...(d.unitConfig ?? DEFAULT_UNIT_CONFIG), ...patch } }));
+  }
+
+  /** Switching kind swaps which payload the draft carries; the other is cleared so a half-filled rule cannot be saved. */
+  protected setRuleKind(kind: RuleKind): void {
+    this.draft.update((d) => ({
+      ...d,
+      kind,
+      conditionGroups: kind === 'CNF' ? (d.conditionGroups?.length ? d.conditionGroups : [[emptyLeaf()]]) : [],
+      unitConfig: kind === 'UNIT_AGGREGATION' ? (d.unitConfig ?? { ...DEFAULT_UNIT_CONFIG }) : null,
+    }));
   }
 
   // --- draft: groups & leaves ----------------------------------------------
@@ -219,6 +282,8 @@ export class IpMatchingRulesComponent {
       name: rule.name,
       action: rule.action,
       active: rule.active,
+      kind: rule.kind ?? 'CNF',
+      unitConfig: rule.unitConfig ? { ...DEFAULT_UNIT_CONFIG, ...rule.unitConfig } : null,
       conditionGroups: (rule.conditionGroups ?? [[emptyLeaf()]]).map((g) =>
         (g.length ? g : [emptyLeaf()]).map((l) => ({ ...emptyLeaf(), ...l, negate: l.negate === true })),
       ),
@@ -232,13 +297,27 @@ export class IpMatchingRulesComponent {
     if (leaf.kind !== 'FIELD_PAIR' || leaf.negate) return false;
     if (leaf.pairOperator !== 'EQUALS' && leaf.pairOperator !== 'CONTAINS') return false;
     const src = this.paymentFieldOptions.find((f) => f.value === leaf.sourceField);
-    const dst = this.bankFieldOptions.find((f) => f.value === leaf.destinationField);
-    return src?.type === 'text' && dst?.type === 'text';
+    // Only chqRefNo/narration key the bank index — see JOIN_DESTINATION_FIELDS
+    // in backend/src/reconciliation/rules.js. divisionName is text but holds
+    // four values, so it is a filter, never a join key.
+    return src?.type === 'text' && (leaf.destinationField === 'chqRefNo' || leaf.destinationField === 'narration');
   }
 
   protected save(): void {
     const d = this.draft();
     if (!d.name.trim()) return this.formError.set('Name is required');
+
+    // A unit rule carries no conditions, so none of the condition validation
+    // below applies to it — including the join-key requirement, which a rule
+    // that groups by an identifier neither has nor needs.
+    if (d.kind === 'UNIT_AGGREGATION') {
+      const cfg = d.unitConfig;
+      if (!cfg) return this.formError.set('Unit settings are required');
+      if (!(Number(cfg.tolerance) >= 0)) return this.formError.set('Tolerance must be zero or more');
+      this.submit({ name: d.name.trim(), action: null, active: d.active, kind: d.kind, conditionGroups: [], unitConfig: cfg });
+      return;
+    }
+
     if (!d.action) return this.formError.set('Match Status is required');
 
     const groups = d.conditionGroups ?? [];
@@ -297,10 +376,13 @@ export class IpMatchingRulesComponent {
       ),
     );
 
+    this.submit({ name: d.name.trim(), action: d.action, active: d.active, kind: 'CNF', conditionGroups, unitConfig: null });
+  }
+
+  /** Shared tail of save() — both rule kinds post the same way. */
+  private submit(payload: MatchingRuleDraft): void {
     this.saving.set(true);
     this.formError.set(null);
-
-    const payload: MatchingRuleDraft = { name: d.name.trim(), action: d.action, active: d.active, conditionGroups };
     const request = this.editingId()
       ? this.matchingRules.updateIpRule(this.editingId()!, payload)
       : this.matchingRules.addIpRule(payload);

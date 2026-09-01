@@ -16,12 +16,33 @@
  * print would hide a real extraction bug.
  */
 const OMISSIONS = {
-  // Care's bank-channel group certificate ("Group Care 360°(UHS)-2"):
-  // verified against a real 6-page certificate — "Nominee" appears nowhere
-  // in the document, the insured table has no gender/occupation/premium
-  // columns (only Name, Client ID, DOB, Relationship, Insured-since, PED),
-  // and the premium is a single flat figure with no discount line.
+  // Care's bank-channel group certificate ("Group Care 360°(UHS)-2"),
+  // checked across 29 real certificates: the insured table has no gender,
+  // occupation or premium column (only Name, Client ID, DOB, Relationship,
+  // Insured-since and PED), and the premium is a single flat figure with no
+  // discount line.
+  //
+  // 'nominee' is listed because most of these certificates carry no nominee
+  // line, but 12 of the 29 do print "Nominee Name (Relation)" and it is
+  // extracted from them. That is what the "&& !present" in
+  // to-extraction-result and the "&& !members.some(...)" in validate are
+  // for: an omission here means "expect this to be absent", not "ignore it
+  // when the document does print it".
   CARE_GROUP_CERTIFICATE: [
+    'nominee',
+    'memberBasePremium',
+    'gender',
+    'occupation',
+    'familyFloaterDiscount',
+  ],
+
+  // Care's individual "Policy Certificate", checked across 6 real
+  // schedules covering both member-table layouts. The insured table has no
+  // occupation or per-member premium column and no gender column either —
+  // the only gender on the document is the policyholder's own, in the
+  // applicant block, which care.js copies onto their member row. Most of
+  // these certificates print no nominee; one of the six does.
+  CARE_HEALTH_POLICY_CERTIFICATE: [
     'nominee',
     'memberBasePremium',
     'gender',

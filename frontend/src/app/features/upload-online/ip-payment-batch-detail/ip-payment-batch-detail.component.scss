@@ -197,8 +197,145 @@ p-select.filters__field--rule {
   @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
 }
 
+// Neutral, not danger: an ambiguous result is not a failure, it is a decision
+// waiting on a person. Colouring it red would read as "broken".
+.status-pill--ambiguous {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+}
+
 .empty {
   text-align: center;
   padding: var(--space-8);
   color: var(--text-tertiary);
+}
+
+
+// ---------------------------------------------------------------------------
+// Unit drill-down (the expanded row). Without these the cells collapse into an
+// unreadable run of text, because a plain <table> inside the expanded cell
+// inherits no spacing from the PrimeNG grid around it.
+// ---------------------------------------------------------------------------
+.expander-col {
+  width: 2.5rem;
+  text-align: center;
+}
+
+.expander {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: var(--space-1);
+  line-height: 1;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.unit-detail-row > td {
+  background: var(--surface-soft);
+  padding: 0;
+}
+
+.unit-detail {
+  padding: var(--space-4) var(--space-6);
+}
+
+.unit-detail__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.unit-detail__label {
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+}
+
+.unit-detail__key {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.unit-detail__meta {
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+}
+
+.unit-detail__table {
+  border-collapse: collapse;
+  min-width: 34rem;
+
+  th,
+  td {
+    padding: var(--space-2) var(--space-4);
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  th {
+    color: var(--text-tertiary);
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  tfoot td {
+    font-weight: 600;
+    border-bottom: none;
+    border-top: 1px solid var(--border-strong, var(--border));
+  }
+}
+
+// The row you expanded from, so it is findable among its siblings.
+.unit-detail__self > td {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.unit-detail__diff td {
+  color: var(--status-warning-fg);
+}
+
+.unit-detail__empty,
+.unit-detail__warn {
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  margin: var(--space-2) 0 0;
+}
+
+.filters__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  height: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.filters__toggle--on {
+  border-color: var(--status-info-border);
+  color: var(--status-info-fg);
+  background: var(--status-info-bg);
 }

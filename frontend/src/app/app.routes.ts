@@ -168,6 +168,14 @@ export const routes: Routes = [
             title: 'Reconciliation Summary — Matched Rules',
           },
           {
+            path: 'matched-rules/unit-matches',
+            loadComponent: () =>
+              import('./features/matched-rules/unit-matches/unit-matches.component').then(
+                (m) => m.UnitMatchesComponent,
+              ),
+            title: 'Unit Matches — Matched Rules',
+          },
+          {
             path: 'matched-rules/ip-payment-rules',
             loadComponent: () =>
               import('./features/matched-rules/ip-payment-rules/ip-payment-rules.component').then(

@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const { buildReconciliationWorkbook } = require('../excel/reconciliation-export');
 const db = require('../db');
 const { parseMisWorkbook } = require('../online-upload/mis-parser');
 const { diagOpBatchRowToApi, diagOpRecordRowToApi } = require('../mappers');
@@ -175,6 +176,21 @@ function buildRecordsFilter(query) {
     clauses.push(`r.match_status = $${params.length}`);
   }
 
+  // The unit a row was aggregated into. Drives the expandable audit view:
+  // expanding one row re-queries the batch for every member of its unit, so
+  // the drill-down always reflects the persisted verdict rather than a
+  // client-side reconstruction of it.
+  if (query.matchUnitKey) {
+    params.push(query.matchUnitKey);
+    clauses.push(`r.match_group_base_ref = $${params.length}`);
+  }
+  // Rows the unit rule aggregated (2+ transactions), regardless of verdict.
+  // Without this, finding aggregated rows in a batch of thousands means
+  // knowing a unit key in advance.
+  if (query.groupedOnly === 'true' || query.groupedOnly === true) {
+    clauses.push('r.match_group_member_count > 1');
+  }
+
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
@@ -194,8 +210,14 @@ const RECORDS_WITH_MATCH_SQL = `
          mb.withdrawal_amt AS match_bank_withdrawal_amt,
          bu.account_no AS match_bank_account_no,
          bu.bank_name AS match_bank_bank_name,
-         mda.division_name AS match_bank_division_name
+         mda.division_name AS match_bank_division_name,
+         -- The payment's OWN unit. Not stored on the record: it is a property
+         -- of the batch it arrived in, and a cross-unit match is unreadable
+         -- without it — "matched with 3 transactions" says nothing about which
+         -- units those came from.
+         pb.unit_name AS batch_unit_name
   FROM diag_op_payment_records r
+  LEFT JOIN diag_op_upload_batches pb ON pb.id = r.batch_id
   LEFT JOIN bank_statement_records mb ON mb.id = r.match_bank_record_id
   LEFT JOIN bank_statement_uploads bu ON bu.id = mb.batch_id
   LEFT JOIN master_division_bank_accounts mda
@@ -263,9 +285,10 @@ router.get('/records/export.xlsx', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'No records match this filter' });
 
     const records = rows.map(diagOpRecordRowToApi);
-    const sheet = XLSX.utils.json_to_sheet(records);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, 'Diag OP Payments');
+    // buildReconciliationWorkbook flattens the nested matchedBank (json_to_sheet
+    // writes a nested object as a BLANK cell, so every bank detail used to be
+    // silently dropped) and appends the aggregated "Unit Matches" sheet.
+    const { workbook } = buildReconciliationWorkbook(records, 'Diag OP Payments');
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

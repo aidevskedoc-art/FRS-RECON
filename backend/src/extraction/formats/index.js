@@ -61,7 +61,7 @@ function detectFormat(fullText, pageTexts = []) {
   return FORMATS.find((f) => f.module.matches(fullText, headText)) || null;
 }
 
-function parseByFormat({ fullText, pageTexts }) {
+function parseByFormat({ fullText, pageTexts, pageItems = [] }) {
   const format = detectFormat(fullText, pageTexts);
   if (!format) {
     const err = new Error(
@@ -72,7 +72,7 @@ function parseByFormat({ fullText, pageTexts }) {
     err.code = 'UNKNOWN_FORMAT';
     throw err;
   }
-  return format.module.parse({ fullText, pageTexts });
+  return format.module.parse({ fullText, pageTexts, pageItems });
 }
 
 module.exports = { FORMATS, detectFormat, parseByFormat };

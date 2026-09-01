@@ -8,9 +8,14 @@
     "start": "node src/server.js",
     "init-db": "node -e \"require('dotenv').config(); const db = require('./src/db'); db.ensureDatabase().then(() => db.ensureSchema()).then(() => { console.log('schema ready'); process.exit(0); }).catch((e) => { console.error(e); process.exit(1); })\"",
     "test-extraction": "node scripts/test-extraction.js",
+    "test-care": "node scripts/test-care.js",
     "smoke-test": "node scripts/smoke-test.js",
     "verify": "node scripts/verify-against-expected.js",
-    "build-fixtures": "node scripts/build-test-fixtures.js"
+    "build-fixtures": "node scripts/build-test-fixtures.js",
+    "test-unit-rule": "node scripts/test-unit-rule.js",
+    "verify-unit-rule": "node scripts/verify-unit-rule.js",
+    "test-unit-pass": "node scripts/test-unit-pass.js",
+    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js"
   },
   "engines": {
     "node": ">=18"

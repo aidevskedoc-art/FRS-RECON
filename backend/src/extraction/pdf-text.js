@@ -19,25 +19,47 @@ async function loadDocument(buffer) {
 }
 
 /**
- * Extracts both the whole-document flat text (for regex label matching)
- * and a per-page text array (so a matched field can be attributed to the
- * page it was found on). Each page's items are joined in reading order —
- * pdfjs-dist returns them in content-stream order, which for pdfkit's
- * (and most real insurers') top-to-bottom single-column layouts already
- * matches visual reading order.
+ * Extracts three views of the document from a single load:
+ *
+ *  - `fullText` - whole-document flat text, for regex label matching.
+ *  - `pageTexts` - the same per page, so a matched field can be attributed
+ *    to the page it was found on. Each page's items are joined in reading
+ *    order - pdfjs-dist returns them in content-stream order, which for
+ *    pdfkit's (and most real insurers') top-to-bottom single-column
+ *    layouts already matches visual reading order.
+ *  - `pageItems` - every text item together with the x/y it was drawn at.
+ *    Reading order is enough for "label then value" pairs, but it flattens
+ *    a table: a cell that wraps onto a second line becomes an item
+ *    indistinguishable from the next row's first cell, so a parser counting
+ *    cells forward from an anchor silently walks off by one from there on.
+ *    The coordinates say which column and which row an item really belonged
+ *    to, which is what table.js rebuilds the row out of.
  */
 async function extractPages(buffer) {
   const doc = await loadDocument(buffer);
   const pageTexts = [];
+  const pageItems = [];
 
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
     const page = await doc.getPage(pageNum);
     const content = await page.getTextContent();
     const text = content.items.map((item) => item.str).join('\n');
     pageTexts.push(text);
+    pageItems.push(
+      content.items
+        .filter((item) => item.str && item.str.trim())
+        .map((item) => ({
+          str: item.str.trim(),
+          x: item.transform[4],
+          y: item.transform[5],
+          width: item.width || 0,
+        })),
+    );
   }
 
-  return { fullText: pageTexts.join('\n'), pageTexts, numPages: doc.numPages };
+  return {
+    fullText: pageTexts.join('\n'), pageTexts, pageItems, numPages: doc.numPages,
+  };
 }
 
 /** Which page (1-indexed) a label first appears on, or null if not found on any page. */
