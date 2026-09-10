@@ -62,7 +62,29 @@ export interface UnitRuleConfig {
   bankRefField: 'chqRefNo' | 'narration';
 }
 
-export type RuleKind = 'CNF' | 'UNIT_AGGREGATION';
+/**
+ * Settings for a CONTRA_ENTRY rule. Like a unit rule it has no conditions: it
+ * looks each unmatched cheque collection up in the refund document by a
+ * composite key, and calls a hit a contra entry.
+ */
+export interface ContraRuleConfig {
+  /** Fields that must ALL agree between the collection and the refund row. Must include chequeNo. */
+  keyFields: ContraKeyField[];
+  /** Which payment-side amount is compared against the refund amount. */
+  amountField: 'chequeAmount' | 'billAmount';
+  /** Rupees of slack on the amount comparison. */
+  tolerance: number;
+  /** Days of slack between the collection and the refund date. null compares dates not at all. */
+  dateWindowDays: number | null;
+  /** The boundary a contra may not cross. */
+  scope: 'NONE' | 'DIVISION';
+  /** What to do when several refund rows remain indistinguishable after the date tie-break. */
+  onAmbiguous: 'UNMATCHED' | 'AMBIGUOUS_MATCH' | 'CLAIM_FIRST';
+}
+
+export type ContraKeyField = 'chequeNo' | 'ipNo' | 'yhno' | 'patientName';
+
+export type RuleKind = 'CNF' | 'UNIT_AGGREGATION' | 'CONTRA_ENTRY';
 
 export interface MatchingRule {
   id: string;
@@ -72,6 +94,7 @@ export interface MatchingRule {
   /** CNF = the condition rules below. UNIT_AGGREGATION = unitConfig instead. */
   kind: RuleKind;
   unitConfig: UnitRuleConfig | null;
+  contraConfig: ContraRuleConfig | null;
   /** Evaluation priority — lower runs first. Set via PUT .../reorder. */
   sortOrder: number | null;
   conditionGroups: RuleConditionGroup[];
@@ -86,12 +109,46 @@ export interface MatchingRuleDraft {
   kind: RuleKind;
   conditionGroups: RuleConditionGroup[];
   unitConfig: UnitRuleConfig | null;
+  contraConfig: ContraRuleConfig | null;
 }
 
 export const RULE_KIND_OPTIONS: { label: string; value: RuleKind }[] = [
   { label: 'Condition rule', value: 'CNF' },
   { label: 'Transaction Amount Match on Same Unit', value: 'UNIT_AGGREGATION' },
+  { label: 'Contra entry against the refund document', value: 'CONTRA_ENTRY' },
 ];
+
+export const CONTRA_KEY_FIELD_OPTIONS: { label: string; value: ContraKeyField }[] = [
+  { label: 'Cheque No', value: 'chequeNo' },
+  { label: 'IP No', value: 'ipNo' },
+  { label: 'YH No', value: 'yhno' },
+  { label: 'Patient Name', value: 'patientName' },
+];
+
+export const CONTRA_AMOUNT_FIELD_OPTIONS = [
+  { label: 'Cheque Amount', value: 'chequeAmount' as const },
+  { label: 'Bill Amount', value: 'billAmount' as const },
+];
+
+export const CONTRA_SCOPE_OPTIONS = [
+  { label: 'Any unit — searches every division', value: 'NONE' as const },
+  { label: 'Same unit (division) only', value: 'DIVISION' as const },
+];
+
+export const CONTRA_AMBIGUITY_OPTIONS = [
+  { label: 'Leave unmatched, explain why', value: 'UNMATCHED' as const },
+  { label: 'Flag as Ambiguous Match', value: 'AMBIGUOUS_MATCH' as const },
+  { label: 'Take the first candidate', value: 'CLAIM_FIRST' as const },
+];
+
+export const DEFAULT_CONTRA_CONFIG: ContraRuleConfig = {
+  keyFields: ['chequeNo', 'ipNo'],
+  amountField: 'chequeAmount',
+  tolerance: 0,
+  dateWindowDays: null,
+  scope: 'NONE',
+  onAmbiguous: 'UNMATCHED',
+};
 
 export const UNIT_DIRECTION_OPTIONS = [
   { label: 'Sum payments → one bank credit', value: 'MIS_TO_BANK' as const },
@@ -100,7 +157,8 @@ export const UNIT_DIRECTION_OPTIONS = [
 
 export const UNIT_KEY_MODE_OPTIONS = [
   { label: 'Exact — ACCOUNT001A groups only with ACCOUNT001A', value: 'EXACT' as const },
-  { label: 'Base — strip a trailing letter, so A and B combine', value: 'BASE' as const },
+  { label: 'Base — strip a trailing letter, so …022 and …022A combine', value: 'BASE' as const },
+  { label: 'Affix — strip a leading OR trailing letter, so A952497 + B952497 combine', value: 'AFFIX' as const },
 ];
 
 export const UNIT_SCOPE_OPTIONS = [
@@ -172,6 +230,11 @@ export const PAYMENT_FIELD_OPTIONS: { label: string; value: string; type: FieldD
   { label: 'Receipt Number', value: 'receiptNumber', type: 'text' },
   { label: 'YH No', value: 'yhno', type: 'text' },
   { label: 'IP No', value: 'ipNo', type: 'text' },
+  // Cheque collection's own reference. Must stay in step with
+  // PAYMENT_FIELD_CATALOG in backend/src/reconciliation/rules.js — a rule
+  // keyed on a field missing there cannot be saved.
+  { label: 'Cheque No', value: 'chequeNo', type: 'text' },
+  { label: 'Cheque Date', value: 'chequeDate', type: 'date' },
   { label: 'Trans ID', value: 'transId', type: 'text' },
   { label: 'Transaction Ref 1', value: 'transactionRef1', type: 'text' },
   { label: 'Transaction Ref 2', value: 'transactionRef2', type: 'text' },

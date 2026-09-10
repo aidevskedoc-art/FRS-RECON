@@ -1,6 +1,6 @@
 <div class="batch-detail">
   <div class="batch-detail__header">
-    <button type="button" class="back-link" (click)="back()"><i class="pi pi-arrow-left"></i> Back to New Online Payments</button>
+    <button type="button" class="back-link" (click)="back()"><i class="pi pi-arrow-left"></i> Back to IP Payments</button>
 
     @if (batch(); as b) {
       <div class="batch-summary">
@@ -69,6 +69,16 @@
       <i class="pi" [class.pi-check-square]="groupedOnly()" [class.pi-stop]="!groupedOnly()"></i>
       Grouped only
     </button>
+    <button
+      type="button"
+      class="filters__toggle"
+      [class.filters__toggle--on]="includeUpi()"
+      (click)="includeUpi.set(!includeUpi()); applyFilters()"
+      title="The Online module reconciles bank transfers only — tick to also show UPI-mode rows"
+    >
+      <i class="pi" [class.pi-check-square]="includeUpi()" [class.pi-stop]="!includeUpi()"></i>
+      Include UPI
+    </button>
     <p-select [options]="paymentModeOptions()" optionLabel="label" optionValue="value" [(ngModel)]="paymentMode" (onChange)="applyFilters()" class="filters__field" />
     <p-select [options]="payTypeOptions()" optionLabel="label" optionValue="value" [(ngModel)]="payType" (onChange)="applyFilters()" class="filters__field" />
     <p-select
@@ -89,7 +99,27 @@
     <span class="filters__spacer"></span>
 
     <p-button label="Manage Rules" icon="pi pi-cog" size="small" [outlined]="true" routerLink="/matched-rules/ip-payment-rules/manage" />
-    <p-button label="Download" icon="pi pi-download" size="small" [outlined]="true" (onClick)="download()" />
+    <p-multiSelect
+      [options]="exportColumns()"
+      optionLabel="label"
+      optionValue="key"
+      [ngModel]="selectedExportColumns()"
+      (ngModelChange)="selectedExportColumns.set($event)"
+      placeholder="Export columns"
+      selectedItemsLabel="{0} columns"
+      [maxSelectedLabels]="1"
+      [style]="{ minWidth: '13rem' }"
+      appendTo="body"
+    />
+    <p-button
+      label="Download"
+      icon="pi pi-download"
+      size="small"
+      [outlined]="true"
+      [loading]="downloading()"
+      [disabled]="!selectedExportColumns().length"
+      (onClick)="download()"
+    />
     <p-button label="Delete All" icon="pi pi-trash" size="small" severity="danger" [outlined]="true" (onClick)="deleteAll()" />
   </div>
 
@@ -125,6 +155,7 @@
             <th>{{ col.header }}</th>
           }
           <th>Rule Applied</th>
+          <th>Match Reason</th>
         </tr>
       </ng-template>
       <ng-template #body let-record let-expanded="expanded">
@@ -146,6 +177,9 @@
             <span
               class="status-pill"
               [class.status-pill--matched]="record.matchStatus === 'MATCHED'"
+              [class.status-pill--easebuzz]="record.matchStatus === 'EASEBUZZ_MATCHED'"
+              [class.status-pill--contra]="record.matchStatus === 'CONTRA_ENTRY'"
+              [class.status-pill--partial]="record.matchStatus === 'PARTIAL_MATCH'"
               [class.status-pill--mismatch]="record.matchStatus === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="record.matchStatus === 'UNMATCHED'"
               [class.status-pill--ambiguous]="record.matchStatus === 'AMBIGUOUS_MATCH'"
@@ -155,11 +189,13 @@
           <td class="mono">{{ record.matchedBank?.accountNo || (matchesGenerated() ? '—' : '') }}</td>
           @for (col of columns; track col.key) {
             <td
-              [class.mono]="col.key === 'receiptNumber' || col.key === 'yhno' || col.key === 'unitRefSource' || col.key === 'matchUnitKey'"
-              [class.wrap]="col.key === 'patientName'"
+              [class.mono]="col.key === 'receiptNumber' || col.key === 'yhno' || col.key === 'unitRefSource' || col.key === 'bankRefNo' || col.key === 'matchUnitKey'"
+              [class.wrap]="col.key === 'patientName' || col.key === 'bankNarration'"
+              [title]="col.key === 'bankNarration' || col.key === 'unitRefSource' ? cellValue(record, col) : null"
             >{{ cellValue(record, col) }}</td>
           }
           <td class="wrap" [title]="record.matchAppliedRule">{{ record.matchAppliedRule || (matchesGenerated() ? '—' : '') }}</td>
+          <td class="wrap" [title]="record.matchReason">{{ record.matchReason || (matchesGenerated() ? '—' : '') }}</td>
         </tr>
       </ng-template>
 
@@ -170,7 +206,7 @@
       -->
       <ng-template #expandedrow let-record>
         <tr class="unit-detail-row">
-          <td [attr.colspan]="columns.length + 4">
+          <td [attr.colspan]="columns.length + 5">
             <div class="unit-detail">
               <div class="unit-detail__head">
                 <span class="unit-detail__label">Unit</span>
@@ -210,7 +246,7 @@
                           Batch {{ m.batchId }}@if (m.batchId !== record.batchId) { <span class="unit-detail__meta">(other upload)</span> }
                         </td>
                         <td>{{ m.patientName || '—' }}</td>
-                        <td class="mono">{{ m.transactionRef1 || m.transactionRef2 || m.transactionRef3 || '—' }}</td>
+                        <td class="mono">{{ allRefs(m) }}</td>
                         <td class="num">{{ amount(m.billAmount) }}</td>
                       </tr>
                     }
@@ -248,7 +284,7 @@
 
       <ng-template #emptymessage>
         <tr>
-          <td [attr.colspan]="columns.length + 4" class="empty">No records match this filter.</td>
+          <td [attr.colspan]="columns.length + 5" class="empty">No records match this filter.</td>
         </tr>
       </ng-template>
     </p-table>

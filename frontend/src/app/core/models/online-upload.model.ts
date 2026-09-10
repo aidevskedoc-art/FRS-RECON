@@ -18,6 +18,10 @@ export interface OnlineUploadBatch {
   matchedAt: string | null;
   /** True if a matching rule was edited after this batch's last Generate run — its persisted verdict is stale until Regenerate is clicked. Only ever true when matchedAt is set. Present on the single-batch fetch (fetchBatch), not the batches list. */
   rulesChangedSinceGenerate?: boolean;
+  /** Upload response only: rows parsed from the file, rows actually stored, and rows skipped as already present from an earlier batch. */
+  rowsInFile?: number;
+  rowsStored?: number;
+  rowsSkipped?: number;
 }
 
 export interface OnlinePaymentRecord {
@@ -102,6 +106,8 @@ export interface OnlinePaymentRecordsQuery {
   matchUnitKey?: string;
   /** Only rows the unit rule aggregated (unit size 2+), whatever their verdict. */
   groupedOnly?: boolean;
+  /** Drops UPI-mode rows (payment mode / pay type containing "UPI") — the Online module sends this so it reconciles bank transfers only. */
+  excludeUpi?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -118,6 +124,10 @@ export interface RecordFilterOptions {
 export interface RecordStatusCounts {
   total: number;
   matched: number;
+  /** IP online receipt matched to the EaseBuzz report by Easebuzz ID. Always 0 for Diag. */
+  easebuzzMatched: number;
+  /** Truncated MIS reference whose amount still agrees with the bank line — near-certain match, held for a person to fix the reference. */
+  partialMatch: number;
   amountMismatch: number;
   unmatched: number;
   /** Unit-aggregation rule found several candidates and selected none — awaiting a human decision. */
@@ -128,6 +138,8 @@ export interface RecordStatusCounts {
 
 export interface BankStatementUpload {
   id: string;
+  /** 'BANK' for a real bank statement upload, 'PAYU_MPR' for a PayU settlement report. */
+  source: 'BANK' | 'PAYU_MPR' | 'EASEBUZZ';
   bankName: string | null;
   accountNo: string | null;
   accountBranch: string | null;
@@ -149,6 +161,8 @@ export type BankMatchPaymentType = 'IP_PAYMENT' | 'DIAG_PAYMENT';
 export interface BankStatementRecord {
   id: string;
   batchId: string;
+  /** 'BANK' for a real bank statement row, 'PAYU_MPR' for a PayU settlement report row. */
+  source: 'BANK' | 'PAYU_MPR' | 'EASEBUZZ';
   txnDate: string | null;
   narration: string | null;
   chqRefNo: string | null;
@@ -156,6 +170,10 @@ export interface BankStatementRecord {
   withdrawalAmt: number | null;
   depositAmt: number | null;
   closingBalance: number | null;
+  /** PayU MPR rows only. */
+  payuId: string | null;
+  settlementUtr: string | null;
+  netAmount: number | null;
   /** Persisted verdict from this batch's own Generate run — null until Generate has been run at least once. */
   matchStatus: MatchStatus | null;
   matchPaymentType: BankMatchPaymentType | null;

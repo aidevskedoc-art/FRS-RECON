@@ -31,13 +31,13 @@
   --nav-soft-insurance: rgba(109, 40, 217, 0.16);
   --nav-line-insurance: rgba(109, 40, 217, 0.42);
 
-  // Upload Online — the secondary workflow
+  // Online Payments — the secondary workflow
   --nav-color-online: #e11d48;
   --nav-grad-online: linear-gradient(135deg, #e11d48 0%, #fb7185 100%);
   --nav-soft-online: rgba(225, 29, 72, 0.14);
   --nav-line-online: rgba(225, 29, 72, 0.4);
 
-  // Matched Rules — the tertiary workflow (reconciliation output)
+  // Reconciliation — the tertiary workflow (reconciliation output)
   --nav-color-rules: #0d9488;
   --nav-grad-rules: linear-gradient(135deg, #0d9488 0%, #5eead4 100%);
   --nav-soft-rules: rgba(13, 148, 136, 0.14);
@@ -49,19 +49,21 @@
   --nav-soft-masters: rgba(14, 165, 233, 0.14);
   --nav-line-masters: rgba(14, 165, 233, 0.4);
 
-  // Master Rules — admin-level rule authoring
+  // Bank & PayU uses --nav-*-reports below. This pink is unclaimed since rule
+  // authoring stopped being its own nav group — kept as a ready accent.
   --nav-color-admin: #ec4899;
   --nav-grad-admin: linear-gradient(135deg, #ec4899 0%, #f9a8d4 100%);
   --nav-soft-admin: rgba(236, 72, 153, 0.14);
   --nav-line-admin: rgba(236, 72, 153, 0.4);
 
-  // Reserved for future sections, defined up front so new nav groups can
-  // pick an accent without touching the token layer.
+  // Bank & PayU — bank statement and PayU MPR ingest.
   --nav-color-reports: #f97316;
   --nav-grad-reports: linear-gradient(135deg, #f97316 0%, #fdba74 100%);
   --nav-soft-reports: rgba(249, 115, 22, 0.14);
   --nav-line-reports: rgba(249, 115, 22, 0.4);
 
+  // Reserved for a future section, defined up front so a new nav group can
+  // pick an accent without touching the token layer.
   --nav-color-support: #10b981;
   --nav-grad-support: linear-gradient(135deg, #10b981 0%, #6ee7b7 100%);
   --nav-soft-support: rgba(16, 185, 129, 0.14);

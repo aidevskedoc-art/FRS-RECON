@@ -82,10 +82,16 @@ export const routes: Routes = [
         canActivate: [superAdminGuard],
         children: [
           {
+            path: 'how-to-use',
+            loadComponent: () =>
+              import('./features/how-to-use/how-to-use.component').then((m) => m.HowToUseComponent),
+            title: 'How to Use — FRS - Recon',
+          },
+          {
             path: 'upload-online/mis',
             loadComponent: () =>
               import('./features/upload-online/upload-mis/upload-mis.component').then((m) => m.UploadMisComponent),
-            title: 'Upload MIS Data — Upload Online',
+            title: 'Upload MIS Data — Online Payments',
           },
           {
             path: 'upload-online/bank-statement',
@@ -93,15 +99,51 @@ export const routes: Routes = [
               import('./features/upload-online/upload-bank-statement/upload-bank-statement.component').then(
                 (m) => m.UploadBankStatementComponent,
               ),
-            title: 'Upload Bank Statement — Upload Online',
+            title: 'Upload Bank Statement — Bank & PayU',
           },
+          {
+            path: 'upload-online/payu-mpr-upload',
+            loadComponent: () =>
+              import('./features/upload-online/upload-payu-mpr/upload-payu-mpr.component').then(
+                (m) => m.UploadPayuMprComponent,
+              ),
+            title: 'Upload PayU MPR — Bank & PayU',
+          },
+          {
+            path: 'upload-online/payu-mpr',
+            loadComponent: () =>
+              import('./features/upload-online/view-payu-mpr/view-payu-mpr.component').then(
+                (m) => m.ViewPayuMprComponent,
+              ),
+            title: 'PayU MPR Batches — Bank & PayU',
+          },
+          {
+            path: 'upload-online/easebuzz-upload',
+            loadComponent: () =>
+              import('./features/upload-online/upload-easebuzz/upload-easebuzz.component').then(
+                (m) => m.UploadEasebuzzComponent,
+              ),
+            title: 'Upload EaseBuzz — Bank & PayU',
+          },
+          {
+            path: 'upload-online/easebuzz',
+            loadComponent: () =>
+              import('./features/upload-online/view-easebuzz/view-easebuzz.component').then(
+                (m) => m.ViewEasebuzzComponent,
+              ),
+            title: 'EaseBuzz Batches — Bank & PayU',
+          },
+          // Legacy, off-nav: these two read online_upload_batches, the
+          // pre-migration MIS table. POST /api/online-upload/mis now rejects
+          // every upload (see online-upload.routes.js), so the table is frozen
+          // and these pages exist only to read historical batches by URL.
           {
             path: 'upload-online/payments',
             loadComponent: () =>
               import('./features/upload-online/view-payments/view-payments.component').then(
                 (m) => m.ViewPaymentsComponent,
               ),
-            title: 'IP & Diag Payments — Upload Online',
+            title: 'Legacy MIS Batches (Archive) — FRS - Recon',
           },
           {
             path: 'upload-online/payments/:batchId',
@@ -109,7 +151,7 @@ export const routes: Routes = [
               import('./features/upload-online/payment-batch-detail/payment-batch-detail.component').then(
                 (m) => m.PaymentBatchDetailComponent,
               ),
-            title: 'Payment Batch — Upload Online',
+            title: 'Legacy MIS Batch (Archive) — FRS - Recon',
           },
           {
             path: 'upload-online/ip-payments',
@@ -117,7 +159,7 @@ export const routes: Routes = [
               import('./features/upload-online/view-ip-payments/view-ip-payments.component').then(
                 (m) => m.ViewIpPaymentsComponent,
               ),
-            title: 'New Online Payments — Upload Online',
+            title: 'IP Payments — Online Payments',
           },
           {
             path: 'upload-online/ip-payments/:batchId',
@@ -125,7 +167,7 @@ export const routes: Routes = [
               import('./features/upload-online/ip-payment-batch-detail/ip-payment-batch-detail.component').then(
                 (m) => m.IpPaymentBatchDetailComponent,
               ),
-            title: 'IP Payment Batch — Upload Online',
+            title: 'IP Payment Batch — Online Payments',
           },
           {
             path: 'upload-online/diag-op-payments',
@@ -133,7 +175,7 @@ export const routes: Routes = [
               import('./features/upload-online/view-diag-op-payments/view-diag-op-payments.component').then(
                 (m) => m.ViewDiagOpPaymentsComponent,
               ),
-            title: 'Diag OP Payments — Upload Online',
+            title: 'Diag OP Payments — Online Payments',
           },
           {
             path: 'upload-online/diag-op-payments/:batchId',
@@ -141,7 +183,59 @@ export const routes: Routes = [
               import(
                 './features/upload-online/diag-op-payment-batch-detail/diag-op-payment-batch-detail.component'
               ).then((m) => m.DiagOpPaymentBatchDetailComponent),
-            title: 'Diag OP Payment Batch — Upload Online',
+            title: 'Diag OP Payment Batch — Online Payments',
+          },
+          {
+            path: 'upload-online/cheque-collection',
+            loadComponent: () =>
+              import('./features/upload-online/upload-cheque-collection/upload-cheque-collection.component').then(
+                (m) => m.UploadChequeCollectionComponent,
+              ),
+            title: 'Upload Cheque Collection — Cheque & Refunds',
+          },
+          {
+            // One component, two screens. `collectionKind` is the only thing
+            // that differs, so it is route data rather than a second component.
+            path: 'upload-online/cheque-collections',
+            loadComponent: () =>
+              import('./features/upload-online/view-cheque-collections/view-cheque-collections.component').then(
+                (m) => m.ViewChequeCollectionsComponent,
+              ),
+            data: { collectionKind: 'IP' },
+            title: 'IP Cheque Collections — Cheque & Refunds',
+          },
+          {
+            path: 'upload-online/diag-cheque-collections',
+            loadComponent: () =>
+              import('./features/upload-online/view-cheque-collections/view-cheque-collections.component').then(
+                (m) => m.ViewChequeCollectionsComponent,
+              ),
+            data: { collectionKind: 'OP' },
+            title: 'Diagnostics Cheque Collections — Cheque & Refunds',
+          },
+          {
+            path: 'upload-online/cheque-collections/:batchId',
+            loadComponent: () =>
+              import(
+                './features/upload-online/cheque-collection-batch-detail/cheque-collection-batch-detail.component'
+              ).then((m) => m.ChequeCollectionBatchDetailComponent),
+            title: 'Cheque Collection Batch — Cheque & Refunds',
+          },
+          {
+            path: 'upload-online/refund-document',
+            loadComponent: () =>
+              import('./features/upload-online/upload-refund-document/upload-refund-document.component').then(
+                (m) => m.UploadRefundDocumentComponent,
+              ),
+            title: 'Upload Refund Document — Cheque & Refunds',
+          },
+          {
+            path: 'upload-online/refund-documents',
+            loadComponent: () =>
+              import('./features/upload-online/view-refund-documents/view-refund-documents.component').then(
+                (m) => m.ViewRefundDocumentsComponent,
+              ),
+            title: 'Refund Documents — Cheque & Refunds',
           },
           {
             path: 'upload-online/bank-statements',
@@ -149,7 +243,7 @@ export const routes: Routes = [
               import('./features/upload-online/view-bank-statements/view-bank-statements.component').then(
                 (m) => m.ViewBankStatementsComponent,
               ),
-            title: 'Bank Statements — Upload Online',
+            title: 'Bank Statements — Bank & PayU',
           },
           {
             path: 'upload-online/bank-statements/:batchId',
@@ -157,7 +251,7 @@ export const routes: Routes = [
               import(
                 './features/upload-online/bank-statement-batch-detail/bank-statement-batch-detail.component'
               ).then((m) => m.BankStatementBatchDetailComponent),
-            title: 'Bank Statement Transactions — Upload Online',
+            title: 'Bank Statement Transactions — Bank & PayU',
           },
           {
             path: 'matched-rules/summary',
@@ -165,7 +259,7 @@ export const routes: Routes = [
               import('./features/matched-rules/reconciliation-summary/reconciliation-summary.component').then(
                 (m) => m.ReconciliationSummaryComponent,
               ),
-            title: 'Reconciliation Summary — Matched Rules',
+            title: 'Reconciliation Summary — Reconciliation',
           },
           {
             path: 'matched-rules/unit-matches',
@@ -173,7 +267,21 @@ export const routes: Routes = [
               import('./features/matched-rules/unit-matches/unit-matches.component').then(
                 (m) => m.UnitMatchesComponent,
               ),
-            title: 'Unit Matches — Matched Rules',
+            title: 'Unit Matches — Reconciliation',
+          },
+          {
+            path: 'matched-rules/payu-settlements',
+            loadComponent: () =>
+              import('./features/matched-rules/payu-settlements/payu-settlements.component').then(
+                (m) => m.PayuSettlementsComponent,
+              ),
+            title: 'PayU Settlements — Reconciliation',
+          },
+          {
+            path: 'matched-rules/audit-report',
+            loadComponent: () =>
+              import('./features/matched-rules/audit-report/audit-report.component').then((m) => m.AuditReportComponent),
+            title: 'Audit Working Report — Reconciliation',
           },
           {
             path: 'matched-rules/ip-payment-rules',
@@ -181,7 +289,7 @@ export const routes: Routes = [
               import('./features/matched-rules/ip-payment-rules/ip-payment-rules.component').then(
                 (m) => m.IpPaymentRulesComponent,
               ),
-            title: 'IP Payment Rules — Matched Rules',
+            title: 'IP Payment Rules — Reconciliation',
           },
           {
             path: 'matched-rules/diagnostics-payment-rules',
@@ -189,7 +297,7 @@ export const routes: Routes = [
               import('./features/matched-rules/diag-payment-rules/diag-payment-rules.component').then(
                 (m) => m.DiagPaymentRulesComponent,
               ),
-            title: 'Diagnostics Payment Rules — Matched Rules',
+            title: 'Diagnostics Payment Rules — Reconciliation',
           },
           {
             path: 'matched-rules/ip-payment-rules/manage',
@@ -197,7 +305,7 @@ export const routes: Routes = [
               import('./features/matched-rules/ip-matching-rules/ip-matching-rules.component').then(
                 (m) => m.IpMatchingRulesComponent,
               ),
-            title: 'IP Payment Matching Rules — Master Rules',
+            title: 'IP Matching Rules — Reconciliation',
           },
           {
             path: 'matched-rules/diagnostics-payment-rules/manage',
@@ -205,7 +313,18 @@ export const routes: Routes = [
               import('./features/matched-rules/diag-matching-rules/diag-matching-rules.component').then(
                 (m) => m.DiagMatchingRulesComponent,
               ),
-            title: 'Diagnostics Payment Matching Rules — Master Rules',
+            title: 'Diagnostics Matching Rules — Reconciliation',
+          },
+          {
+            // Off-nav, like the other rule editors: reached from the Manage
+            // Rules button on the batch it configures, so configuring a rule
+            // never means leaving the section you are standing in.
+            path: 'matched-rules/cheque-collection-rules/manage',
+            loadComponent: () =>
+              import('./features/matched-rules/cheque-matching-rules/cheque-matching-rules.component').then(
+                (m) => m.ChequeMatchingRulesComponent,
+              ),
+            title: 'Cheque Matching Rules — Reconciliation',
           },
           {
             path: 'master-data/division-bank-accounts',

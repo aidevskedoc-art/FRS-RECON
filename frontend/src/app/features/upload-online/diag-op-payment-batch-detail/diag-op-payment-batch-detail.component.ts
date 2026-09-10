@@ -6,16 +6,19 @@ import { ButtonModule } from 'primeng/button';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
+import { MultiSelectModule } from 'primeng/multiselect';
 import { TooltipModule } from 'primeng/tooltip';
 import { DiagOpPaymentService } from '../../../core/services/diag-op-payment.service';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
-import { MatchStatus, OnlinePaymentRecord, OnlineUploadBatch, RecordFilterOptions } from '../../../core/models';
+import { MatchStatus, OnlinePaymentRecord, OnlineUploadBatch, RecordFilterOptions, RecordStatusCounts } from '../../../core/models';
 
 interface ColumnDef {
-  key: keyof OnlinePaymentRecord;
+  key: string;
   header: string;
   kind?: 'amount' | 'date';
+  /** Derives the cell from the record when it is not a plain field. */
+  get?: (record: OnlinePaymentRecord) => unknown;
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -24,7 +27,18 @@ const COLUMNS: ColumnDef[] = [
   { key: 'yhno', header: 'YHNO' },
   { key: 'diagNo', header: 'Diag Number' },
   { key: 'patientName', header: 'Patient Name' },
-  { key: 'transactionRef2', header: 'UPI Reference Number' },
+  // Every reference the MIS row carries, in full and un-normalised — the
+  // leading zeros / split letters the matcher strips are kept here on purpose
+  // so a reviewer can eyeball the MIS value against the bank value.
+  {
+    key: 'unitRefSource',
+    header: 'Transaction Ref (MIS)',
+    get: (r) => [r.transactionRef1, r.transactionRef2, r.transactionRef3].filter(Boolean).join('  |  '),
+  },
+  // The bank side of the match, in full — Chq/Ref No is zero-padded to 16
+  // chars on the statement ("0000581460072146"); shown verbatim, not shortened.
+  { key: 'bankRefNo', header: 'Bank Ref No', get: (r) => r.matchedBank?.chqRefNo ?? null },
+  { key: 'bankNarration', header: 'Bank Narration', get: (r) => r.matchedBank?.narration ?? null },
   { key: 'payMode', header: 'Pay Mode' },
   { key: 'patType', header: 'Pat Type' },
   { key: 'billAmount', header: 'Bill Amount', kind: 'amount' },
@@ -42,6 +56,9 @@ const COLUMNS: ColumnDef[] = [
  */
 const STATUS_LABELS: Record<MatchStatus, string> = {
   MATCHED: 'Matched',
+  EASEBUZZ_MATCHED: 'Easebuzz Matched',
+  CONTRA_ENTRY: 'Contra Entry',
+  PARTIAL_MATCH: 'Partially Matched',
   AMOUNT_MISMATCH: 'Amount Mismatch',
   UNMATCHED: 'Unmatched',
   AMBIGUOUS_MATCH: 'Ambiguous Match',
@@ -50,7 +67,7 @@ const STATUS_LABELS: Record<MatchStatus, string> = {
 @Component({
   selector: 'app-diag-op-payment-batch-detail',
   standalone: true,
-  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, InputTextModule, SelectModule, TooltipModule],
+  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, InputTextModule, SelectModule, MultiSelectModule, TooltipModule],
   templateUrl: './diag-op-payment-batch-detail.component.html',
   styleUrl: './diag-op-payment-batch-detail.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -80,6 +97,8 @@ export class DiagOpPaymentBatchDetailComponent {
   protected readonly dateFrom = signal('');
   protected readonly dateTo = signal('');
   protected readonly statusFilter = signal<'ALL' | MatchStatus>('ALL');
+  /** The Online module reconciles bank transfers, not UPI. UPI-mode rows are hidden unless this is ticked. */
+  protected readonly includeUpi = signal(false);
 
   protected readonly filterOptions = signal<RecordFilterOptions>({ paymentModes: [], payTypes: [] });
   protected readonly paymentModeOptions = computed(() => [
@@ -96,6 +115,18 @@ export class DiagOpPaymentBatchDetailComponent {
   private page = 1;
   private pageSize = 25;
 
+  /** Column picker for the Excel export. */
+  protected readonly exportColumns = signal<{ key: string; label: string }[]>([]);
+  protected readonly selectedExportColumns = signal<string[]>([]);
+  protected readonly downloading = signal(false);
+
+  /** Per-verdict counts for the current filter set — shown against each status tab. */
+  protected readonly statusCounts = signal<RecordStatusCounts | null>(null);
+  protected readonly countFor = computed(() => {
+    const c = this.statusCounts();
+    return (k: 'total' | 'matched' | 'partialMatch' | 'amountMismatch' | 'unmatched') => (c ? c[k] : undefined);
+  });
+
   constructor() {
     this.diagOpPayments.fetchBatch(this.batchId).subscribe({
       next: (batch) => this.batch.set(batch),
@@ -105,7 +136,37 @@ export class DiagOpPaymentBatchDetailComponent {
       next: (options) => this.filterOptions.set(options),
       error: () => {}, // filter dropdowns just stay empty ("All") if this fails — doesn't block the record view itself
     });
+    this.diagOpPayments.fetchExportColumns().subscribe({
+      next: (cols) => {
+        this.exportColumns.set(cols);
+        this.selectedExportColumns.set(cols.map((c) => c.key));
+      },
+      error: () => {},
+    });
+    this.loadStatusCounts();
     this.loadPage();
+  }
+
+  /** The filters shared by the records list and the status counts (no status, no paging). */
+  private filterQuery() {
+    return {
+      batchId: this.batchId,
+      search: this.search() || undefined,
+      paymentMode: this.paymentMode() || undefined,
+      payType: this.payType() || undefined,
+      patType: this.patType() || undefined,
+      excludeUpi: this.includeUpi() ? undefined : true,
+      dateFrom: this.dateFrom() || undefined,
+      dateTo: this.dateTo() || undefined,
+    };
+  }
+
+  /** Per-verdict counts for the CURRENT filter set — reloaded on every filter change and after Generate. */
+  private loadStatusCounts(): void {
+    this.diagOpPayments.fetchStatusCounts(this.filterQuery()).subscribe({
+      next: (counts) => this.statusCounts.set(counts),
+      error: () => {},
+    });
   }
 
   /** Runs the bank-statement match and persists the verdict onto every record in the batch — a one-time action, not repeated on every page load (see batch.matchedAt / matchesGenerated above). */
@@ -115,6 +176,7 @@ export class DiagOpPaymentBatchDetailComponent {
       next: () => {
         this.matchesLoading.set(false);
         this.batch.update((b) => (b ? { ...b, matchedAt: new Date().toISOString(), rulesChangedSinceGenerate: false } : b));
+        this.loadStatusCounts();
         this.loadPage();
       },
       error: (err) => {
@@ -157,6 +219,7 @@ export class DiagOpPaymentBatchDetailComponent {
 
   protected applyFilters(): void {
     this.page = 1;
+    this.loadStatusCounts();
     this.loadPage();
   }
 
@@ -173,13 +236,7 @@ export class DiagOpPaymentBatchDetailComponent {
     const status = this.statusFilter();
     this.diagOpPayments
       .fetchRecords({
-        batchId: this.batchId,
-        search: this.search() || undefined,
-        paymentMode: this.paymentMode() || undefined,
-        payType: this.payType() || undefined,
-        patType: this.patType() || undefined,
-        dateFrom: this.dateFrom() || undefined,
-        dateTo: this.dateTo() || undefined,
+        ...this.filterQuery(),
         matchStatus: status === 'ALL' ? undefined : status,
         page: this.page,
         pageSize: this.pageSize,
@@ -209,19 +266,21 @@ export class DiagOpPaymentBatchDetailComponent {
   }
 
   protected download(): void {
+    if (this.downloading()) return;
+    this.downloading.set(true);
     const status = this.statusFilter();
     this.diagOpPayments
-      .downloadRecords({
-        batchId: this.batchId,
-        search: this.search() || undefined,
-        paymentMode: this.paymentMode() || undefined,
-        payType: this.payType() || undefined,
-        patType: this.patType() || undefined,
-        dateFrom: this.dateFrom() || undefined,
-        dateTo: this.dateTo() || undefined,
-        matchStatus: status === 'ALL' ? undefined : status,
-      })
-      .subscribe({ error: (err) => this.error.set(errorMessage(err)) });
+      .downloadRecords(
+        { ...this.filterQuery(), matchStatus: status === 'ALL' ? undefined : status },
+        this.selectedExportColumns(),
+      )
+      .subscribe({
+        next: () => this.downloading.set(false),
+        error: (err) => {
+          this.downloading.set(false);
+          this.error.set(errorMessage(err));
+        },
+      });
   }
 
   protected back(): void {
@@ -229,7 +288,7 @@ export class DiagOpPaymentBatchDetailComponent {
   }
 
   protected cellValue(record: OnlinePaymentRecord, column: ColumnDef): string {
-    const value = record[column.key];
+    const value = column.get ? column.get(record) : (record as unknown as Record<string, unknown>)[column.key];
     if (value === null || value === undefined || value === '') return '—';
     if (column.kind === 'amount') return Number(value).toLocaleString('en-IN');
     if (column.kind === 'date') return new Date(String(value)).toLocaleString('en-IN');

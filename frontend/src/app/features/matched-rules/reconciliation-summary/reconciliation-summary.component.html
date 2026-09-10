@@ -2,7 +2,7 @@
   <div class="recon-summary__header">
     <div>
       <h2>Reconciliation Summary</h2>
-      <p>Bank Statement vs IP &amp; Diag OP Payment Statement reconciliation, across every configured matching rule.</p>
+      <p>Bank Statement vs IP, Diag OP &amp; UPI Payment Statement reconciliation, across every configured matching rule.</p>
     </div>
     @if (summary(); as s) {
       <p class="recon-summary__generated">Updated {{ s.generatedAt | date: 'medium' }}</p>
@@ -53,6 +53,9 @@
               <th>Statement</th>
               <th>Total</th>
               <th>Matched</th>
+              <th>Easebuzz</th>
+              <th>Contra Entry</th>
+              <th>Partially Matched</th>
               <th>Amount Mismatch</th>
               <th>Unmatched</th>
               <th>Excluded</th>
@@ -63,6 +66,9 @@
               <td>IP Payments</td>
               <td>{{ s.ipPayments.total }}</td>
               <td>{{ s.ipPayments.matched }}</td>
+              <td>{{ s.ipPayments.easebuzzMatched }}</td>
+              <td>{{ s.ipPayments.contra }}</td>
+              <td>{{ s.ipPayments.partialMatch }}</td>
               <td>{{ s.ipPayments.mismatched }}</td>
               <td>{{ s.ipPayments.unmatched }}</td>
               <td>{{ s.ipPayments.excluded }}</td>
@@ -71,9 +77,34 @@
               <td>Diag OP Payments</td>
               <td>{{ s.diagPayments.total }}</td>
               <td>{{ s.diagPayments.matched }}</td>
+              <td>{{ s.diagPayments.easebuzzMatched }}</td>
+              <td>{{ s.diagPayments.contra }}</td>
+              <td>{{ s.diagPayments.partialMatch }}</td>
               <td>{{ s.diagPayments.mismatched }}</td>
               <td>{{ s.diagPayments.unmatched }}</td>
               <td>{{ s.diagPayments.excluded }}</td>
+            </tr>
+            <tr>
+              <td>Cheque Collections</td>
+              <td>{{ s.chequePayments.total }}</td>
+              <td>{{ s.chequePayments.matched }}</td>
+              <td>{{ s.chequePayments.easebuzzMatched }}</td>
+              <td>{{ s.chequePayments.contra }}</td>
+              <td>{{ s.chequePayments.partialMatch }}</td>
+              <td>{{ s.chequePayments.mismatched }}</td>
+              <td>{{ s.chequePayments.unmatched }}</td>
+              <td>{{ s.chequePayments.excluded }}</td>
+            </tr>
+            <tr>
+              <td>UPI Payments</td>
+              <td>{{ s.upiPayments.total }}</td>
+              <td>{{ s.upiPayments.matched }}</td>
+              <td>{{ s.upiPayments.easebuzzMatched }}</td>
+              <td>{{ s.upiPayments.contra }}</td>
+              <td>{{ s.upiPayments.partialMatch }}</td>
+              <td>{{ s.upiPayments.mismatched }}</td>
+              <td>{{ s.upiPayments.unmatched }}</td>
+              <td>{{ s.upiPayments.excluded }}</td>
             </tr>
           </tbody>
         </table>
@@ -108,6 +139,108 @@
               <td>{{ s.bankStatement.mismatched }}</td>
               <td>{{ s.bankStatement.unmatched }}</td>
               <td>{{ s.bankStatement.notGenerated }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="recon-summary__section">
+      <h3>PayU MPR</h3>
+      <p class="section-note">Gateway settlement rows. "Matched" = a UPI receipt reconciled against that PayU transaction.</p>
+      @if (s.payuMpr.notGenerated > 0) {
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          {{ s.payuMpr.notGenerated }} PayU MPR row{{ s.payuMpr.notGenerated === 1 ? '' : 's' }} in this range
+          {{ s.payuMpr.notGenerated === 1 ? 'has' : 'have' }} never been through Generate — open the PayU MPR batch page and click Generate.
+        </div>
+      }
+      <div class="table-wrap">
+        <table class="breakdown-table">
+          <thead>
+            <tr>
+              <th>Total</th>
+              <th>Matched</th>
+              <th>Amount Mismatch</th>
+              <th>Only in PayU MPR</th>
+              <th>Not Yet Generated</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ s.payuMpr.total }}</td>
+              <td>{{ s.payuMpr.matched }}</td>
+              <td>{{ s.payuMpr.mismatched }}</td>
+              <td>{{ s.payuMpr.unmatched }}</td>
+              <td>{{ s.payuMpr.notGenerated }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="recon-summary__section">
+      <h3>EaseBuzz</h3>
+      <p class="section-note">Successful EaseBuzz gateway transactions. "Matched" = an IP online receipt matched it by Easebuzz ID.</p>
+      @if (s.easebuzz.notGenerated > 0) {
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          {{ s.easebuzz.notGenerated }} EaseBuzz row{{ s.easebuzz.notGenerated === 1 ? '' : 's' }} in this range
+          {{ s.easebuzz.notGenerated === 1 ? 'has' : 'have' }} never been through Generate — open the EaseBuzz batch page and click Generate.
+        </div>
+      }
+      <div class="table-wrap">
+        <table class="breakdown-table">
+          <thead>
+            <tr>
+              <th>Total</th>
+              <th>Matched</th>
+              <th>Amount Mismatch</th>
+              <th>Only in EaseBuzz</th>
+              <th>Not Yet Generated</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ s.easebuzz.total }}</td>
+              <td>{{ s.easebuzz.matched }}</td>
+              <td>{{ s.easebuzz.mismatched }}</td>
+              <td>{{ s.easebuzz.unmatched }}</td>
+              <td>{{ s.easebuzz.notGenerated }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="recon-summary__section">
+      <h3>PayU Settlement (MPR → Bank)</h3>
+      <p class="section-note">
+        Stage 2: PayU MPR lines grouped by settlement UTR, each lump tied to the bank credit carrying that UTR.
+        <a routerLink="/matched-rules/payu-settlements">Open PayU Settlements</a> to run Generate and see each batch.
+      </p>
+      <div class="table-wrap">
+        <table class="breakdown-table">
+          <thead>
+            <tr>
+              <th>Batches</th>
+              <th>Matched</th>
+              <th>Amount Mismatch</th>
+              <th>No Bank Credit</th>
+              <th>Net Total (MPR)</th>
+              <th>Bank Total</th>
+              <th>Gap</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ s.payuSettlement.total }}</td>
+              <td>{{ s.payuSettlement.matched }}</td>
+              <td>{{ s.payuSettlement.mismatched }}</td>
+              <td>{{ s.payuSettlement.unmatched }}</td>
+              <td class="amount">{{ amount(s.payuSettlement.netTotal) }}</td>
+              <td class="amount">{{ amount(s.payuSettlement.bankTotal) }}</td>
+              <td class="amount">{{ amount(s.payuSettlement.gap) }}</td>
             </tr>
           </tbody>
         </table>

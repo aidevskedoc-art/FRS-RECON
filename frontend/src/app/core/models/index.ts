@@ -8,3 +8,4 @@ export * from './online-upload.model';
 export * from './master-data.model';
 export * from './matched-rules.model';
 export * from './matching-rules.model';
+export * from './cheque-collection.model';

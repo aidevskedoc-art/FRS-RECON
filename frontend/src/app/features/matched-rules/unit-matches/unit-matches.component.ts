@@ -12,9 +12,15 @@ import { MatchStatus, OnlinePaymentRecord, UnitMatch } from '../../../core/model
 
 type PaymentType = 'IP_PAYMENT' | 'DIAG_PAYMENT';
 
+// On a UNIT row, once the group is tied to its expected transaction the two
+// non-exact outcomes have a direction: PARTIAL_MATCH is short (a balance is
+// still owed), AMOUNT_MISMATCH is an excess (more collected than expected).
 const STATUS_LABELS: Record<MatchStatus, string> = {
   MATCHED: 'Matched',
-  AMOUNT_MISMATCH: 'Amount Mismatch',
+  EASEBUZZ_MATCHED: 'Easebuzz Matched',
+  CONTRA_ENTRY: 'Contra Entry',
+  PARTIAL_MATCH: 'Partially Matched',
+  AMOUNT_MISMATCH: 'Amount Excess',
   UNMATCHED: 'Unmatched',
   AMBIGUOUS_MATCH: 'Ambiguous Match',
 };
@@ -62,7 +68,8 @@ export class UnitMatchesComponent {
   protected readonly statusOptions = [
     { label: 'All statuses', value: 'ALL' as const },
     { label: 'Matched', value: 'MATCHED' as const },
-    { label: 'Amount Mismatch', value: 'AMOUNT_MISMATCH' as const },
+    { label: 'Partially Matched', value: 'PARTIAL_MATCH' as const },
+    { label: 'Amount Excess', value: 'AMOUNT_MISMATCH' as const },
     { label: 'Ambiguous Match', value: 'AMBIGUOUS_MATCH' as const },
     { label: 'Unmatched', value: 'UNMATCHED' as const },
   ];
@@ -72,8 +79,18 @@ export class UnitMatchesComponent {
   protected readonly membersLoading = signal<string | null>(null);
 
   protected readonly matchedCount = computed(() => this.units().filter((u) => u.status === 'MATCHED').length);
+  protected readonly partialCount = computed(() => this.units().filter((u) => u.status === 'PARTIAL_MATCH').length);
   protected readonly mismatchCount = computed(() => this.units().filter((u) => u.status === 'AMOUNT_MISMATCH').length);
   protected readonly ambiguousCount = computed(() => this.units().filter((u) => u.status === 'AMBIGUOUS_MATCH').length);
+
+  /**
+   * The balance still owed on a short (Partially Matched) unit — expected minus
+   * what the group's transactions add up to. `difference` is stored as
+   * grouped − expected, so the balance is its negative, floored at 0.
+   */
+  protected unmatchedBalance(unit: UnitMatch): number {
+    return unit.difference != null && unit.difference < 0 ? -unit.difference : 0;
+  }
 
   constructor() {
     const batch = this.route.snapshot.queryParamMap.get('batchId');

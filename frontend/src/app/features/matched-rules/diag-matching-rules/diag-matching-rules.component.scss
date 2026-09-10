@@ -63,6 +63,9 @@
 .matching-rules__table-wrap {
   @include mixins.card;
   @include mixins.scrollbar-thin;
+  // Flex-column child: without this it keeps the table's full intrinsic width
+  // and pushes the page past the content column instead of scrolling here.
+  min-width: 0;
   overflow: auto;
 }
 
@@ -72,14 +75,25 @@
     white-space: nowrap;
   }
 
-  .p-datatable-tbody > tr > td {
+  // Blanket nowrap keeps the scannable columns tidy — but the Conditions cell
+  // opts out with .wrap. Without :not() it inherits nowrap and its one-line
+  // width blows the whole table past the content area.
+  .p-datatable-tbody > tr > td:not(.wrap) {
     white-space: nowrap;
+    vertical-align: top;
+  }
+
+  .p-datatable-tbody > tr > td.wrap {
     vertical-align: top;
   }
 }
 
 .condition-cell__line {
   display: block;
+  max-width: 340px;
+  white-space: normal;
+  // Break long dotted paths (payment.transactionRef) rather than widen the col.
+  overflow-wrap: anywhere;
 
   & + & {
     margin-top: var(--space-1);

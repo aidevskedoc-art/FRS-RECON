@@ -1,0 +1,148 @@
+<div class="audit-report">
+  <header class="audit-report__head">
+    <div>
+      <h1>Audit Working Report</h1>
+      <p class="audit-report__sub">
+        The client's reconciliation workbook for a chosen period — cheque collection, IP online and Diag
+        online, one sheet each, in the auditor's layout. Pick the period and the date it filters on, review
+        the preview, then download.
+      </p>
+    </div>
+    <div class="audit-report__downloads">
+      <p-button
+        label="Client Report"
+        icon="pi pi-download"
+        [loading]="downloading()"
+        [disabled]="loading() || !period()"
+        (onClick)="download('client')"
+      />
+      <p-button
+        label="Internal Copy"
+        icon="pi pi-download"
+        severity="secondary"
+        [outlined]="true"
+        [loading]="downloading()"
+        [disabled]="loading() || !period()"
+        (onClick)="download('internal')"
+      />
+    </div>
+  </header>
+
+  @if (error()) {
+    <div class="notice notice--danger">{{ error() }}</div>
+  }
+
+  <div class="audit-report__controls">
+    <label class="field">
+      <span class="field__label">Period</span>
+      <p-select
+        [options]="periodTypeOptions"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="periodType()"
+        (ngModelChange)="setPeriodType($event)"
+      />
+    </label>
+
+    @switch (periodType()) {
+      @case ('DAILY') {
+        <label class="field">
+          <span class="field__label">Day</span>
+          <input type="date" class="native-input" [ngModel]="dayValue()" (ngModelChange)="dayValue.set($event); loadPreview()" />
+        </label>
+      }
+      @case ('YEARLY') {
+        <label class="field">
+          <span class="field__label">Year</span>
+          <input
+            type="number"
+            class="native-input"
+            min="2000"
+            max="2100"
+            [ngModel]="yearValue()"
+            (ngModelChange)="yearValue.set($event); loadPreview()"
+          />
+        </label>
+      }
+      @default {
+        <label class="field">
+          <span class="field__label">Month</span>
+          <input type="month" class="native-input" [ngModel]="monthValue()" (ngModelChange)="monthValue.set($event); loadPreview()" />
+        </label>
+      }
+    }
+
+    <label class="field">
+      <span class="field__label">Filter on</span>
+      <p-select
+        [options]="dateBasisOptions"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="dateBasis()"
+        (ngModelChange)="setDateBasis($event)"
+      />
+    </label>
+
+    <p-button label="Refresh preview" icon="pi pi-refresh" size="small" [outlined]="true" [loading]="loading()" (onClick)="loadPreview()" />
+  </div>
+
+  @if (preview(); as p) {
+    <div class="audit-report__meta">
+      Period <strong>{{ p.periodLabel }}</strong> · filtered on
+      <strong>{{ p.dateBasis === 'REALIZATION' ? 'realization (bank) date' : 'receipt date' }}</strong>
+    </div>
+
+    <div class="audit-report__table-wrap">
+      <p-table [value]="p.sheets" dataKey="key" styleClass="p-datatable-sm">
+        <ng-template #header>
+          <tr>
+            <th>Sheet</th>
+            <th class="num">Rows</th>
+            <th class="num">Matched</th>
+            <th class="num">Contra</th>
+            <th class="num">Unmatched</th>
+            <th class="num">&Sigma; MIS Amount</th>
+            <th class="num">&Sigma; Realization</th>
+            <th class="num">&Sigma; Difference</th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row>
+          <tr>
+            <td>{{ row.name }}</td>
+            <td class="num">{{ row.rowCount }}</td>
+            <td class="num">{{ row.matched }}</td>
+            <td class="num">{{ row.contra }}</td>
+            <td class="num" [class.warn]="row.unmatched > 0">{{ row.unmatched }}</td>
+            <td class="num">{{ amount(row.totalMisAmount) }}</td>
+            <td class="num">{{ amount(row.totalRealizationAmount) }}</td>
+            <td class="num" [class.diff]="row.totalDifference">{{ amount(row.totalDifference) }}</td>
+          </tr>
+        </ng-template>
+
+        <ng-template #footer>
+          <tr class="total-row">
+            <td>All sheets</td>
+            <td class="num">{{ grandTotals().rowCount }}</td>
+            <td class="num">{{ grandTotals().matched }}</td>
+            <td class="num">{{ grandTotals().contra }}</td>
+            <td class="num">{{ grandTotals().unmatched }}</td>
+            <td class="num">{{ amount(grandTotals().totalMisAmount) }}</td>
+            <td class="num">{{ amount(grandTotals().totalRealizationAmount) }}</td>
+            <td class="num">{{ amount(grandTotals().totalDifference) }}</td>
+          </tr>
+        </ng-template>
+
+        <ng-template #emptymessage>
+          <tr>
+            <td colspan="8" class="empty">No rows for this period.</td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </div>
+
+    <p class="audit-report__note">
+      Cheque collection appears once its cheque report is uploaded.
+    </p>
+  }
+</div>

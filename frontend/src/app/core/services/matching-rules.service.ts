@@ -95,4 +95,45 @@ export class MatchingRulesService {
       .put<MatchingRule[]>(`${API_BASE_URL}/matching-rules/diag-op-payments/reorder`, { ids })
       .pipe(tap((rules) => this._diagRules.set(rules)));
   }
+  private readonly _chequeRules = signal<MatchingRule[]>([]);
+  readonly chequeRules = this._chequeRules.asReadonly();
+
+  /** GET /api/matching-rules/cheque-collections */
+  refreshChequeRules(): Observable<MatchingRule[]> {
+    this._loading.set(true);
+    return this.http.get<MatchingRule[]>(`${API_BASE_URL}/matching-rules/cheque-collections`).pipe(
+      tap((rules) => {
+        this._chequeRules.set(rules);
+        this._loading.set(false);
+      }),
+    );
+  }
+
+  /** POST /api/matching-rules/cheque-collections */
+  addChequeRule(draft: MatchingRuleDraft): Observable<MatchingRule> {
+    return this.http
+      .post<MatchingRule>(`${API_BASE_URL}/matching-rules/cheque-collections`, draft)
+      .pipe(tap((created) => this._chequeRules.update((rules) => [...rules, created])));
+  }
+
+  /** PATCH /api/matching-rules/cheque-collections/:id */
+  updateChequeRule(id: string, patch: Partial<MatchingRuleDraft>): Observable<MatchingRule> {
+    return this.http
+      .patch<MatchingRule>(`${API_BASE_URL}/matching-rules/cheque-collections/${id}`, patch)
+      .pipe(tap((updated) => this._chequeRules.update((rules) => rules.map((r) => (r.id === id ? updated : r)))));
+  }
+
+  /** DELETE /api/matching-rules/cheque-collections/:id */
+  removeChequeRule(id: string): Observable<void> {
+    return this.http
+      .delete<void>(`${API_BASE_URL}/matching-rules/cheque-collections/${id}`)
+      .pipe(tap(() => this._chequeRules.update((rules) => rules.filter((r) => r.id !== id))));
+  }
+
+  /** PUT /api/matching-rules/cheque-collections/reorder */
+  reorderChequeRules(ids: string[]): Observable<MatchingRule[]> {
+    return this.http
+      .put<MatchingRule[]>(`${API_BASE_URL}/matching-rules/cheque-collections/reorder`, { ids })
+      .pipe(tap((rules) => this._chequeRules.set(rules)));
+  }
 }

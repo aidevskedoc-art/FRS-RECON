@@ -1,0 +1,128 @@
+@use 'styles/mixins';
+
+.audit-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.audit-report__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+
+  h1 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+}
+
+.audit-report__sub {
+  margin: var(--space-1) 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  max-width: 78ch;
+}
+
+.audit-report__downloads {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.audit-report__controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field__label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.native-input {
+  height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.audit-report__meta {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+}
+
+.audit-report__table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  overflow-x: auto;
+}
+
+:host ::ng-deep .audit-report__table-wrap {
+  .p-datatable-thead > tr > th {
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+
+  .p-datatable-tbody > tr {
+    background: var(--surface);
+  }
+
+  .p-datatable-tbody > tr:hover {
+    background: var(--surface-soft, var(--surface-sunken));
+  }
+
+  .total-row {
+    font-weight: 600;
+    background: var(--surface-sunken);
+  }
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.warn {
+  color: var(--status-warning-fg);
+}
+
+.diff:not(:empty) {
+  color: var(--status-warning-fg);
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}
+
+.audit-report__note {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+.notice--danger {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md, 6px);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+  border: 1px solid var(--status-danger-border);
+}

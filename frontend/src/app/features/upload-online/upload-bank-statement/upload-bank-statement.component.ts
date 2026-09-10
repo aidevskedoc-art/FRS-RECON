@@ -83,15 +83,15 @@ export class UploadBankStatementComponent {
       .pipe(
         concatMap((file) =>
           this.bankStatements.upload(file, this.auth.userId()).pipe(
-            map((batch) => ({ fileName: file.name, batch, error: null as string | null })),
-            catchError((err) => of({ fileName: file.name, batch: null as BankStatementUpload | null, error: errorMessage(err) })),
+            map((batches) => ({ fileName: file.name, batches, error: null as string | null })),
+            catchError((err) => of({ fileName: file.name, batches: [] as BankStatementUpload[], error: errorMessage(err) })),
           ),
         ),
       )
       .subscribe({
         next: (result) => {
-          if (result.batch) this.uploadedBatches.update((b) => [...b, result.batch!]);
-          else this.uploadErrors.update((e) => [...e, { fileName: result.fileName, message: result.error! }]);
+          if (result.error) this.uploadErrors.update((e) => [...e, { fileName: result.fileName, message: result.error! }]);
+          else this.uploadedBatches.update((b) => [...b, ...result.batches]);
           this.progress.update((p) => (p ? { ...p, done: p.done + 1 } : p));
         },
         complete: () => {

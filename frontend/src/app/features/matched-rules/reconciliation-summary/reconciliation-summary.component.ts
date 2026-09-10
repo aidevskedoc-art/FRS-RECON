@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
@@ -17,7 +18,7 @@ interface SummaryCard {
 @Component({
   selector: 'app-reconciliation-summary',
   standalone: true,
-  imports: [DatePipe, FormsModule, ButtonModule, TableModule],
+  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule],
   templateUrl: './reconciliation-summary.component.html',
   styleUrl: './reconciliation-summary.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -38,6 +39,8 @@ export class ReconciliationSummaryComponent {
     return [
       { label: 'Total Transactions', value: s.combined.totalTransactions, icon: 'pi pi-list', accent: 'blue' },
       { label: 'Matched', value: s.combined.totalMatched, icon: 'pi pi-check-circle', accent: 'success' },
+      { label: 'Easebuzz Matched', value: s.combined.totalEasebuzzMatched, icon: 'pi pi-bolt', accent: 'purple' },
+      { label: 'Partially Matched', value: s.combined.totalPartialMatch, icon: 'pi pi-check', accent: 'blue' },
       { label: 'Amount Mismatched', value: s.combined.totalMismatched, icon: 'pi pi-exclamation-triangle', accent: 'warning' },
       { label: 'Unmatched', value: s.combined.totalUnmatched, icon: 'pi pi-times-circle', accent: 'danger' },
       { label: 'Only in Bank Statement', value: s.combined.onlyInBankStatement, icon: 'pi pi-building-columns', accent: 'purple' },
@@ -81,7 +84,9 @@ export class ReconciliationSummaryComponent {
     return value === null || value === undefined ? '—' : Number(value).toLocaleString('en-IN');
   }
 
-  protected sourceLabel(source: 'IP_PAYMENT' | 'DIAG_PAYMENT'): string {
-    return source === 'IP_PAYMENT' ? 'IP Payment' : 'Diag OP Payment';
+  protected sourceLabel(source: 'IP_PAYMENT' | 'DIAG_PAYMENT' | 'UPI_PAYMENT'): string {
+    if (source === 'IP_PAYMENT') return 'IP Payment';
+    if (source === 'UPI_PAYMENT') return 'UPI Payment';
+    return 'Diag OP Payment';
   }
 }

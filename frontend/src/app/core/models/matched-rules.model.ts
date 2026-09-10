@@ -7,12 +7,51 @@
  * "several possibilities, awaiting a decision" is a different business state
  * from "nothing found".
  *
+ * PARTIAL_MATCH: a near-certain counterpart was found (a bank line carries the
+ * MIS reference with extra trailing digits — the MIS value was keyed in
+ * truncated — and the amount still agrees), held short of MATCHED so a person
+ * corrects the reference in the MIS before it counts as reconciled.
+ *
  * Render it through a Record<MatchStatus, ...> lookup rather than an if-chain
  * ending in a fallback: a bare `else` silently absorbs any status added later,
  * whereas the lookup makes the compiler point at every site that needs
  * updating.
+ *
+ * CONTRA_ENTRY: cheque collection only. The cheque was collected and then
+ * refunded for the same patient and amount, so the two cancel and it never
+ * reaches a bank statement at all. It is reconciled -- just against the refund
+ * document rather than the bank -- so it is neither MATCHED (which means "the
+ * bank has it") nor UNMATCHED (which means "we cannot account for it").
+ *
+ * EASEBUZZ_MATCHED: an IP online receipt routed through the EaseBuzz gateway.
+ * Its MIS Transaction Id equals an "Easebuzz ID" in the uploaded EaseBuzz
+ * report. Reconciled against the gateway report, not the bank statement, so it
+ * carries its own status and colour.
  */
-export type MatchStatus = 'MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED' | 'AMBIGUOUS_MATCH';
+export type MatchStatus =
+  | 'MATCHED'
+  | 'EASEBUZZ_MATCHED'
+  | 'CONTRA_ENTRY'
+  | 'PARTIAL_MATCH'
+  | 'AMOUNT_MISMATCH'
+  | 'UNMATCHED'
+  | 'AMBIGUOUS_MATCH';
+
+/** The refund row a CONTRA_ENTRY verdict is evidenced by. */
+export interface MatchedRefundInfo {
+  refundRecordId: string;
+  refundNo: string | null;
+  refundKind: 'IP' | 'OP' | null;
+  chequeDate: string | null;
+  chequeNo: string | null;
+  ipNo: string | null;
+  diagNo: string | null;
+  patientName: string | null;
+  draweeName: string | null;
+  amount: number | null;
+  division: string | null;
+  sheetName: string | null;
+}
 
 export interface MatchedBankInfo {
   recordId: string;
@@ -42,6 +81,8 @@ export interface MatchedRuleResult {
   /** Core engine's own explanation (reference used, tolerance, split-payment grouping) when no exception rule fired — kept separate from appliedRuleName so the UI never shows generated text as if it were a rule. */
   matchReason: string | null;
   bank: MatchedBankInfo | null;
+  /** Which record table a UPI row came from — set only by GET /matched-rules/upi-payments, which spans both. */
+  source?: 'IP_PAYMENT' | 'DIAG_PAYMENT';
 }
 
 export interface MatchedRulesPage {
@@ -109,8 +150,14 @@ export interface UnitMatchesQuery {
 export interface PaymentTypeSummary {
   total: number;
   matched: number;
+  /** IP online receipts routed through the EaseBuzz gateway and matched by Easebuzz ID. 0 for the other payment types. */
+  easebuzzMatched: number;
+  /** Cheque collections accounted for by the refund document. Always 0 for the other payment types. */
+  contra: number;
+  partialMatch: number;
   mismatched: number;
   unmatched: number;
+  ambiguous: number;
   excluded: number;
 }
 
@@ -124,7 +171,7 @@ export interface BankStatementSummary {
 }
 
 export interface AmountDifference {
-  source: 'IP_PAYMENT' | 'DIAG_PAYMENT';
+  source: 'IP_PAYMENT' | 'DIAG_PAYMENT' | 'UPI_PAYMENT';
   groupId: string;
   refs: string[];
   patientName: string | null;
@@ -135,15 +182,75 @@ export interface AmountDifference {
   bank: MatchedBankInfo | null;
 }
 
+/**
+ * Stage 2 rollup (POST /api/matched-rules/payu-settlements/generate): one row
+ * per PayU settlement batch. netTotal is the sum of the MPR lines' net amount,
+ * bankTotal the sum of the bank credits they tied to; gap is what has not
+ * reconciled.
+ */
+export interface PayuSettlementSummary {
+  total: number;
+  matched: number;
+  mismatched: number;
+  unmatched: number;
+  netTotal: number;
+  bankTotal: number;
+  gap: number;
+}
+
+/** One PayU settlement batch: its MPR lines grouped by settlement UTR, tied to the one bank credit carrying that UTR. */
+export interface PayuSettlement {
+  settlementUtr: string;
+  lineCount: number;
+  grossTotal: number | null;
+  netTotal: number | null;
+  bankRecordId: string | null;
+  bankAmount: number | null;
+  difference: number | null;
+  status: 'MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED';
+  bankTxnDate: string | null;
+  bankNarration: string | null;
+  bankChqRefNo: string | null;
+  bankAccountNo: string | null;
+  computedAt: string | null;
+}
+
+export interface PayuSettlementsPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  results: PayuSettlement[];
+}
+
+export interface PayuSettlementsQuery {
+  status?: 'MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED';
+  page?: number;
+  pageSize?: number;
+}
+
 export interface ReconciliationSummary {
   ipPayments: PaymentTypeSummary;
   diagPayments: PaymentTypeSummary;
+  /** UPI-mode rows from both IP and Diag, reconciled by the dedicated UPI rule set. */
+  upiPayments: PaymentTypeSummary;
   bankStatement: BankStatementSummary;
+  /** PayU merchant payment report rows (bank_statement_records with source='PAYU_MPR'), and how many a receipt has claimed. */
+  payuMpr: BankStatementSummary;
+  /** EaseBuzz gateway report rows (source='EASEBUZZ'), and how many an IP receipt has matched by Easebuzz ID. */
+  easebuzz: BankStatementSummary;
+  /** Stage 2: PayU settlement batches tied to bank credits. */
+  payuSettlement: PayuSettlementSummary;
+  /** Cheque collections: matched against the bank, or accounted for as contra entries by the refund document. */
+  chequePayments: PaymentTypeSummary;
   combined: {
     totalTransactions: number;
     totalMatched: number;
+    totalEasebuzzMatched: number;
+    totalContra: number;
+    totalPartialMatch: number;
     totalMismatched: number;
     totalUnmatched: number;
+    totalAmbiguous: number;
     totalExcluded: number;
     onlyInBankStatement: number;
     onlyInPaymentStatements: number;
@@ -155,4 +262,41 @@ export interface ReconciliationSummary {
 export interface ReconciliationSummaryQuery {
   dateFrom?: string;
   dateTo?: string;
+}
+
+// --- Audit Working Report (the client's deliverable workbook) ---------------
+
+export type AuditPeriodType = 'DAILY' | 'MONTHLY' | 'YEARLY';
+export type AuditDateBasis = 'RECEIPT' | 'REALIZATION';
+
+/**
+ * period format follows periodType: DAILY 'YYYY-MM-DD', MONTHLY 'YYYY-MM',
+ * YEARLY 'YYYY'. dateBasis picks which date the period filters on — the MIS
+ * receipt date, or the bank realization date of the matched credit.
+ */
+export interface AuditReportQuery {
+  periodType: AuditPeriodType;
+  period: string;
+  dateBasis: AuditDateBasis;
+  /** 'client' = exact client layout (default). 'internal' = also appends the engine's status / applied rule / reason columns. */
+  variant?: 'client' | 'internal';
+}
+
+export interface AuditReportSheetSummary {
+  name: string;
+  key: string;
+  rowCount: number;
+  matched: number;
+  contra: number;
+  unmatched: number;
+  totalMisAmount: number;
+  totalRealizationAmount: number;
+  totalDifference: number;
+}
+
+export interface AuditReportPreview {
+  periodLabel: string;
+  dateBasis: AuditDateBasis;
+  sheets: AuditReportSheetSummary[];
+  generatedAt: string;
 }

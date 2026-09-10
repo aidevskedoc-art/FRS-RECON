@@ -1,6 +1,6 @@
 const XLSX = require('xlsx');
 const { FORMAT_1_COLUMNS, FORMAT_1_COLUMNS_SBD, FORMAT_2_COLUMNS, DATE_FIELD, AMOUNT_FIELDS } = require('./mis-column-map');
-const { toText, toAmount, parseMisDateTime } = require('./parse-helpers');
+const { toText, toAmount, parseMisDateTime, extractUnitName } = require('./parse-helpers');
 
 const UPLOAD_TYPES = { '1': 'IP_PAYMENT', '2': 'DIAG_PAYMENT' };
 
@@ -32,47 +32,15 @@ function resolveFormat1Columns(headerRow) {
   return hasYhno ? FORMAT_1_COLUMNS : FORMAT_1_COLUMNS_SBD;
 }
 
-/**
- * First non-blank cell of the sheet's title row holds the company + branch,
- * e.g. "YASHODA HEALTHCARE SERVICES LIMITED, HITECH CITY" — only the part
- * after the last comma (the branch/unit) is kept, e.g. "HITECH CITY".
- */
-function extractUnitName(row0) {
-  if (!row0) return null;
-  for (const cell of row0) {
-    const text = toText(cell);
-    if (!text) continue;
-    const lastComma = text.lastIndexOf(',');
-    return lastComma === -1 ? text : text.slice(lastComma + 1).trim();
-  }
-  return null;
-}
-
-/**
- * Parses an uploaded MIS workbook into canonical rows, keyed by the field
- * names in mis-column-map.js. Reads cells as formatted text (`raw: false`)
- * so large numeric-looking IDs never round-trip through a JS float.
- */
-function parseMisWorkbook(buffer, format) {
-  const uploadType = UPLOAD_TYPES[format];
-  if (!uploadType) throw new Error(`Unknown MIS format "${format}" — expected "1" or "2"`);
-
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
-
+/** One sheet -> its unit name (row 0) and canonical rows. `null` when the sheet has no MIS header. */
+function parseMisSheet(grid, format) {
   const unitName = extractUnitName(grid[0]);
-
   const headerRowIndex = findHeaderRowIndex(grid);
-  if (headerRowIndex === -1) {
-    return { uploadType, unitName, rows: [] };
-  }
+  if (headerRowIndex === -1) return null;
 
   const columns = format === '1' ? resolveFormat1Columns(grid[headerRowIndex]) : FORMAT_2_COLUMNS;
-  const dataRows = grid.slice(headerRowIndex + 1);
   const rows = [];
-
-  for (const cells of dataRows) {
+  for (const cells of grid.slice(headerRowIndex + 1)) {
     if (cells.every((cell) => toText(cell) === null)) continue; // fully blank row
 
     const row = {};
@@ -82,15 +50,47 @@ function parseMisWorkbook(buffer, format) {
       row[field] = field === DATE_FIELD ? parseMisDateTime(raw) : AMOUNT_FIELDS.has(field) ? toAmount(raw) : toText(raw);
     });
 
-    // The export's trailing grand-total row carries a few summed amounts but
-    // no patient identity — every real record has one, so this is the
-    // reliable way to drop it rather than the actual record it looks like.
+    // The export's trailing grand-total row carries a few summed amounts but no
+    // patient identity — every real record has one, so this is the reliable way
+    // to drop it rather than the actual record it looks like.
     if (!row.patientName) continue;
-
     rows.push(row);
   }
 
-  return { uploadType, unitName, rows };
+  return { unitName, rows };
 }
 
-module.exports = { parseMisWorkbook };
+/**
+ * Parses an uploaded MIS workbook into canonical rows, keyed by the field names
+ * in mis-column-map.js. The client's export is ONE workbook with a sheet per
+ * unit (HTC / MPT / SBD / SMJ), so every sheet with an MIS header is returned
+ * as its own `{ sheetName, unitName, rows }` — the route makes one batch each,
+ * because division is resolved per batch from its unit name.
+ *
+ * `rows` and `unitName` are kept on the return for the single-sheet case so old
+ * callers that read them still work.
+ *
+ * Reads cells as formatted text (`raw: false`) so large numeric-looking IDs
+ * never round-trip through a JS float.
+ */
+function parseMisWorkbook(buffer, format) {
+  const uploadType = UPLOAD_TYPES[format];
+  if (!uploadType) throw new Error(`Unknown MIS format "${format}" — expected "1" or "2"`);
+
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const sheets = [];
+  const skippedSheets = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+    const parsed = parseMisSheet(grid, format);
+    if (parsed && parsed.rows.length > 0) sheets.push({ sheetName, ...parsed });
+    else skippedSheets.push(sheetName);
+  }
+
+  const firstRows = sheets.length ? sheets[0].rows : [];
+  const firstUnit = sheets.length ? sheets[0].unitName : null;
+  return { uploadType, sheets, skippedSheets, rows: firstRows, unitName: firstUnit };
+}
+
+module.exports = { parseMisWorkbook, parseMisSheet };

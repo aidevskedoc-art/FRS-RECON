@@ -42,21 +42,23 @@
         }
 
         <div class="sidebar__group-items" [class.sidebar__group-items--open]="sidebarStore.collapsed() || isExpanded(group.label)">
-          @for (item of group.items; track item.path) {
-            <a
-              class="sidebar__link"
-              [routerLink]="item.path"
-              routerLinkActive="sidebar__link--active"
-              [pTooltip]="sidebarStore.collapsed() ? item.label : ''"
-              tooltipPosition="right"
-              (click)="sidebarStore.closeMobile()"
-            >
-              <span class="sidebar__icon" appMagnetic [magneticStrength]="0.22">
-                <i [class]="item.icon"></i>
-              </span>
-              <span class="side-label">{{ item.label }}</span>
-            </a>
-          }
+          <div class="sidebar__group-items-inner">
+            @for (item of group.items; track item.path) {
+              <a
+                class="sidebar__link"
+                [routerLink]="item.path"
+                routerLinkActive="sidebar__link--active"
+                [pTooltip]="sidebarStore.collapsed() ? item.label : ''"
+                tooltipPosition="right"
+                (click)="sidebarStore.closeMobile()"
+              >
+                <span class="sidebar__icon" appMagnetic [magneticStrength]="0.22">
+                  <i [class]="item.icon"></i>
+                </span>
+                <span class="side-label">{{ item.label }}</span>
+              </a>
+            }
+          </div>
         </div>
       </div>
     }

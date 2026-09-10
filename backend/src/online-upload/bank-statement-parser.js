@@ -71,37 +71,26 @@ function extractMetadata(preambleRows) {
 }
 
 /**
- * Parses an HDFC-style bank statement export. The transaction table is
- * bracketed by two identical "all-asterisk" marker rows (one right after the
- * header, one right after the last transaction) — that structural pattern,
- * not row counting, is what determines where the data starts and ends.
+ * One HDFC-style statement sheet. The transaction table is bracketed by two
+ * identical "all-asterisk" marker rows (one right after the header, one right
+ * after the last transaction) — that structural pattern, not row counting, is
+ * what determines where the data starts and ends. Returns null when the sheet
+ * has no such table (e.g. an EaseBuzz sheet in the same combined workbook).
  */
-function parseBankStatementWorkbook(buffer) {
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
-
+function parseBankStatementSheet(grid) {
   const headerIndex = grid.findIndex(isHeaderRow);
-  if (headerIndex === -1) {
-    throw new Error('Could not find the transaction table header (Date / Narration / ...) in this file');
-  }
+  if (headerIndex === -1) return null;
 
   const startMarkerIndex = grid.findIndex((row, i) => i > headerIndex && isMarkerRow(row));
-  if (startMarkerIndex === -1) {
-    throw new Error('Could not find the start-of-data marker row after the transaction table header');
-  }
-
-  const endMarkerIndex = grid.findIndex((row, i) => i > startMarkerIndex && isMarkerRow(row));
-  if (endMarkerIndex === -1) {
-    throw new Error('Could not find the end-of-data marker row for the transaction table');
-  }
+  const endMarkerIndex =
+    startMarkerIndex === -1 ? -1 : grid.findIndex((row, i) => i > startMarkerIndex && isMarkerRow(row));
+  if (startMarkerIndex === -1 || endMarkerIndex === -1) return null;
 
   const metadata = extractMetadata(grid.slice(0, headerIndex));
 
   const rows = [];
   for (const cells of grid.slice(startMarkerIndex + 1, endMarkerIndex)) {
     if (cells.every((cell) => toText(cell) === null)) continue; // blank row before the closing marker
-
     rows.push({
       txnDate: parseBankDate(cells[0]),
       narration: toText(cells[1]),
@@ -116,4 +105,33 @@ function parseBankStatementWorkbook(buffer) {
   return { ...metadata, rows };
 }
 
-module.exports = { parseBankStatementWorkbook };
+/**
+ * Parses a bank-statement workbook. A single statement is one sheet; a combined
+ * export (as the client sends — one workbook per account, plus EaseBuzz sheets)
+ * is several. Returns one entry per sheet that contains a transaction table;
+ * sheets without one are listed in `skippedSheets`.
+ *
+ * @returns {{ statements: Array<{sheetName, bankName, accountNo, accountBranch,
+ *             statementFrom, statementTo, rows}>, skippedSheets: string[] }}
+ */
+function parseBankStatementWorkbook(buffer) {
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const statements = [];
+  const skippedSheets = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+    const parsed = parseBankStatementSheet(grid);
+    if (parsed && parsed.rows.length > 0) statements.push({ sheetName, ...parsed });
+    else skippedSheets.push(sheetName);
+  }
+
+  if (statements.length === 0) {
+    throw new Error(
+      'No bank statement transaction table found — expected a sheet with a "Date / Narration / …" header bracketed by asterisk rows.',
+    );
+  }
+  return { statements, skippedSheets };
+}
+
+module.exports = { parseBankStatementWorkbook, parseBankStatementSheet };

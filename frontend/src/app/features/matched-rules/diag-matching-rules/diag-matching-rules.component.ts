@@ -48,7 +48,7 @@ function emptyLeaf(): RuleLeaf {
 }
 
 function emptyDraft(): MatchingRuleDraft {
-  return { name: '', action: null, active: true, kind: 'CNF', conditionGroups: [[emptyLeaf()]], unitConfig: null };
+  return { name: '', action: null, active: true, kind: 'CNF', conditionGroups: [[emptyLeaf()]], unitConfig: null, contraConfig: null };
 }
 
 @Component({
@@ -66,7 +66,9 @@ export class DiagMatchingRulesComponent {
   protected readonly operatorOptions = RULE_OPERATORS;
   protected readonly actionOptions = RULE_ACTIONS;
   protected readonly leafKindOptions = LEAF_KIND_OPTIONS;
-  protected readonly ruleKindOptions = RULE_KIND_OPTIONS;
+  // Contra rules belong to cheque collection alone — the backend rejects one
+  // written to this rule table — so this screen does not offer the kind.
+  protected readonly ruleKindOptions = RULE_KIND_OPTIONS.filter((o) => o.value !== 'CONTRA_ENTRY');
   protected readonly unitDirectionOptions = UNIT_DIRECTION_OPTIONS;
   protected readonly unitKeyModeOptions = UNIT_KEY_MODE_OPTIONS;
   protected readonly unitScopeOptions = UNIT_SCOPE_OPTIONS;
@@ -284,6 +286,9 @@ export class DiagMatchingRulesComponent {
       active: rule.active,
       kind: rule.kind ?? 'CNF',
       unitConfig: rule.unitConfig ? { ...DEFAULT_UNIT_CONFIG, ...rule.unitConfig } : null,
+      // Never set on this rule table (contra rules belong to cheque
+      // collection), but carried through so an edit cannot blank it.
+      contraConfig: rule.contraConfig ?? null,
       conditionGroups: (rule.conditionGroups ?? [[emptyLeaf()]]).map((g) =>
         (g.length ? g : [emptyLeaf()]).map((l) => ({ ...emptyLeaf(), ...l, negate: l.negate === true })),
       ),
@@ -314,7 +319,7 @@ export class DiagMatchingRulesComponent {
       const cfg = d.unitConfig;
       if (!cfg) return this.formError.set('Unit settings are required');
       if (!(Number(cfg.tolerance) >= 0)) return this.formError.set('Tolerance must be zero or more');
-      this.submit({ name: d.name.trim(), action: null, active: d.active, kind: d.kind, conditionGroups: [], unitConfig: cfg });
+      this.submit({ name: d.name.trim(), action: null, active: d.active, kind: d.kind, conditionGroups: [], unitConfig: cfg, contraConfig: null });
       return;
     }
 
@@ -376,7 +381,7 @@ export class DiagMatchingRulesComponent {
       ),
     );
 
-    this.submit({ name: d.name.trim(), action: d.action, active: d.active, kind: 'CNF', conditionGroups, unitConfig: null });
+    this.submit({ name: d.name.trim(), action: d.action, active: d.active, kind: 'CNF', conditionGroups, unitConfig: null, contraConfig: null });
   }
 
   /** Shared tail of save() — both rule kinds post the same way. */

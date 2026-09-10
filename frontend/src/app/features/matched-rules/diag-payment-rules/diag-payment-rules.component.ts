@@ -16,6 +16,9 @@ type StatusFilter = 'ALL' | MatchStatus;
  */
 const STATUS_LABELS: Record<MatchStatus, string> = {
   MATCHED: 'Matched',
+  EASEBUZZ_MATCHED: 'Easebuzz Matched',
+  CONTRA_ENTRY: 'Contra Entry',
+  PARTIAL_MATCH: 'Partially Matched',
   AMOUNT_MISMATCH: 'Amount Mismatch',
   UNMATCHED: 'Unmatched',
   AMBIGUOUS_MATCH: 'Ambiguous Match',

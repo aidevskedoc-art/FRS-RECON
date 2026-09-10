@@ -1,0 +1,86 @@
+<div class="upload-mis">
+  <div class="page-header">
+    <h2>Upload PayU MPR</h2>
+    <p>Import the PayU Merchant Payment Report. Columns are matched by name — Merchant Txn ID, PayU ID, Bank Reference No, amount and date.</p>
+  </div>
+
+  <div
+    class="dropzone"
+    [class.dropzone--active]="isDragging()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <div class="dropzone__icon">
+      <i class="pi pi-wallet"></i>
+    </div>
+    <h3>Drop the PayU MPR Excel file here</h3>
+    <p>The header row is found automatically and its columns mapped by name.</p>
+
+    <div class="dropzone__actions">
+      <input #fileInput type="file" accept=".xlsx,.xls" multiple hidden (change)="onFileInput($event)" />
+      <p-button label="Browse Files" icon="pi pi-folder-open" [outlined]="true" (onClick)="fileInput.click()" />
+    </div>
+
+    <p class="dropzone__hint">Supported formats: .xlsx, .xls — max 70MB</p>
+  </div>
+
+  @if (rejected()) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      That file was skipped — only .xlsx / .xls files are supported.
+    </div>
+  }
+
+  @if (uploadError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (pendingFiles().length) {
+    <div class="pending">
+      @for (file of pendingFiles(); track file.name + $index) {
+        <div class="pending__row">
+          <i class="pi pi-file-excel"></i>
+          <span class="pending__name">{{ file.name }}</span>
+          <span class="pending__size">{{ fileSizeLabel(file.size) }}</span>
+          <button type="button" class="pending__remove" [disabled]="uploading()" (click)="removeFile($index)">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+      }
+      <p-button
+        [label]="progress() ? 'Uploading ' + progress()!.done + ' / ' + progress()!.total : 'Save ' + pendingFiles().length + ' file' + (pendingFiles().length === 1 ? '' : 's') + ' to Database'"
+        icon="pi pi-upload"
+        [loading]="uploading()"
+        (onClick)="upload()"
+      />
+    </div>
+  }
+
+  @if (uploadedBatches().length) {
+    <div class="success">
+      <i class="pi pi-check-circle"></i>
+      <div class="success__text">
+        <strong>{{ uploadedBatches().length }} file{{ uploadedBatches().length === 1 ? '' : 's' }} saved</strong>
+        @for (batch of uploadedBatches(); track batch.id) {
+          <span>
+            {{ batch.fileName }} · {{ batch.rowCount }} rows
+            @if (batch.statementFrom && batch.statementTo) { · {{ batch.statementFrom }} to {{ batch.statementTo }} }
+          </span>
+        }
+      </div>
+      <p-button label="View MPR Batches" icon="pi pi-eye" size="small" [outlined]="true" (onClick)="viewBatches()" />
+    </div>
+  }
+
+  @if (uploadErrors().length) {
+    <div class="notice notice--danger">
+      @for (e of uploadErrors(); track e.fileName) {
+        <div><strong>{{ e.fileName }}:</strong> {{ e.message }}</div>
+      }
+    </div>
+  }
+</div>

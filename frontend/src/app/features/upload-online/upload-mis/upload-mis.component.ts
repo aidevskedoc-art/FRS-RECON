@@ -29,7 +29,7 @@ export class UploadMisComponent {
   protected readonly rejected = signal(false);
   protected readonly uploading = signal(false);
   protected readonly uploadError = signal<string | null>(null);
-  protected readonly uploadedBatch = signal<OnlineUploadBatch | null>(null);
+  protected readonly uploadedBatches = signal<OnlineUploadBatch[]>([]);
 
   protected selectFormat(value: MisFormatChoice): void {
     this.format.set(value);
@@ -65,7 +65,7 @@ export class UploadMisComponent {
     if (isSpreadsheet) {
       this.pendingFile.set(file);
       this.uploadError.set(null);
-      this.uploadedBatch.set(null);
+      this.uploadedBatches.set([]);
     }
   }
 
@@ -86,8 +86,8 @@ export class UploadMisComponent {
         : this.diagOpPayments.upload(file, this.auth.userId());
 
     upload$.subscribe({
-      next: (batch) => {
-        this.uploadedBatch.set(batch);
+      next: (batches) => {
+        this.uploadedBatches.set(batches);
         this.pendingFile.set(null);
         this.uploading.set(false);
       },
@@ -98,9 +98,7 @@ export class UploadMisComponent {
     });
   }
 
-  protected viewBatch(): void {
-    const batch = this.uploadedBatch();
-    if (!batch) return;
+  protected viewBatch(batch: OnlineUploadBatch): void {
     const base = batch.uploadType === 'IP_PAYMENT' ? '/upload-online/ip-payments' : '/upload-online/diag-op-payments';
     this.router.navigate([base, batch.id]);
   }

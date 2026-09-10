@@ -28,7 +28,10 @@
  */
 
 const { tokenize } = require('./matcher');
-const { reconcileByUnit, MATCH, AMOUNT_MISMATCH, AMBIGUOUS_MATCH } = require('./unit-groups');
+const { reconcileByUnit, MATCH, AMOUNT_MISMATCH, PARTIAL_MATCH, AMBIGUOUS_MATCH } = require('./unit-groups');
+
+/** Verdicts the unit pass must leave alone — a settled answer, whatever it was settled against. */
+const CLOSED = new Set([MATCH, 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY']);
 
 const DIRECTIONS = ['MIS_TO_BANK', 'BANK_TO_MIS'];
 const SCOPES = ['DIVISION', 'BATCH', 'NONE'];
@@ -92,7 +95,7 @@ function runUnitPass({ groupResults, records, bankRecords, rule }) {
 
   const direction = DIRECTIONS.includes(rule.direction) ? rule.direction : 'MIS_TO_BANK';
   const scope = SCOPES.includes(rule.scope) ? rule.scope : 'DIVISION';
-  const mode = rule.unitKeyMode === 'BASE' ? 'BASE' : 'EXACT';
+  const mode = ['BASE', 'AFFIX'].includes(rule.unitKeyMode) ? rule.unitKeyMode : 'EXACT';
   const tolerancePaise = Math.round(Number(rule.tolerance || 0) * 100);
   const useNarration = rule.useNarration !== false;
   const paymentField = PAYMENT_REF_FIELDS.includes(rule.paymentRefField) ? rule.paymentRefField : 'AUTO';
@@ -106,7 +109,7 @@ function runUnitPass({ groupResults, records, bankRecords, rule }) {
 
   const isOpen = (record) => {
     const verdict = verdictByRecordId.get(String(record.id));
-    return !!verdict && !verdict.excluded && verdict.status !== MATCH;
+    return !!verdict && !verdict.excluded && !CLOSED.has(verdict.status);
   };
   const openRecords = records.filter(isOpen);
   if (openRecords.length === 0) return empty;
@@ -160,7 +163,11 @@ function runUnitPass({ groupResults, records, bankRecords, rule }) {
     // bury the real aggregations, so single-member groups are dropped.
     if (group.count < 2) continue;
 
-    const isVerdict = group.status === MATCH || group.status === AMOUNT_MISMATCH || group.status === AMBIGUOUS_MATCH;
+    const isVerdict =
+      group.status === MATCH ||
+      group.status === PARTIAL_MATCH ||
+      group.status === AMOUNT_MISMATCH ||
+      group.status === AMBIGUOUS_MATCH;
     unitResults.push({
       ruleName: rule.name,
       direction,
@@ -170,6 +177,7 @@ function runUnitPass({ groupResults, records, bankRecords, rule }) {
       total: group.total,
       count: group.count,
       difference: group.difference,
+      unmatchedBalance: group.unmatchedBalance ?? null,
       memberIds: group.members.map((m) => String(m.id)),
       duplicateIds: group.duplicates.map((m) => String(m.id)),
       counterpartyId: group.counterparty ? String(group.counterparty.id) : null,
@@ -178,10 +186,23 @@ function runUnitPass({ groupResults, records, bankRecords, rule }) {
     });
     if (!isVerdict) continue;
 
-    const reason =
-      group.status === AMBIGUOUS_MATCH
-        ? `Ambiguous: unit "${group.unitKey}" totals ${group.total} across ${group.count} transactions and ${group.ambiguousCandidates.length} candidates match — none selected automatically`
-        : `Matched by rule "${rule.name}": unit "${group.unitKey}" totals ${group.total} across ${group.count} transactions`;
+    // The reason spells out every figure the client's spec lists — grouped
+    // total, expected amount, and the exact balance still unaccounted for —
+    // so a "Partially Matched" row explains itself without a drill-down.
+    const memberRefs = group.members
+      .map((m) => m.transactionRef1 || m.transactionRef2 || m.transactionRef3 || m.chqRefNo)
+      .filter(Boolean);
+    const accountsIncluded = memberRefs.length ? ` [${[...new Set(memberRefs)].join(', ')}]` : '';
+    let reason;
+    if (group.status === AMBIGUOUS_MATCH) {
+      reason = `Ambiguous: unit "${group.unitKey}" totals ${group.total} across ${group.count} transactions and ${group.ambiguousCandidates.length} candidates match — none selected automatically`;
+    } else if (group.status === PARTIAL_MATCH) {
+      reason = `Partially matched by rule "${rule.name}": base "${group.unitKey}"${accountsIncluded} totals ${group.total} across ${group.count} transactions; expected ${group.counterpartyAmount}; unmatched balance ${group.unmatchedBalance}`;
+    } else if (group.status === AMOUNT_MISMATCH) {
+      reason = `Amount excess on rule "${rule.name}": base "${group.unitKey}"${accountsIncluded} totals ${group.total} across ${group.count} transactions — ${group.difference} more than the expected ${group.counterpartyAmount} (over-matched)`;
+    } else {
+      reason = `Matched by rule "${rule.name}": base "${group.unitKey}"${accountsIncluded} totals ${group.total} across ${group.count} transactions`;
+    }
 
     // In MIS_TO_BANK every summed payment row carries the verdict. In
     // BANK_TO_MIS the summed rows are bank rows, so the verdict lands on the

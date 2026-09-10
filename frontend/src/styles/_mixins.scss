@@ -71,6 +71,36 @@
   white-space: nowrap;
 }
 
+/**
+ * An opaque, edge-to-edge page ground.
+ *
+ * The shell mounts a fixed ambient aurora behind every route and leaves the
+ * content area transparent so it shows through. A page that applies this
+ * paints its own solid ground over it instead, bleeding out through the
+ * shell's content padding so the colour reaches the edges rather than floating
+ * as a card in the middle of the aurora.
+ *
+ * The offsets come from the custom properties .shell__content publishes, so
+ * the page and the shell cannot drift apart when that padding changes at a
+ * breakpoint. The fallbacks match the shell's desktop values and only apply if
+ * this is ever used outside the shell.
+ *
+ * Takes a token rather than a literal colour so the page still follows the
+ * theme: var(--bg) is #ffffff in light and the dark ground in dark, which is
+ * what keeps a "white page" from becoming white-on-white text.
+ */
+@mixin opaque-page-surface($color: var(--bg)) {
+  display: block;
+  background: $color;
+  margin: calc(-1 * var(--shell-content-pad-top, 28px)) calc(-1 * var(--shell-content-pad-x, 32px))
+    calc(-1 * var(--shell-content-pad-bottom, 40px));
+  padding: var(--shell-content-pad-top, 28px) var(--shell-content-pad-x, 32px)
+    var(--shell-content-pad-bottom, 40px);
+  // The negative margins pull the box out over the shell's padding, so filling
+  // the visible area needs that padding added back on top of the parent height.
+  min-height: calc(100% + var(--shell-content-pad-top, 28px) + var(--shell-content-pad-bottom, 40px));
+}
+
 @mixin scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;

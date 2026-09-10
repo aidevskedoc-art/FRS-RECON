@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
-import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { OnlineUploadService } from '../../../core/services/online-upload.service';
@@ -12,7 +11,7 @@ type TypeFilter = 'ALL' | UploadType;
 @Component({
   selector: 'app-view-payments',
   standalone: true,
-  imports: [RouterLink, DatePipe, ButtonModule, TableModule, TooltipModule],
+  imports: [RouterLink, DatePipe, TableModule, TooltipModule],
   templateUrl: './view-payments.component.html',
   styleUrl: './view-payments.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

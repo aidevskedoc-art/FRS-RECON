@@ -2,9 +2,16 @@ const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const { buildReconciliationWorkbook } = require('../excel/reconciliation-export');
+const { exportColumnsFor, resolveColumns } = require('../excel/payment-export-columns');
 const db = require('../db');
 const { parseMisWorkbook } = require('../online-upload/mis-parser');
+const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
 const { diagOpBatchRowToApi, diagOpRecordRowToApi } = require('../mappers');
+
+// Same identity as IP (receipt number + transaction id); Diag also carries a
+// third id column. Verified unique in real data even for split-payment receipts.
+const DIAG_IDENTITY_SQL = `trim(COALESCE(receipt_number,'')) || '§' || trim(COALESCE(NULLIF(transaction_id_1,''), NULLIF(transaction_id_2,''), NULLIF(transaction_id_3,''), ''))`;
+const diagIdentityOf = (r) => `${String(r.receiptNumber ?? '').trim()}§${String(r.transactionRef1 || r.transactionRef2 || r.transactionRef3 || '').trim()}`;
 
 const router = express.Router();
 
@@ -61,23 +68,52 @@ router.post('/', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
 
-    const { rows, unitName } = parseMisWorkbook(req.file.buffer, '2');
-    if (rows.length === 0) return res.status(400).json({ error: 'No data rows found in the uploaded file' });
+    const fileHash = await assertNewFile('diag_op_upload_batches', req.file.buffer);
+    const { sheets } = parseMisWorkbook(req.file.buffer, '2');
+    if (sheets.length === 0) return res.status(400).json({ error: 'No data rows found in the uploaded file' });
+
+    // One batch per unit sheet; dedup over the whole file at once.
+    const tagged = sheets.flatMap((s) => s.rows.map((r) => ({ ...r, __sheet: s.sheetName, __unit: s.unitName })));
+    const { newRows, skipped } = await filterNewRows({
+      table: 'diag_op_payment_records',
+      identitySql: DIAG_IDENTITY_SQL,
+      identityOf: diagIdentityOf,
+      rows: tagged,
+    });
+    if (newRows.length === 0) {
+      const err = new Error(`All ${tagged.length} rows in this file are already present from an earlier upload.`);
+      err.status = 409;
+      throw err;
+    }
+
+    const bySheet = new Map();
+    for (const r of newRows) {
+      if (!bySheet.has(r.__sheet)) bySheet.set(r.__sheet, { unit: r.__unit, rows: [] });
+      bySheet.get(r.__sheet).rows.push(r);
+    }
 
     const uploadedBy = req.body.uploadedBy || null;
+    const multi = bySheet.size > 1;
 
-    const batch = await db.withTransaction(async (client) => {
-      const { rows: batchRows } = await client.query(
-        `INSERT INTO diag_op_upload_batches (file_name, file_size_bytes, row_count, uploaded_by, unit_name)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [req.file.originalname, req.file.size, rows.length, uploadedBy, unitName],
-      );
-      const created = batchRows[0];
-      await insertRecordsChunked(client, rows.map((r) => recordToRow(created.id, r)));
-      return created;
+    const batches = await db.withTransaction(async (client) => {
+      const out = [];
+      for (const [sheetName, g] of bySheet) {
+        const fileName = multi ? `${req.file.originalname} — ${sheetName}` : req.file.originalname;
+        const { rows: batchRows } = await client.query(
+          `INSERT INTO diag_op_upload_batches (file_name, file_size_bytes, row_count, uploaded_by, unit_name, file_hash)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+          [fileName, req.file.size, g.rows.length, uploadedBy, g.unit, fileHash],
+        );
+        const created = batchRows[0];
+        await insertRecordsChunked(client, g.rows.map((r) => recordToRow(created.id, r)));
+        out.push(created);
+      }
+      return out;
     });
 
-    res.status(201).json(diagOpBatchRowToApi(batch));
+    const counts = { rowsInFile: tagged.length, rowsStored: newRows.length, rowsSkipped: skipped };
+    if (batches.length === 1) return res.status(201).json({ ...diagOpBatchRowToApi(batches[0]), ...counts });
+    res.status(201).json({ batches: batches.map(diagOpBatchRowToApi), ...counts });
   } catch (err) {
     next(err);
   }
@@ -144,6 +180,13 @@ function buildRecordsFilter(query) {
     params.push(query.batchId);
     clauses.push(`r.batch_id = $${params.length}`);
   }
+  // The Online module reconciles bank transfers, not UPI — the batch pages
+  // send excludeUpi=true so UPI-mode rows drop out of the list, the counts and
+  // the export unless the user ticks "Include UPI". Checks pay_mode and
+  // pay_type (UPI / ManualUPI / BHIM UPI land in one or the other).
+  if (query.excludeUpi === 'true' || query.excludeUpi === true) {
+    clauses.push(`(COALESCE(r.pay_mode,'') NOT ILIKE '%UPI%' AND COALESCE(r.pay_type,'') NOT ILIKE '%UPI%')`);
+  }
   if (query.paymentMode) {
     params.push(query.paymentMode);
     clauses.push(`r.pay_mode = $${params.length}`);
@@ -174,6 +217,14 @@ function buildRecordsFilter(query) {
   if (query.matchStatus) {
     params.push(query.matchStatus);
     clauses.push(`r.match_status = $${params.length}`);
+  }
+  // '__NONE__' = rows no rule caught; any other value is an exact winning-rule
+  // name from the filter-options list. Mirrors the IP records filter.
+  if (query.matchAppliedRule === '__NONE__') {
+    clauses.push('r.match_applied_rule IS NULL');
+  } else if (query.matchAppliedRule) {
+    params.push(query.matchAppliedRule);
+    clauses.push(`r.match_applied_rule = $${params.length}`);
   }
 
   // The unit a row was aggregated into. Drives the expandable audit view:
@@ -224,6 +275,36 @@ const RECORDS_WITH_MATCH_SQL = `
     ON regexp_replace(mda.account_number, '\\D', '', 'g') = regexp_replace(bu.account_no, '\\D', '', 'g')
 `;
 
+// GET /api/diag-op-payments/records/status-counts?batchId=&paymentMode=&... —
+// record counts per persisted match verdict, honouring every other filter so
+// the number on each status tab agrees with the filtered list. Mirrors the IP
+// endpoint of the same name.
+router.get('/records/status-counts', async (req, res, next) => {
+  try {
+    if (!req.query.batchId) return res.status(400).json({ error: 'batchId is required' });
+    const { matchStatus, ...filterQuery } = req.query;
+    const { where, params } = buildRecordsFilter(filterQuery);
+    const { rows } = await db.query(
+      `SELECT r.match_status, COUNT(*)::int AS n FROM diag_op_payment_records r ${where} GROUP BY r.match_status`,
+      params,
+    );
+    const counts = { total: 0, matched: 0, easebuzzMatched: 0, partialMatch: 0, amountMismatch: 0, unmatched: 0, ambiguous: 0, notGenerated: 0 };
+    for (const row of rows) {
+      counts.total += row.n;
+      if (row.match_status === 'MATCHED') counts.matched += row.n;
+      else if (row.match_status === 'EASEBUZZ_MATCHED') counts.easebuzzMatched += row.n;
+      else if (row.match_status === 'PARTIAL_MATCH') counts.partialMatch += row.n;
+      else if (row.match_status === 'AMOUNT_MISMATCH') counts.amountMismatch += row.n;
+      else if (row.match_status === 'UNMATCHED') counts.unmatched += row.n;
+      else if (row.match_status === 'AMBIGUOUS_MATCH') counts.ambiguous += row.n;
+      else counts.notGenerated += row.n;
+    }
+    res.json(counts);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/diag-op-payments/records/filter-options?batchId= — distinct Pay Mode / Pay Type values present in a batch, for filter dropdowns.
 router.get('/records/filter-options', async (req, res, next) => {
   try {
@@ -231,13 +312,15 @@ router.get('/records/filter-options', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT
          ARRAY_AGG(DISTINCT pay_mode) FILTER (WHERE pay_mode IS NOT NULL AND pay_mode <> '') AS pay_modes,
-         ARRAY_AGG(DISTINCT pay_type) FILTER (WHERE pay_type IS NOT NULL AND pay_type <> '') AS pay_types
+         ARRAY_AGG(DISTINCT pay_type) FILTER (WHERE pay_type IS NOT NULL AND pay_type <> '') AS pay_types,
+         ARRAY_AGG(DISTINCT match_applied_rule) FILTER (WHERE match_applied_rule IS NOT NULL AND match_applied_rule <> '') AS applied_rules
        FROM diag_op_payment_records WHERE batch_id = $1`,
       [req.query.batchId],
     );
     res.json({
       paymentModes: (rows[0].pay_modes || []).sort(),
       payTypes: (rows[0].pay_types || []).sort(),
+      appliedRules: (rows[0].applied_rules || []).sort(),
     });
   } catch (err) {
     next(err);
@@ -277,7 +360,10 @@ router.delete('/records', async (req, res, next) => {
   }
 });
 
-// GET /api/diag-op-payments/records/export.xlsx?batchId=&...
+// GET /api/diag-op-payments/records/export-columns — the pickable column list for the UI.
+router.get('/records/export-columns', (req, res) => res.json(exportColumnsFor('diag')));
+
+// GET /api/diag-op-payments/records/export.xlsx?batchId=&columns=key1,key2&...
 router.get('/records/export.xlsx', async (req, res, next) => {
   try {
     const { where, params } = buildRecordsFilter(req.query);
@@ -285,10 +371,18 @@ router.get('/records/export.xlsx', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'No records match this filter' });
 
     const records = rows.map(diagOpRecordRowToApi);
-    // buildReconciliationWorkbook flattens the nested matchedBank (json_to_sheet
-    // writes a nested object as a BLANK cell, so every bank detail used to be
-    // silently dropped) and appends the aggregated "Unit Matches" sheet.
-    const { workbook } = buildReconciliationWorkbook(records, 'Diag OP Payments');
+    let workbook;
+    if (req.query.columns) {
+      const cols = resolveColumns('diag', req.query.columns);
+      const sheet = XLSX.utils.json_to_sheet(
+        records.map((r) => Object.fromEntries(cols.map((c) => [c.label, c.get(r)]))),
+        { header: cols.map((c) => c.label) },
+      );
+      workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Diag OP Payments');
+    } else {
+      ({ workbook } = buildReconciliationWorkbook(records, 'Diag OP Payments'));
+    }
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

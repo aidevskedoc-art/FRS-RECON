@@ -40,7 +40,8 @@
     <div class="unit-matches__tally">
       <span>{{ total() }} units</span>
       <span class="tally--matched">{{ matchedCount() }} matched</span>
-      <span class="tally--mismatch">{{ mismatchCount() }} amount mismatch</span>
+      <span class="tally--partial">{{ partialCount() }} partially matched</span>
+      <span class="tally--mismatch">{{ mismatchCount() }} amount excess</span>
       <span class="tally--ambiguous">{{ ambiguousCount() }} ambiguous</span>
     </div>
   }
@@ -61,8 +62,9 @@
           <th class="num">Transactions</th>
           <th class="num">Unit Total</th>
           <th>Bank Reference</th>
-          <th class="num">Bank Amount</th>
+          <th class="num">Expected</th>
           <th class="num">Difference</th>
+          <th class="num">Balance Owed</th>
           <th>Unit / Division</th>
           <th>Match Rule</th>
         </tr>
@@ -81,6 +83,8 @@
             <span
               class="status-pill"
               [class.status-pill--matched]="unit.status === 'MATCHED'"
+              [class.status-pill--contra]="unit.status === 'CONTRA_ENTRY'"
+              [class.status-pill--partial]="unit.status === 'PARTIAL_MATCH'"
               [class.status-pill--mismatch]="unit.status === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="unit.status === 'UNMATCHED'"
               [class.status-pill--ambiguous]="unit.status === 'AMBIGUOUS_MATCH'"
@@ -99,6 +103,7 @@
           <td class="mono">{{ unit.bank?.chqRefNo || '—' }}</td>
           <td class="num">{{ amount(unit.bank?.amount) }}</td>
           <td class="num" [class.diff]="unit.difference">{{ amount(unit.difference) }}</td>
+          <td class="num" [class.diff]="unmatchedBalance(unit)">{{ unmatchedBalance(unit) ? amount(unmatchedBalance(unit)) : '—' }}</td>
           <td>{{ unit.divisionName || '—' }}</td>
           <td class="wrap">{{ unit.appliedRule || '—' }}</td>
         </tr>
@@ -106,7 +111,7 @@
 
       <ng-template #expandedrow let-unit>
         <tr class="member-row">
-          <td colspan="10">
+          <td colspan="11">
             <div class="members">
               @if (isMembersLoading(unit)) {
                 <p class="members__empty">Loading the transactions in this unit…</p>
@@ -160,9 +165,14 @@
 
       <ng-template #emptymessage>
         <tr>
-          <td colspan="10" class="empty">
-            No unit matches found. Units appear here once a batch has been generated and the
-            rule has grouped two or more transactions.
+          <td colspan="11" class="empty">
+            No unit matches for
+            {{ paymentType() === 'DIAG_PAYMENT' ? 'Diagnostics OP Payments' : 'IP Payments' }}.
+            This screen reads saved verdicts — open each
+            {{ paymentType() === 'DIAG_PAYMENT' ? 'Diag OP Payments' : 'IP Payments' }}
+            batch and click <strong>Generate</strong> first. A unit then appears here whenever the
+            "Transaction Amount Match on Same Unit" rule groups two or more receipts onto one bank
+            credit.
           </td>
         </tr>
       </ng-template>

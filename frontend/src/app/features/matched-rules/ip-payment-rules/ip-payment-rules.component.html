@@ -69,6 +69,7 @@
             <span
               class="status-pill"
               [class.status-pill--matched]="row.status === 'MATCHED'"
+              [class.status-pill--contra]="row.status === 'CONTRA_ENTRY'"
               [class.status-pill--mismatch]="row.status === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="row.status === 'UNMATCHED'"
               [class.status-pill--ambiguous]="row.status === 'AMBIGUOUS_MATCH'"

@@ -70,11 +70,18 @@
 .sidebar__nav {
   position: relative;
   flex: 1 1 auto;
+  // Without this the flex item keeps its content's intrinsic height, the
+  // overflow-y never engages, and the rail clips its own footer instead of
+  // scrolling — worst in collapsed mode, where every group is open at once.
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-3);
   overflow-y: auto;
+  // The rail is a detached floating panel; don't chain the scroll to the page
+  // behind it when you hit either end.
+  overscroll-behavior: contain;
   @include mixins.scrollbar-thin;
 }
 
@@ -171,21 +178,29 @@
   }
 }
 
-// Accordion. max-height is the only animatable stand-in for `height: auto`;
-// 360px comfortably clears the tallest group (6 items).
+// Accordion. Animating grid-template-rows 0fr→1fr is a true `height: auto`
+// transition, so a group of any length opens to its full height — there is no
+// max-height cap for a growing group to outgrow and get its last items clipped.
 .sidebar__group-items {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  max-height: 0;
+  display: grid;
+  grid-template-rows: 0fr;
   opacity: 0;
-  overflow: hidden;
-  transition: max-height 240ms var(--ease), opacity 240ms var(--ease);
+  transition: grid-template-rows 240ms var(--ease), opacity 240ms var(--ease);
 }
 
 .sidebar__group-items--open {
-  max-height: 360px;
+  grid-template-rows: 1fr;
   opacity: 1;
+}
+
+// The 0fr row track has zero height; this inner element is what actually holds
+// the links and clips them, so it needs its own min-height:0 to collapse fully.
+.sidebar__group-items-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar__link {

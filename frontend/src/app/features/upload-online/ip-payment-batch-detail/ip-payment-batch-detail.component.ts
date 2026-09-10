@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
+import { MultiSelectModule } from 'primeng/multiselect';
 import { TooltipModule } from 'primeng/tooltip';
 import { Ripple } from 'primeng/ripple';
 import { IpPaymentService } from '../../../core/services/ip-payment.service';
@@ -28,15 +29,20 @@ const COLUMNS: ColumnDef[] = [
   { key: 'ipNo', header: 'IPNO' },
   { key: 'patientName', header: 'Patient Name' },
   { key: 'transId', header: 'Trans Id' },
-  // The reference the unit rule actually keys on, shown with its ending
-  // identifier intact. "Trans Id" above is a display MERGE built at upload
-  // time — "REF-A / REF-B" when a row carries both ids — so it is not the
-  // value anything is grouped by, and reading it as such is misleading.
+  // Every reference the MIS row carries, in full, un-normalised — the leading
+  // zeros / split letters the matcher strips are kept here on purpose so a
+  // reviewer can eyeball the MIS value against the bank value. "Trans Id"
+  // above is a display MERGE built at upload time ("REF-A / REF-B"); these are
+  // the raw ids anything is actually grouped by.
   {
     key: 'unitRefSource',
-    header: 'Transaction Ref',
-    get: (r) => r.transactionRef1 || r.transactionRef2 || r.transactionRef3,
+    header: 'Transaction Ref (MIS)',
+    get: (r) => [r.transactionRef1, r.transactionRef2, r.transactionRef3].filter(Boolean).join('  |  '),
   },
+  // The bank side of the match, in full — Chq/Ref No is zero-padded to 16
+  // chars on the statement ("0000581460072146"); shown verbatim, not shortened.
+  { key: 'bankRefNo', header: 'Bank Ref No', get: (r) => r.matchedBank?.chqRefNo ?? null },
+  { key: 'bankNarration', header: 'Bank Narration', get: (r) => r.matchedBank?.narration ?? null },
   { key: 'paymentMode', header: 'Payment Mode' },
   { key: 'payType', header: 'Pay Type' },
   { key: 'remarks', header: 'Remarks' },
@@ -62,6 +68,9 @@ const COLUMNS: ColumnDef[] = [
  */
 const STATUS_LABELS: Record<MatchStatus, string> = {
   MATCHED: 'Matched',
+  EASEBUZZ_MATCHED: 'Easebuzz Matched',
+  CONTRA_ENTRY: 'Contra Entry',
+  PARTIAL_MATCH: 'Partially Matched',
   AMOUNT_MISMATCH: 'Amount Mismatch',
   UNMATCHED: 'Unmatched',
   AMBIGUOUS_MATCH: 'Ambiguous Match',
@@ -70,7 +79,7 @@ const STATUS_LABELS: Record<MatchStatus, string> = {
 @Component({
   selector: 'app-ip-payment-batch-detail',
   standalone: true,
-  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, InputTextModule, SelectModule, TooltipModule, Ripple],
+  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, InputTextModule, SelectModule, MultiSelectModule, TooltipModule, Ripple],
   templateUrl: './ip-payment-batch-detail.component.html',
   styleUrl: './ip-payment-batch-detail.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -103,6 +112,8 @@ export class IpPaymentBatchDetailComponent {
   protected readonly statusFilter = signal<'ALL' | MatchStatus>('ALL');
   /** Show only rows the unit rule aggregated — otherwise they are a handful of rows among thousands. */
   protected readonly groupedOnly = signal(false);
+  /** The Online module reconciles bank transfers, not UPI. UPI-mode rows are hidden unless this is ticked. */
+  protected readonly includeUpi = signal(false);
 
   /**
    * Expanded-row state for the unit drill-down (§22). Members are fetched on
@@ -121,6 +132,8 @@ export class IpPaymentBatchDetailComponent {
     return [
       { label: withCount('All', c?.total), value: 'ALL' as const },
       { label: withCount('Matched', c?.matched), value: 'MATCHED' as const },
+      { label: withCount('Easebuzz Matched', c?.easebuzzMatched), value: 'EASEBUZZ_MATCHED' as const },
+      { label: withCount('Partially Matched', c?.partialMatch), value: 'PARTIAL_MATCH' as const },
       { label: withCount('Amount Mismatch', c?.amountMismatch), value: 'AMOUNT_MISMATCH' as const },
       { label: withCount('Unmatched', c?.unmatched), value: 'UNMATCHED' as const },
       { label: withCount('Ambiguous Match', c?.ambiguous), value: 'AMBIGUOUS_MATCH' as const },
@@ -152,6 +165,11 @@ export class IpPaymentBatchDetailComponent {
   private page = 1;
   private pageSize = 25;
 
+  /** Column picker for the Excel export. */
+  protected readonly exportColumns = signal<{ key: string; label: string }[]>([]);
+  protected readonly selectedExportColumns = signal<string[]>([]);
+  protected readonly downloading = signal(false);
+
   constructor() {
     this.ipPayments.fetchBatch(this.batchId).subscribe({
       next: (batch) => this.batch.set(batch),
@@ -161,13 +179,36 @@ export class IpPaymentBatchDetailComponent {
       next: (options) => this.filterOptions.set(options),
       error: () => {}, // filter dropdowns just stay empty ("All") if this fails — doesn't block the record view itself
     });
+    this.ipPayments.fetchExportColumns().subscribe({
+      next: (cols) => {
+        this.exportColumns.set(cols);
+        this.selectedExportColumns.set(cols.map((c) => c.key));
+      },
+      error: () => {},
+    });
     this.loadStatusCounts();
     this.loadPage();
   }
 
-  /** Refreshes the per-verdict counts shown against the status filter — called on load and after each Generate run. Silent on failure: the filter still works without counts. */
+  /** The filters shared by the records list and the status counts (no status, no paging). */
+  private filterQuery() {
+    return {
+      batchId: this.batchId,
+      search: this.search() || undefined,
+      paymentMode: this.paymentMode() || undefined,
+      payType: this.payType() || undefined,
+      patType: this.patType() || undefined,
+      matchAppliedRule: this.appliedRule() || undefined,
+      groupedOnly: this.groupedOnly() || undefined,
+      excludeUpi: this.includeUpi() ? undefined : true,
+      dateFrom: this.dateFrom() || undefined,
+      dateTo: this.dateTo() || undefined,
+    };
+  }
+
+  /** Per-verdict counts for the CURRENT filter set — reloaded on every filter change and after Generate, so each status tab's number matches its list. */
   private loadStatusCounts(): void {
-    this.ipPayments.fetchStatusCounts(this.batchId).subscribe({
+    this.ipPayments.fetchStatusCounts(this.filterQuery()).subscribe({
       next: (counts) => this.statusCounts.set(counts),
       error: () => {},
     });
@@ -223,12 +264,14 @@ export class IpPaymentBatchDetailComponent {
 
   protected applyFilters(): void {
     this.page = 1;
+    this.loadStatusCounts();
     this.loadPage();
   }
 
   protected toggleGroupedOnly(): void {
     this.groupedOnly.update((v) => !v);
     this.page = 1;
+    this.loadStatusCounts();
     this.loadPage();
   }
 
@@ -303,15 +346,7 @@ export class IpPaymentBatchDetailComponent {
     const status = this.statusFilter();
     this.ipPayments
       .fetchRecords({
-        batchId: this.batchId,
-        search: this.search() || undefined,
-        paymentMode: this.paymentMode() || undefined,
-        payType: this.payType() || undefined,
-        patType: this.patType() || undefined,
-        matchAppliedRule: this.appliedRule() || undefined,
-        groupedOnly: this.groupedOnly() || undefined,
-        dateFrom: this.dateFrom() || undefined,
-        dateTo: this.dateTo() || undefined,
+        ...this.filterQuery(),
         matchStatus: status === 'ALL' ? undefined : status,
         page: this.page,
         pageSize: this.pageSize,
@@ -341,21 +376,21 @@ export class IpPaymentBatchDetailComponent {
   }
 
   protected download(): void {
+    if (this.downloading()) return;
+    this.downloading.set(true);
     const status = this.statusFilter();
     this.ipPayments
-      .downloadRecords({
-        batchId: this.batchId,
-        search: this.search() || undefined,
-        paymentMode: this.paymentMode() || undefined,
-        payType: this.payType() || undefined,
-        patType: this.patType() || undefined,
-        matchAppliedRule: this.appliedRule() || undefined,
-        groupedOnly: this.groupedOnly() || undefined,
-        dateFrom: this.dateFrom() || undefined,
-        dateTo: this.dateTo() || undefined,
-        matchStatus: status === 'ALL' ? undefined : status,
-      })
-      .subscribe({ error: (err) => this.error.set(errorMessage(err)) });
+      .downloadRecords(
+        { ...this.filterQuery(), matchStatus: status === 'ALL' ? undefined : status },
+        this.selectedExportColumns(),
+      )
+      .subscribe({
+        next: () => this.downloading.set(false),
+        error: (err) => {
+          this.downloading.set(false);
+          this.error.set(errorMessage(err));
+        },
+      });
   }
 
   protected back(): void {
@@ -365,6 +400,11 @@ export class IpPaymentBatchDetailComponent {
   /** Rupee formatting for the expanded unit rows, which are not driven by a ColumnDef. */
   protected amount(value: number | null | undefined): string {
     return value === null || value === undefined ? '—' : Number(value).toLocaleString('en-IN');
+  }
+
+  /** Every non-empty transaction reference the MIS row carries, in full — none dropped. */
+  protected allRefs(record: OnlinePaymentRecord): string {
+    return [record.transactionRef1, record.transactionRef2, record.transactionRef3].filter(Boolean).join('  |  ') || '—';
   }
 
   protected cellValue(record: OnlinePaymentRecord, column: ColumnDef): string {

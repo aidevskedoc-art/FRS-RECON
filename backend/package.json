@@ -15,7 +15,10 @@
     "test-unit-rule": "node scripts/test-unit-rule.js",
     "verify-unit-rule": "node scripts/verify-unit-rule.js",
     "test-unit-pass": "node scripts/test-unit-pass.js",
-    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js"
+    "test-contra-pass": "node scripts/test-contra-pass.js",
+    "test-cheque-parsers": "node scripts/test-cheque-parsers.js",
+    "test-audit-report": "node scripts/test-audit-report.js",
+    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js && node scripts/test-payu-settlement.js && node scripts/test-easebuzz-rule.js && node scripts/test-contra-pass.js && node scripts/test-cheque-parsers.js && node scripts/test-audit-report.js"
   },
   "engines": {
     "node": ">=18"

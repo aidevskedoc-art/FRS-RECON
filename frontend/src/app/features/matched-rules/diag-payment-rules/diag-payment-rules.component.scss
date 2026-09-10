@@ -120,6 +120,13 @@
 .status-pill--matched {
   @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
 }
+// Neutral, deliberately not the success green: a contra entry IS reconciled,
+// but against the refund document rather than the bank. Colouring it like a
+// bank match would overstate what was proven; colouring it red would read as a
+// failure, which it is not.
+.status-pill--contra {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+}
 
 .status-pill--mismatch {
   @include mixins.status-chip(var(--status-warning-fg), var(--status-warning-bg), var(--status-warning-border));

@@ -178,7 +178,10 @@ p-select.filters__field--rule {
 }
 
 .wrap {
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  min-width: 12rem;
+  max-width: 32rem;
 }
 
 .status-pill {
@@ -187,6 +190,26 @@ p-select.filters__field--rule {
 
 .status-pill--matched {
   @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+
+// Indigo, unlike any other verdict colour: an EaseBuzz-gateway match is real
+// money, verified against the gateway report rather than the bank.
+.status-pill--easebuzz {
+  @include mixins.status-chip(#4f46e5, rgba(79, 70, 229, 0.12), rgba(79, 70, 229, 0.35));
+}
+// Neutral, deliberately not the success green: a contra entry IS reconciled,
+// but against the refund document rather than the bank. Colouring it like a
+// bank match would overstate what was proven; colouring it red would read as a
+// failure, which it is not.
+.status-pill--contra {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+}
+
+// Info blue, distinct from matched (green), mismatch (amber) and unmatched
+// (red): the counterpart is all but certain, but the MIS reference still needs
+// a human fix before it counts as reconciled.
+.status-pill--partial {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
 }
 
 .status-pill--mismatch {

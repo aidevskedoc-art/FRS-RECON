@@ -50,7 +50,14 @@
   grid-area: content;
   min-width: 0;
   overflow-y: auto;
-  padding: 28px 32px 40px;
+  // Published as custom properties, not just applied, so a routed page can
+  // bleed an opaque ground out through this padding without restating the
+  // values (see the opaque-page-surface mixin). Custom properties inherit, so
+  // the routed component's own :host can read them and the two cannot drift.
+  --shell-content-pad-x: 32px;
+  --shell-content-pad-top: 28px;
+  --shell-content-pad-bottom: 40px;
+  padding: var(--shell-content-pad-top) var(--shell-content-pad-x) var(--shell-content-pad-bottom);
   @include mixins.scrollbar-thin;
 }
 
@@ -71,7 +78,9 @@
   // whichever stylesheet the bundler happened to emit last would win.
 
   .shell__content {
-    padding: 20px 18px 32px;
+    --shell-content-pad-x: 18px;
+    --shell-content-pad-top: 20px;
+    --shell-content-pad-bottom: 32px;
   }
 }
 

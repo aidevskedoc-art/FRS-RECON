@@ -46,10 +46,22 @@ ok('MATCH', r[0].status === U.MATCH, r[0].status);
 r = run([{ unit: 'SBINR52026072936976501A', amount: 135816 }, { unit: 'SBINR52026072936976501B', amount: 135816 }], [], { mode: 'EXACT' }).results;
 ok('same rows under EXACT stay separate (Section 9)', r.length === 2);
 
-console.log('\n=== AC-03 / Section 17  amount mismatch reports the difference ===');
+console.log('\n=== AC-03 / Section 17  a SHORT group is PARTIAL_MATCH with the balance still owed ===');
 r = run([{ unit: 'U1', amount: 600 }, { unit: 'U1', amount: 300 }], [{ unit: 'U1', amount: 1000 }], {}).results;
-ok('AMOUNT_MISMATCH', r[0].status === U.AMOUNT_MISMATCH, r[0].status);
-ok('difference -100', r[0].difference === -100, r[0].difference);
+ok('PARTIAL_MATCH (900 collected vs 1000 expected)', r[0].status === U.PARTIAL_MATCH, r[0].status);
+ok('difference -100 (grouped − expected)', r[0].difference === -100, r[0].difference);
+ok('unmatched balance 100 (expected − grouped)', r[0].unmatchedBalance === 100, r[0].unmatchedBalance);
+
+console.log('\n=== an EXCESS group is AMOUNT_MISMATCH (over-matched), balance 0 ===');
+r = run([{ unit: 'U1', amount: 600 }, { unit: 'U1', amount: 700 }], [{ unit: 'U1', amount: 1000 }], {}).results;
+ok('AMOUNT_MISMATCH (1300 collected vs 1000 expected)', r[0].status === U.AMOUNT_MISMATCH, r[0].status);
+ok('difference +300', r[0].difference === 300, r[0].difference);
+ok('unmatched balance 0 (nothing still owed)', r[0].unmatchedBalance === 0, r[0].unmatchedBalance);
+
+console.log('\n=== an EXACT tie is still MATCH, balance 0 ===');
+r = run([{ unit: 'U1', amount: 600 }, { unit: 'U1', amount: 400 }], [{ unit: 'U1', amount: 1000 }], {}).results;
+ok('MATCH', r[0].status === U.MATCH, r[0].status);
+ok('unmatched balance 0', r[0].unmatchedBalance === 0, r[0].unmatchedBalance);
 
 console.log('\n=== Section 16  no counterparty is UNMATCHED, not a mismatch ===');
 r = run([{ unit: 'U9', amount: 1000 }], [], {}).results;
@@ -111,7 +123,7 @@ console.log('\n=== Section 14  configured tolerance honoured ===');
 r = run([{ unit: 'U1', amount: 1547961.00 }], [{ unit: 'U1', amount: 1547961.38 }], { tolerancePaise: 100 }).results;
 ok('0.38 within Rs 1 tolerance -> MATCH', r[0].status === U.MATCH, r[0].status);
 r = run([{ unit: 'U1', amount: 1547961.00 }], [{ unit: 'U1', amount: 1547961.38 }], { tolerancePaise: 0 }).results;
-ok('0.38 with zero tolerance -> MISMATCH', r[0].status === U.AMOUNT_MISMATCH, r[0].status);
+ok('0.38 short with zero tolerance -> PARTIAL_MATCH', r[0].status === U.PARTIAL_MATCH, r[0].status);
 
 console.log('\n=== AC-06 / Section 21  audit trail retained ===');
 r = run([{ unit: 'U1', amount: 400, ref: 'REF001' }, { unit: 'U1', amount: 300, ref: 'REF002' }, { unit: 'U1', amount: 300, ref: 'REF003' }],

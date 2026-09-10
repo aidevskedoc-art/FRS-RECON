@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
-import { Observable, tap } from 'rxjs';
+import { Observable, map, tap } from 'rxjs';
 import {
   OnlinePaymentRecordsPage,
   OnlinePaymentRecordsQuery,
@@ -37,15 +37,24 @@ export class IpPaymentService {
     return this.http.get<OnlineUploadBatch>(`${API_BASE_URL}/ip-payments/batches/${id}`);
   }
 
-  /** POST /api/ip-payments (multipart) */
-  upload(file: File, uploadedBy: string | null): Observable<OnlineUploadBatch> {
+  /**
+   * POST /api/ip-payments (multipart). A one-sheet file returns one batch; the
+   * client's per-unit workbook returns one per sheet. Normalised to an array,
+   * each carrying the file-level rowsInFile/Stored/Skipped counts.
+   */
+  upload(file: File, uploadedBy: string | null): Observable<OnlineUploadBatch[]> {
     const form = new FormData();
     form.append('file', file, file.name);
     if (uploadedBy) form.append('uploadedBy', uploadedBy);
 
-    return this.http
-      .post<OnlineUploadBatch>(`${API_BASE_URL}/ip-payments`, form)
-      .pipe(tap((batch) => this._batches.update((batches) => [batch, ...batches])));
+    return this.http.post<OnlineUploadBatch | { batches: OnlineUploadBatch[] }>(`${API_BASE_URL}/ip-payments`, form).pipe(
+      map((res) => {
+        const counts = { rowsInFile: (res as OnlineUploadBatch).rowsInFile, rowsStored: (res as OnlineUploadBatch).rowsStored, rowsSkipped: (res as OnlineUploadBatch).rowsSkipped };
+        const list = 'batches' in res ? res.batches : [res];
+        return list.map((b) => ({ ...b, ...counts }));
+      }),
+      tap((batches) => this._batches.update((existing) => [...batches, ...existing])),
+    );
   }
 
   /** DELETE /api/ip-payments/batches/:id */
@@ -72,18 +81,23 @@ export class IpPaymentService {
     return this.http.get<RecordFilterOptions>(`${API_BASE_URL}/ip-payments/records/filter-options`, { params: { batchId } });
   }
 
-  /** GET /api/ip-payments/records/status-counts?batchId= — record counts per match verdict, for the status filter dropdown. */
-  fetchStatusCounts(batchId: string): Observable<RecordStatusCounts> {
-    return this.http.get<RecordStatusCounts>(`${API_BASE_URL}/ip-payments/records/status-counts`, { params: { batchId } });
+  /** GET /api/ip-payments/records/status-counts — counts per verdict, honouring the same filters as the records list so the number on each status tab matches. */
+  fetchStatusCounts(query: OnlinePaymentRecordsQuery | string): Observable<RecordStatusCounts> {
+    const params = typeof query === 'string' ? new HttpParams().set('batchId', query) : toHttpParams(query);
+    return this.http.get<RecordStatusCounts>(`${API_BASE_URL}/ip-payments/records/status-counts`, { params });
   }
 
-  /** GET /api/ip-payments/records/export.xlsx — streams the filtered set as a workbook. */
-  downloadRecords(query: OnlinePaymentRecordsQuery): Observable<Blob> {
+  /** GET /api/ip-payments/records/export-columns — pickable column list for the export. */
+  fetchExportColumns(): Observable<{ key: string; label: string }[]> {
+    return this.http.get<{ key: string; label: string }[]>(`${API_BASE_URL}/ip-payments/records/export-columns`);
+  }
+
+  /** GET /api/ip-payments/records/export.xlsx — streams the filtered set (chosen columns only) as a workbook. */
+  downloadRecords(query: OnlinePaymentRecordsQuery, columns?: string[]): Observable<Blob> {
+    let params = toHttpParams(query);
+    if (columns && columns.length) params = params.set('columns', columns.join(','));
     return this.http
-      .get(`${API_BASE_URL}/ip-payments/records/export.xlsx`, {
-        params: toHttpParams(query),
-        responseType: 'blob',
-      })
+      .get(`${API_BASE_URL}/ip-payments/records/export.xlsx`, { params, responseType: 'blob' })
       .pipe(tap((blob) => saveBlob(blob, `ip-payments-${today()}.xlsx`)));
   }
 }

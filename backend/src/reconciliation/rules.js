@@ -18,6 +18,8 @@
  * group == one MIS row (see groupRecords in matcher.js).
  */
 
+const { normalizeRef, refMatchKeys, tokenize } = require('./matcher');
+
 const FIELDS = ['patientName', 'receiptNumber', 'payType', 'patType', 'paymentMode', 'userName'];
 const OPERATORS = ['EQUALS', 'CONTAINS'];
 // The FORCE_MATCHED_* variants below all resolve to the same 'MATCHED' status as
@@ -38,6 +40,9 @@ const ACTIONS = [
   'FORCE_MATCHED_OTHER_UNIT',
   'FORCE_MATCHED_TOL_SAME_UNIT',
   'FORCE_MATCHED_TOL_OTHER_UNIT',
+  // Resolves to its own status EASEBUZZ_MATCHED (not MATCHED) so an
+  // EaseBuzz-gateway receipt is visibly distinct from a bank-verified one.
+  'FORCE_EASEBUZZ_MATCHED',
   'EXCLUDE',
 ];
 
@@ -48,9 +53,13 @@ const ACTION_STATUS = {
   FORCE_MATCHED_OTHER_UNIT: 'MATCHED',
   FORCE_MATCHED_TOL_SAME_UNIT: 'MATCHED',
   FORCE_MATCHED_TOL_OTHER_UNIT: 'MATCHED',
+  FORCE_EASEBUZZ_MATCHED: 'EASEBUZZ_MATCHED',
   FORCE_UNMATCHED: 'UNMATCHED',
   FORCE_MISMATCH: 'AMOUNT_MISMATCH',
 };
+
+/** Verdicts that are terminal — a later rule / the unit pass must not overwrite them. */
+const TERMINAL_STATUSES = new Set(['MATCHED', 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY']);
 
 /**
  * Payment-side fields a leaf may reference, tagged with a comparable data
@@ -63,6 +72,10 @@ const PAYMENT_FIELD_CATALOG = {
   receiptNumber: 'text',
   yhno: 'text',
   ipNo: 'text',
+  // A cheque collection's own reference. Without an entry here joinLeaves
+  // rejects a cheque-number field pair as untyped, isIndexable then returns
+  // false, and validateRuleBody refuses to SAVE the Stage-1 rule at all.
+  chequeNo: 'text',
   transId: 'text',
   transactionRef1: 'text',
   transactionRef2: 'text',
@@ -74,6 +87,7 @@ const PAYMENT_FIELD_CATALOG = {
   remarks: 'text',
   division: 'text',
   receiptDate: 'date',
+  chequeDate: 'date',
   billAmount: 'number',
   cashAmount: 'number',
   cardAmount: 'number',
@@ -138,10 +152,28 @@ function pairConditionMatches(leaf, group, bankRecord) {
   if (sourceValue === undefined || sourceValue === null || destValue === undefined || destValue === null) return false;
 
   switch (leaf.pairOperator) {
-    case 'EQUALS':
-      return String(sourceValue).trim().toUpperCase() === String(destValue).trim().toUpperCase();
-    case 'CONTAINS':
-      return String(destValue).toUpperCase().includes(String(sourceValue).trim().toUpperCase());
+    case 'EQUALS': {
+      // Compare on the SAME canonical keys the bank index uses (matcher.js):
+      // trim, uppercase, drop the bank's leading zeros, and — when a single
+      // letter is a split marker rather than part of the reference — try the
+      // affix-stripped form too. The bank zero-pads chq/ref no to 16 chars
+      // ("0000617416617135" for "617416617135") and never carries the MIS's
+      // "A"/"B" split letters. Genuine alphanumeric UTRs are unaffected.
+      const dest = normalizeRef(destValue);
+      if (dest === null) return false;
+      return refMatchKeys(sourceValue).includes(dest);
+    }
+    case 'CONTAINS': {
+      // Raw substring first (narration carries the ref verbatim), then an
+      // exact token match so a zero-padded / split-marked ref embedded in the
+      // narration ("...-0000617416617135-...", "...-620101724864-...") still
+      // hits. Only whole tokens — a bare substring of a short stripped ref
+      // ("952497") would collide with amounts / other refs.
+      const needle = String(sourceValue).trim().toUpperCase();
+      if (needle && String(destValue).toUpperCase().includes(needle)) return true;
+      const toks = tokenize(destValue);
+      return refMatchKeys(sourceValue).some((k) => toks.includes(k));
+    }
     case 'DATE_WITHIN_DAYS': {
       const days = Number(leaf.pairTolerance);
       const diffMs = Math.abs(new Date(sourceValue).getTime() - new Date(destValue).getTime());
@@ -214,6 +246,7 @@ module.exports = {
   OPERATORS,
   ACTIONS,
   ACTION_STATUS,
+  TERMINAL_STATUSES,
   PAYMENT_FIELD_CATALOG,
   BANK_FIELD_CATALOG,
   PAIR_OPERATORS_BY_TYPE,

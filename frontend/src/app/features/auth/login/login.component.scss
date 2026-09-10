@@ -99,6 +99,54 @@
 }
 
 // ---------------------------------------------------------------------
+// Module strip — reads as tabs, but static. States the platform framing:
+// FRS is the reconciliation system; Insurance is one module of several.
+// ---------------------------------------------------------------------
+.login__modules {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--ai-divider);
+}
+
+.login__modules-label {
+  display: block;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.login__modules-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.login__module {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--ai-glass-border);
+  background: var(--ai-glass-tint);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.login__module--active {
+  border-color: var(--brand);
+  background: var(--brand-ring);
+  color: var(--text);
+  font-weight: 600;
+}
+
+// ---------------------------------------------------------------------
 // Form panel
 // ---------------------------------------------------------------------
 .login__panel {

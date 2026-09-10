@@ -1,0 +1,109 @@
+<div class="view-payments">
+  <div class="view-payments__header">
+    <div>
+      <h2>Refund Documents</h2>
+      <p>
+        {{ refunds.batches().length }} upload{{ refunds.batches().length === 1 ? '' : 's' }} · reference data for contra
+        matching
+      </p>
+    </div>
+    <p-button label="Upload Refund Document" icon="pi pi-cloud-upload" routerLink="/upload-online/refund-document" />
+  </div>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="view-payments__table-wrap">
+    <p-table [value]="refunds.batches()" dataKey="id" styleClass="p-datatable-sm payments-table">
+      <ng-template #header>
+        <tr>
+          <th>File Name</th>
+          <th>Refunds</th>
+          <th>Sheets</th>
+          <th>Period</th>
+          <th>Uploaded By</th>
+          <th>Uploaded At</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-batch>
+        <tr>
+          <td class="file-name" [title]="batch.fileName">{{ batch.fileName }}</td>
+          <td>{{ batch.rowCount }}</td>
+          <td>{{ batch.sheetCount }}</td>
+          <td>
+            {{ batch.documentFrom && batch.documentTo ? batch.documentFrom + ' to ' + batch.documentTo : '—' }}
+          </td>
+          <td>{{ batch.uploadedBy || '—' }}</td>
+          <td>{{ batch.uploadedAt | date: 'medium' }}</td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="toggle(batch.id)" pTooltip="Sheet breakdown">
+              <i
+                class="pi"
+                [class.pi-chevron-down]="expandedId() !== batch.id"
+                [class.pi-chevron-up]="expandedId() === batch.id"
+              ></i>
+            </button>
+            <button
+              type="button"
+              class="action-icon action-icon--danger"
+              [disabled]="deletingId() === batch.id"
+              (click)="deleteBatch(batch.id)"
+              pTooltip="Delete"
+            >
+              <i
+                class="pi"
+                [class.pi-trash]="deletingId() !== batch.id"
+                [class.pi-spin]="deletingId() === batch.id"
+                [class.pi-spinner]="deletingId() === batch.id"
+              ></i>
+            </button>
+          </td>
+        </tr>
+        @if (expandedId() === batch.id) {
+          <tr>
+            <td colspan="7">
+              @if (expandedBatch(); as detail) {
+                <table class="unit-detail__table">
+                  <thead>
+                    <tr>
+                      <th>Sheet</th>
+                      <th>Unit</th>
+                      <th>Type</th>
+                      <th>Refunds</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (sheet of detail.sheets ?? []; track sheet.sheetName) {
+                      <tr>
+                        <td>{{ sheet.sheetName }}</td>
+                        <td>{{ sheet.division || '—' }}</td>
+                        <td>{{ sheet.refundKind }}</td>
+                        <td>{{ sheet.rowCount }}</td>
+                        <td>{{ sheet.total | number: '1.2-2' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              } @else {
+                <span class="empty">Loading sheet breakdown…</span>
+              }
+            </td>
+          </tr>
+        }
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="7" class="empty">
+            No refund documents uploaded yet — Stage 2 of cheque reconciliation has nothing to look up until one is.
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

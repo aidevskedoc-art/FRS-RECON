@@ -200,6 +200,7 @@ function onlinePaymentRecordRowToApi(row) {
 function bankStatementUploadRowToApi(row) {
   return {
     id: String(row.id),
+    source: row.source ?? 'BANK',
     bankName: row.bank_name,
     accountNo: row.account_no,
     accountBranch: row.account_branch,
@@ -222,6 +223,7 @@ function bankStatementRecordRowToApi(row) {
   return {
     id: String(row.id),
     batchId: String(row.batch_id),
+    source: row.source ?? 'BANK',
     txnDate: toDateOnly(row.txn_date),
     narration: row.narration,
     chqRefNo: row.chq_ref_no,
@@ -229,6 +231,10 @@ function bankStatementRecordRowToApi(row) {
     withdrawalAmt: toNumber(row.withdrawal_amt),
     depositAmt: toNumber(row.deposit_amt),
     closingBalance: toNumber(row.closing_balance),
+    // PayU MPR rows only (source = 'PAYU_MPR'); null for real bank rows.
+    payuId: row.payu_id ?? null,
+    settlementUtr: row.settlement_utr ?? null,
+    netAmount: toNumber(row.net_amount),
     // Persisted verdict from the bank statement's own Generate run (see
     // matched-rules.routes.js generateForBankBatch) — null until that's been
     // run at least once for this record's batch.
@@ -377,6 +383,132 @@ function matchFieldsToApi(row) {
             divisionName: row.match_bank_division_name ?? null,
           }
         : null,
+    // The contra counterparty, for a cheque collection reconciled against the
+    // refund document. Same sentinel technique as matchedBank above: a query
+    // that did not join refund_records leaves these aliases undefined, which
+    // must read as "not asked for" rather than "no contra".
+    matchedRefund:
+      (row.match_refund_no !== undefined || row.match_refund_cheque_date !== undefined) && row.match_refund_record_id
+        ? {
+            recordId: String(row.match_refund_record_id),
+            refundNo: row.match_refund_no,
+            refundKind: row.match_refund_kind ?? null,
+            chequeDate: toDateOnly(row.match_refund_cheque_date),
+            chequeNo: row.match_refund_cheque_no ?? null,
+            ipNo: row.match_refund_ip_no ?? null,
+            diagNo: row.match_refund_diag_no ?? null,
+            patientName: row.match_refund_patient_name ?? null,
+            draweeName: row.match_refund_drawee_name ?? null,
+            amount: toNumber(row.match_refund_amount),
+            division: row.match_refund_division ?? null,
+            sheetName: row.match_refund_sheet_name ?? null,
+          }
+        : null,
+  };
+}
+
+function chequeCollectionBatchRowToApi(row) {
+  return {
+    id: String(row.id),
+    uploadType: 'CHEQUE_PAYMENT',
+    /** 'IP' or 'OP' — which of the two cheque reports this upload came from. */
+    collectionKind: row.collection_kind ?? 'IP',
+    fileName: row.file_name,
+    fileSizeBytes: row.file_size_bytes,
+    rowCount: row.row_count,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: toIso(row.uploaded_at),
+    unitName: row.unit_name,
+    division: resolveDivision(row.unit_name),
+    matchedAt: toIso(row.matched_at),
+  };
+}
+
+/**
+ * A cheque collection receipt.
+ *
+ * `chequeAmount` and `billAmount` deliberately carry the SAME value. The sheet
+ * has one Amount column, but a rule leaf names a field from the shared
+ * PAYMENT_FIELD_CATALOG, and both names are in it — so exposing the amount
+ * under both means a rule written against either one works, rather than
+ * silently comparing against null.
+ *
+ * `division` comes from the batch's unit name, resolved here rather than
+ * stored, exactly as matchFieldsToApi does it for the other payment types.
+ */
+function chequeCollectionRecordRowToApi(row) {
+  const amount = toNumber(row.cheque_amount);
+  return {
+    id: String(row.id),
+    batchId: String(row.batch_id),
+    uploadType: 'CHEQUE_PAYMENT',
+    /** 'IP' (keyed on IP No) or 'OP' (keyed on Diag No). */
+    collectionKind: row.collection_kind ?? 'IP',
+    receiptNumber: row.receipt_number,
+    receiptDate: toDateOnly(row.receipt_date),
+    /** Null on diagnostics rows — that report has no cheque-date column. */
+    chequeDate: toDateOnly(row.cheque_date),
+    ipNo: row.ip_no,
+    diagNo: row.diag_no,
+    yhno: null,
+    patientName: row.patient_name,
+    chequeNo: row.cheque_no,
+    /** Payer / TPA code on inpatient rows; the diagnostics report has none. */
+    payType: row.pay_type,
+    /** Diagnostics only: the patient category ("Cash"). */
+    patType: row.pat_type,
+    bankName: row.bank_name,
+    branchName: row.branch_name,
+    chequeAmount: amount,
+    billAmount: amount,
+    /**
+     * Diagnostics only: Rcpt.Amt, which is what the patient was billed. It is
+     * NOT what reconciles — the cheque amount is — but the two genuinely
+     * differ on real rows (a 29,260 receipt settled by a 12,500 cheque), so a
+     * reviewer needs both in front of them.
+     */
+    receiptAmount: toNumber(row.receipt_amount),
+    userId: row.user_id,
+    userName: row.user_name,
+    createdAt: toIso(row.created_at),
+    ...matchFieldsToApi(row),
+    // matchFieldsToApi reads the unit off `batch_unit_name`; the cheque
+    // queries alias it the same way, so division follows for free.
+  };
+}
+
+function refundBatchRowToApi(row) {
+  return {
+    id: String(row.id),
+    fileName: row.file_name,
+    fileSizeBytes: row.file_size_bytes,
+    rowCount: row.row_count,
+    sheetCount: row.sheet_count,
+    documentFrom: toDateOnly(row.document_from),
+    documentTo: toDateOnly(row.document_to),
+    uploadedBy: row.uploaded_by,
+    uploadedAt: toIso(row.uploaded_at),
+  };
+}
+
+function refundRecordRowToApi(row) {
+  return {
+    id: String(row.id),
+    batchId: String(row.batch_id),
+    sheetName: row.sheet_name,
+    unitName: row.unit_name,
+    division: row.division,
+    refundKind: row.refund_kind,
+    refundNo: row.refund_no,
+    chequeDate: toDateOnly(row.cheque_date),
+    chequeNo: row.cheque_no,
+    patientName: row.patient_name,
+    draweeName: row.drawee_name,
+    ipNo: row.ip_no,
+    diagNo: row.diag_no,
+    bankName: row.bank_name,
+    amount: toNumber(row.amount),
+    createdAt: toIso(row.created_at),
   };
 }
 
@@ -409,11 +541,12 @@ function parseConditionGroups(raw) {
 }
 
 /**
- * A rule's unit_config. parseConditionGroups cannot be reused: it rejects
- * anything that is not a non-empty ARRAY, so an object-shaped config would
- * silently come back null and the rule would look unconfigured.
+ * A rule's object-shaped payload (unit_config / contra_config).
+ * parseConditionGroups cannot be reused: it rejects anything that is not a
+ * non-empty ARRAY, so an object-shaped config would silently come back null
+ * and the rule would look unconfigured.
  */
-function parseUnitConfig(raw) {
+function parseObjectConfig(raw) {
   if (raw === null || raw === undefined || raw === '') return null;
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -434,7 +567,8 @@ function matchingRuleRowToApi(row) {
     // column existed still reads as the condition rule it has always been.
     kind: row.kind || 'CNF',
     conditionGroups: parseConditionGroups(row.condition_groups),
-    unitConfig: parseUnitConfig(row.unit_config),
+    unitConfig: parseObjectConfig(row.unit_config),
+    contraConfig: parseObjectConfig(row.contra_config),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
@@ -455,5 +589,9 @@ module.exports = {
   diagOpBatchRowToApi,
   diagOpRecordRowToApi,
   divisionBankAccountRowToApi,
+  chequeCollectionBatchRowToApi,
+  chequeCollectionRecordRowToApi,
+  refundBatchRowToApi,
+  refundRecordRowToApi,
   matchingRuleRowToApi,
 };

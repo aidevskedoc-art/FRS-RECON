@@ -359,7 +359,12 @@ ALTER TABLE diag_op_upload_batches ADD COLUMN IF NOT EXISTS unit_name VARCHAR(25
 -- pair when every OR-group has >=1 satisfied leaf; the first active rule (by
 -- sort_order) that matches some bank row wins and its action sets the
 -- verdict. There is no config layer — see reconciliation/rules.js. IP and
--- Diag rules live in separate tables, same convention as their record tables.
+-- Diag rules live in separate tables, one per record table. Each table's rule
+-- set runs over ALL rows of that type; "online" vs "UPI" is decided inside a
+-- rule by a payment-mode condition (a rule keyed on Chq/Ref No handles
+-- NEFT/IMPS/RTGS, one keyed on Narration handles UPI). upi_payment_matching_rules
+-- is retired scaffolding — kept so an old DB does not error, not read by the
+-- engine.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS ip_payment_matching_rules (
@@ -384,6 +389,37 @@ CREATE TABLE IF NOT EXISTS diag_payment_matching_rules (
   updated_at        TIMESTAMP NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS upi_payment_matching_rules (
+  id                SERIAL PRIMARY KEY,
+  name              VARCHAR(255) NOT NULL,
+  action            VARCHAR(64) NOT NULL,
+  active            BOOLEAN NOT NULL DEFAULT true,
+  sort_order        INTEGER,
+  condition_groups  JSONB,
+  created_at        TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Cheque collection reconciles in two stages against two different documents:
+-- CNF rules match a cheque to a BANK STATEMENT line, and a CONTRA_ENTRY rule
+-- then accounts for what is left against the REFUND DOCUMENT. Both live here,
+-- ordered by sort_order like every other rule set.
+--
+-- Declared BEFORE the migration block below, not after: that block ALTERs
+-- every table it is given with no IF EXISTS guard, and this whole file runs as
+-- a single statement, so a table missing at that point takes the server down
+-- with it.
+CREATE TABLE IF NOT EXISTS cheque_matching_rules (
+  id                SERIAL PRIMARY KEY,
+  name              VARCHAR(255) NOT NULL,
+  action            VARCHAR(64) NOT NULL,
+  active            BOOLEAN NOT NULL DEFAULT true,
+  sort_order        INTEGER,
+  condition_groups  JSONB,
+  created_at        TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMP NOT NULL DEFAULT now()
+);
+
 -- Migrate an older rule table (config-layer era) to the shape above: widen
 -- `action`, add the new columns, fold any legacy `conditions` JSON into
 -- `condition_groups` (each old AND entry becomes its own single-leaf
@@ -392,7 +428,7 @@ CREATE TABLE IF NOT EXISTS diag_payment_matching_rules (
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['ip_payment_matching_rules', 'diag_payment_matching_rules'] LOOP
+  FOREACH t IN ARRAY ARRAY['ip_payment_matching_rules', 'diag_payment_matching_rules', 'upi_payment_matching_rules', 'cheque_matching_rules'] LOOP
     EXECUTE format('ALTER TABLE %I ALTER COLUMN action TYPE VARCHAR(64)', t);
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS sort_order INTEGER', t);
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS condition_groups JSONB', t);
@@ -498,13 +534,16 @@ UPDATE diag_op_payment_records
 DO $kind$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['ip_payment_matching_rules', 'diag_payment_matching_rules'] LOOP
+  FOREACH t IN ARRAY ARRAY['ip_payment_matching_rules', 'diag_payment_matching_rules', 'upi_payment_matching_rules', 'cheque_matching_rules'] LOOP
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS kind VARCHAR(32) NOT NULL DEFAULT ''CNF''', t);
     EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS unit_config JSONB', t);
+    -- Must precede the _payload_chk below, which references it in the same
+    -- loop iteration.
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS contra_config JSONB', t);
     EXECUTE format('ALTER TABLE %I ALTER COLUMN condition_groups DROP NOT NULL', t);
 
     EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_kind_chk');
-    EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (kind IN (''CNF'', ''UNIT_AGGREGATION''))', t, t || '_kind_chk');
+    EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (kind IN (''CNF'', ''UNIT_AGGREGATION'', ''CONTRA_ENTRY''))', t, t || '_kind_chk');
 
     -- Deliberately one-sided: it constrains UNIT_AGGREGATION rows only.
     --
@@ -518,7 +557,8 @@ BEGIN
     EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', t, t || '_payload_chk');
     EXECUTE format(
       'ALTER TABLE %I ADD CONSTRAINT %I
-         CHECK (kind <> ''UNIT_AGGREGATION'' OR unit_config IS NOT NULL)',
+         CHECK ((kind <> ''UNIT_AGGREGATION'' OR unit_config   IS NOT NULL)
+            AND (kind <> ''CONTRA_ENTRY''     OR contra_config IS NOT NULL))',
       t, t || '_payload_chk');
   END LOOP;
 END $kind$;
@@ -572,6 +612,12 @@ SELECT 'Transaction Amount Match on Same Unit', 'UNIT_AGGREGATION', true, 'UNIT_
        (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diag_payment_matching_rules)
 WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE kind = 'UNIT_AGGREGATION');
 
+INSERT INTO upi_payment_matching_rules (name, action, active, kind, condition_groups, unit_config, sort_order)
+SELECT 'Transaction Amount Match on Same Unit', 'UNIT_AGGREGATION', true, 'UNIT_AGGREGATION', NULL,
+       '{"direction":"MIS_TO_BANK","unitKeyMode":"EXACT","scope":"DIVISION","tolerance":0,"useNarration":true,"paymentRefField":"AUTO","bankRefField":"chqRefNo"}'::jsonb,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM upi_payment_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM upi_payment_matching_rules WHERE kind = 'UNIT_AGGREGATION');
+
 -- ---------------------------------------------------------------------------
 -- "Transaction Amount Match on Other Units" — the same aggregation with the
 -- unit boundary lifted, so transactions sharing an identifier are summed even
@@ -600,6 +646,12 @@ SELECT 'Transaction Amount Match on Other Units', 'UNIT_AGGREGATION', false, 'UN
        (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diag_payment_matching_rules)
 WHERE NOT EXISTS (SELECT 1 FROM diag_payment_matching_rules WHERE name = 'Transaction Amount Match on Other Units');
 
+INSERT INTO upi_payment_matching_rules (name, action, active, kind, condition_groups, unit_config, sort_order)
+SELECT 'Transaction Amount Match on Other Units', 'UNIT_AGGREGATION', false, 'UNIT_AGGREGATION', NULL,
+       '{"direction":"MIS_TO_BANK","unitKeyMode":"EXACT","scope":"NONE","tolerance":0,"useNarration":true,"paymentRefField":"AUTO","bankRefField":"chqRefNo"}'::jsonb,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM upi_payment_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM upi_payment_matching_rules WHERE name = 'Transaction Amount Match on Other Units');
+
 -- ---------------------------------------------------------------------------
 -- Persisted match results: POST .../generate runs the engine once and writes
 -- the verdict onto every record it covers. NULL match_status = never
@@ -617,6 +669,11 @@ ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_amount_field VARCH
 ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_bank_record_id INTEGER REFERENCES bank_statement_records(id) ON DELETE SET NULL;
 ALTER TABLE ip_payment_records ADD COLUMN IF NOT EXISTS match_reason TEXT;
 CREATE INDEX IF NOT EXISTS ip_payment_records_match_status_idx ON ip_payment_records(match_status);
+-- Without this, deleting a bank statement is O(bank rows x payment rows): the
+-- ON DELETE SET NULL back-reference below forces a full scan of this table for
+-- every one of the ~9k cascade-deleted bank_statement_records rows, so a
+-- delete of a large statement hangs for minutes.
+CREATE INDEX IF NOT EXISTS ip_payment_records_match_bank_record_id_idx ON ip_payment_records(match_bank_record_id);
 
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_status VARCHAR(20);
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_applied_rule VARCHAR(255);
@@ -624,6 +681,7 @@ ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_amount_field 
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_bank_record_id INTEGER REFERENCES bank_statement_records(id) ON DELETE SET NULL;
 ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_reason TEXT;
 CREATE INDEX IF NOT EXISTS diag_op_payment_records_match_status_idx ON diag_op_payment_records(match_status);
+CREATE INDEX IF NOT EXISTS diag_op_payment_records_match_bank_record_id_idx ON diag_op_payment_records(match_bank_record_id);
 
 -- Suffix-family facts behind a verdict, persisted by POST .../generate so the
 -- batch-detail table can show WHY a 50,000 payment matched a 2,81,897 credit
@@ -654,7 +712,7 @@ ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS match_group_differe
 -- bank_statement_records, so "Generate" can run from the Bank Statement
 -- batch-detail page and a bank row nothing claimed shows as UNMATCHED.
 -- match_payment_record_id has no FK (points into ip or diag records per
--- match_payment_type).
+-- match_payment_type: 'IP_PAYMENT' / 'DIAG_PAYMENT').
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS match_status VARCHAR(20);
@@ -663,3 +721,260 @@ ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS match_payment_record
 CREATE INDEX IF NOT EXISTS bank_statement_records_match_status_idx ON bank_statement_records(match_status);
 
 ALTER TABLE bank_statement_uploads ADD COLUMN IF NOT EXISTS matched_at TIMESTAMP;
+
+-- ---------------------------------------------------------------------------
+-- Duplicate-upload guard. Every reconciliation upload endpoint stores the
+-- SHA-256 of the file it ingested; re-uploading identical bytes is rejected
+-- (see online-upload/dedupe.js). A combined bank workbook that becomes several
+-- batches stores the same hash on each, so the whole file is caught as a unit.
+-- ---------------------------------------------------------------------------
+ALTER TABLE ip_payment_upload_batches        ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);
+ALTER TABLE diag_op_upload_batches           ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);
+ALTER TABLE bank_statement_uploads           ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);
+ALTER TABLE online_upload_batches            ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);
+CREATE INDEX IF NOT EXISTS ip_payment_upload_batches_file_hash_idx ON ip_payment_upload_batches(file_hash);
+CREATE INDEX IF NOT EXISTS diag_op_upload_batches_file_hash_idx    ON diag_op_upload_batches(file_hash);
+CREATE INDEX IF NOT EXISTS bank_statement_uploads_file_hash_idx    ON bank_statement_uploads(file_hash);
+
+-- ---------------------------------------------------------------------------
+-- PayU MPR (gateway settlement report) rides on the bank_statement_* tables:
+-- an MPR row is the thing a gateway-UPI receipt reconciles against, exactly
+-- the role a bank row plays for NEFT/IMPS. `source` tells the two apart so the
+-- Bank Statement screens show only 'BANK' and a PayU MPR screen shows only
+-- 'PAYU_MPR'; the matching engine reads both. For an MPR row:
+--   chq_ref_no  = Merchant Txn ID   (the value the hospital MIS also records)
+--   narration   = "MERCHANT <id> | PAYU <payuId> | BANKREF <bankRef> | <status>"
+--   deposit_amt = gross Amount      (so it ties to the MIS receipt amount)
+--   payu_id / settlement_utr        = kept for display and the later MPR<->bank step
+-- ---------------------------------------------------------------------------
+ALTER TABLE bank_statement_uploads ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'BANK';
+ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'BANK';
+ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS payu_id VARCHAR(64);
+ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS settlement_utr VARCHAR(64);
+ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS net_amount NUMERIC(14,2);
+CREATE INDEX IF NOT EXISTS bank_statement_uploads_source_idx ON bank_statement_uploads(source);
+CREATE INDEX IF NOT EXISTS bank_statement_records_settlement_utr_idx ON bank_statement_records(settlement_utr) WHERE source = 'PAYU_MPR';
+
+-- ---------------------------------------------------------------------------
+-- Stage 2 of gateway-UPI reconciliation: MPR <-> Bank.
+--
+-- Stage 1 (elsewhere) matches each UPI receipt to one PayU MPR line. Stage 2
+-- takes those MPR lines, groups them by the settlement UTR PayU quotes, sums
+-- the per-line net amount, and ties that lump to the ONE bank credit that
+-- carries the same UTR ("RTGS CR-...-PAYU PAYMENTS PVT LTD-...-<UTR>"). One
+-- row per settlement batch; recomputed wholesale by POST
+-- /api/matched-rules/payu-settlements/generate.
+--
+-- bank_record_id has no FK on purpose (mirrors match_payment_record_id): the
+-- bank row can be deleted and re-uploaded independently of this rollup.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS payu_settlements (
+  settlement_utr   VARCHAR(64) PRIMARY KEY,
+  line_count       INTEGER NOT NULL,
+  gross_total      NUMERIC(14,2),
+  net_total        NUMERIC(14,2),
+  bank_record_id   INTEGER,
+  bank_amount      NUMERIC(14,2),
+  difference       NUMERIC(14,2),
+  status           VARCHAR(20) NOT NULL,
+  computed_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
+-- CHEQUE COLLECTION + REFUND DOCUMENT
+--
+-- Cheque money reconciles in two sequential stages against two different
+-- documents:
+--
+--   Stage 1  cheque collection -> BANK STATEMENT, by cheque number + amount.
+--   Stage 2  whatever Stage 1 could not match -> REFUND DOCUMENT. A cheque
+--            collected and then refunded for the same patient and amount never
+--            reaches a bank statement at all; it is a CONTRA ENTRY, not an
+--            unreconciled receipt.
+--
+-- On the client's July HITECH CITY export that split is 4 / 195 / 44.
+-- ---------------------------------------------------------------------------
+
+-- Refund rows are REFERENCE DATA for Stage 2 and get standalone tables rather
+-- than riding on bank_statement_records under a new `source`, the way the PayU
+-- MPR does. The MPR earns that seat because an MPR line genuinely plays the
+-- bank row's part: it is the counterparty a UPI receipt reconciles against. A
+-- refund plays the opposite part, being evidence that money never reached the
+-- bank. Concretely: loadBankRecords() has no source filter, so 4,278 refund
+-- rows would join the candidate pool of every existing IP/Diag rule, and a
+-- narration CONTAINS leaf could then return MATCHED against a document that is
+-- not a bank statement -- a false reconciliation, persisted.
+CREATE TABLE IF NOT EXISTS refund_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  sheet_count       INTEGER NOT NULL DEFAULT 0,
+  document_from     DATE,
+  document_to       DATE,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- One workbook carries eight sheets -- four divisions x (IP, OP) -- so the
+-- division is a property of the ROW here, not of the batch.
+CREATE TABLE IF NOT EXISTS refund_records (
+  id                SERIAL PRIMARY KEY,
+  batch_id          INTEGER NOT NULL REFERENCES refund_upload_batches(id) ON DELETE CASCADE,
+  sheet_name        VARCHAR(255),
+  unit_name         VARCHAR(255),
+  division          VARCHAR(64),
+  refund_kind       VARCHAR(8),
+  refund_no         VARCHAR(255),
+  cheque_date       DATE,
+  cheque_no         VARCHAR(255),
+  patient_name      VARCHAR(255),
+  drawee_name       VARCHAR(255),
+  ip_no             VARCHAR(255),
+  diag_no           VARCHAR(255),
+  bank_name         VARCHAR(255),
+  amount            NUMERIC(14,2),
+  created_at        TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS refund_records_batch_id_idx  ON refund_records(batch_id);
+CREATE INDEX IF NOT EXISTS refund_records_cheque_no_idx ON refund_records(cheque_no);
+CREATE INDEX IF NOT EXISTS refund_records_ip_no_idx     ON refund_records(ip_no);
+
+CREATE TABLE IF NOT EXISTS cheque_collection_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  unit_name         VARCHAR(255),
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now(),
+  matched_at        TIMESTAMP
+);
+
+-- `receipt_date` is named to match ip/diag_op_payment_records deliberately:
+-- computeMatchResults hard-codes that column in its date filter, so a cheque
+-- table calling it anything else makes every dated query throw.
+CREATE TABLE IF NOT EXISTS cheque_collection_records (
+  id                     SERIAL PRIMARY KEY,
+  batch_id               INTEGER NOT NULL REFERENCES cheque_collection_upload_batches(id) ON DELETE CASCADE,
+  receipt_number         VARCHAR(255),
+  receipt_date           DATE,
+  cheque_date            DATE,
+  ip_no                  VARCHAR(255),
+  patient_name           VARCHAR(255),
+  cheque_no              VARCHAR(255),
+  pay_type               VARCHAR(255),
+  bank_name              VARCHAR(255),
+  branch_name            VARCHAR(255),
+  cheque_amount          NUMERIC(14,2),
+  user_id                VARCHAR(255),
+  user_name              VARCHAR(255),
+  created_at             TIMESTAMP NOT NULL DEFAULT now(),
+  match_status           VARCHAR(20),
+  match_applied_rule     VARCHAR(255),
+  match_reason           TEXT,
+  match_bank_record_id   INTEGER REFERENCES bank_statement_records(id) ON DELETE SET NULL,
+  match_refund_record_id INTEGER REFERENCES refund_records(id)         ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS cheque_collection_records_batch_id_idx   ON cheque_collection_records(batch_id);
+CREATE INDEX IF NOT EXISTS cheque_collection_records_status_idx     ON cheque_collection_records(match_status);
+-- Both back-references MUST be indexed. Without them the ON DELETE SET NULL
+-- above turns deleting a bank statement (or a refund upload) into a full scan
+-- of this table per deleted row -- the same trap documented for
+-- ip_payment_records above, which hung a delete for minutes.
+CREATE INDEX IF NOT EXISTS cheque_collection_records_bank_ref_idx   ON cheque_collection_records(match_bank_record_id);
+CREATE INDEX IF NOT EXISTS cheque_collection_records_refund_ref_idx ON cheque_collection_records(match_refund_record_id);
+
+-- Duplicate-upload guard (see online-upload/dedupe.js) for the cheque & refund uploads too.
+ALTER TABLE cheque_collection_upload_batches ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);
+ALTER TABLE refund_upload_batches            ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);
+CREATE INDEX IF NOT EXISTS cheque_collection_upload_batches_file_hash_idx ON cheque_collection_upload_batches(file_hash);
+CREATE INDEX IF NOT EXISTS refund_upload_batches_file_hash_idx            ON refund_upload_batches(file_hash);
+
+-- Default rules, one per stage. Guarded on name so a re-run never duplicates
+-- them and never resurrects one the user deliberately deleted.
+--
+-- Stage 1 keys on the cheque number against the bank's Chq/Ref No or embedded
+-- in the narration, and requires the amount to agree within a rupee. The
+-- collection's own "Chq.Rcpt" is the Reference ID and is deliberately NOT a
+-- join key: it is an internal receipt number the bank never sees.
+INSERT INTO cheque_matching_rules (name, action, active, kind, condition_groups, contra_config, sort_order)
+SELECT 'Cheque number matches bank statement', 'FORCE_MATCHED', true, 'CNF',
+       '[[{"kind":"FIELD_PAIR","negate":false,"field":null,"operator":null,"value":null,"sourceField":"chequeNo","destinationField":"chqRefNo","pairOperator":"EQUALS","pairTolerance":null},
+          {"kind":"FIELD_PAIR","negate":false,"field":null,"operator":null,"value":null,"sourceField":"chequeNo","destinationField":"narration","pairOperator":"CONTAINS","pairTolerance":null}],
+         [{"kind":"FIELD_PAIR","negate":false,"field":null,"operator":null,"value":null,"sourceField":"chequeAmount","destinationField":"depositAmt","pairOperator":"AMOUNT_WITHIN_TOLERANCE","pairTolerance":"1"}]]'::jsonb,
+       NULL,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cheque_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM cheque_matching_rules WHERE name = 'Cheque number matches bank statement');
+
+-- Stage 2. scope NONE because the client asked for the refund search to cover
+-- all four divisions; it is a setting rather than an omission, so the boundary
+-- can be reinstated without a code change.
+INSERT INTO cheque_matching_rules (name, action, active, kind, condition_groups, contra_config, sort_order)
+SELECT 'Contra entry against refund document', 'CONTRA_ENTRY', true, 'CONTRA_ENTRY',
+       NULL,
+       '{"keyFields":["chequeNo","ipNo"],"amountField":"chequeAmount","tolerance":0,
+         "dateWindowDays":null,"scope":"NONE","onAmbiguous":"UNMATCHED"}'::jsonb,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cheque_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM cheque_matching_rules WHERE name = 'Contra entry against refund document');
+
+-- Stage 2, second pass: cheque number + amount, with the IP number dropped.
+--
+-- Yashoda's own cheque series (Type "Yash") is issued as a refund and then
+-- collected back against a DIFFERENT admission, so the collection's IP No and
+-- the refund's IP No genuinely disagree -- and for an outpatient refund the
+-- identity column is a Diag No, which an IP No can never equal. The cheque
+-- number and the amount still agree exactly, and a cheque number is unique to
+-- one instrument, so the pair identifies the refund on its own.
+--
+-- Ordered AFTER the strict rule, never instead of it. Measured on the July HTC
+-- export: strict-then-loose accounts for 231 of 243 receipts, where running
+-- this rule alone accounts for only 222 -- on its own it lets a loose match
+-- consume a refund line that the strict rule would have paired correctly, and
+-- the stricter pairing is then lost. Rule order is doing real work here.
+INSERT INTO cheque_matching_rules (name, action, active, kind, condition_groups, contra_config, sort_order)
+SELECT 'Contra entry - cheque number and amount', 'CONTRA_ENTRY', true, 'CONTRA_ENTRY',
+       NULL,
+       '{"keyFields":["chequeNo"],"amountField":"chequeAmount","tolerance":0,
+         "dateWindowDays":null,"scope":"NONE","onAmbiguous":"UNMATCHED"}'::jsonb,
+       (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cheque_matching_rules)
+WHERE NOT EXISTS (SELECT 1 FROM cheque_matching_rules WHERE name = 'Contra entry - cheque number and amount');
+
+-- ---------------------------------------------------------------------------
+-- Cheque collection: DIAGNOSTICS as well as inpatient.
+--
+-- The two reports are different layouts, not variants of one: the diagnostics
+-- export is keyed on a Diag No, carries no cheque date and no payer type, and
+-- has TWO amounts (Rcpt.Amt and Cheque.Amt) that genuinely disagree.
+--
+-- They share ONE table rather than getting a second the way IP and Diag
+-- payments did, because a contra key part that is blank makes contraKey return
+-- null: an ipNo-keyed rule therefore skips diagnostics rows of its own accord,
+-- and a diagNo-keyed rule skips inpatient ones. No discriminator column has to
+-- be consulted by the engine, and one rule set governs both.
+--
+-- Measured before building: cheque + Diag No + amount matches NOTHING across
+-- all four divisions, while cheque + amount alone matches 8. Same shape as the
+-- inpatient side -- a Yashoda refund cheque is raised against one episode and
+-- collected against another, so only the instrument and the money agree. So no
+-- diagnostics-specific rule is seeded; the existing cheque + amount rule
+-- already covers it.
+-- ---------------------------------------------------------------------------
+ALTER TABLE cheque_collection_upload_batches ADD COLUMN IF NOT EXISTS collection_kind VARCHAR(8);
+
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS collection_kind VARCHAR(8);
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS diag_no VARCHAR(255);
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS pat_type VARCHAR(255);
+-- Rcpt.Amt, kept beside Cheque.Amt rather than instead of it. The cheque
+-- amount is what reconciles (it is the instrument that cleared or was
+-- refunded); the receipt amount is what the patient was billed, and a reviewer
+-- needs to see both when they differ.
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS receipt_amount NUMERIC(14,2);
+
+CREATE INDEX IF NOT EXISTS cheque_collection_records_diag_no_idx ON cheque_collection_records(diag_no);
+
+-- Rows loaded before this column existed are all inpatient, by definition.
+UPDATE cheque_collection_records SET collection_kind = 'IP' WHERE collection_kind IS NULL;
+UPDATE cheque_collection_upload_batches SET collection_kind = 'IP' WHERE collection_kind IS NULL;

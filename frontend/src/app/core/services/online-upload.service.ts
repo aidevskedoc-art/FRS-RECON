@@ -36,7 +36,14 @@ export class OnlineUploadService {
     return this.http.get<OnlineUploadBatch>(`${API_BASE_URL}/online-upload/mis/batches/${id}`);
   }
 
-  /** POST /api/online-upload/mis?format=1|2 (multipart) */
+  /**
+   * POST /api/online-upload/mis?format=1|2 (multipart)
+   *
+   * @deprecated Dead — the endpoint now answers 400 for both formats and
+   * tells you to use POST /api/ip-payments or /api/diag-op-payments, which
+   * is what UploadMisComponent already calls. Kept only so the legacy
+   * archive page's service stays whole; do not wire it to anything.
+   */
   uploadMis(file: File, format: '1' | '2', uploadedBy: string | null): Observable<OnlineUploadBatch> {
     const form = new FormData();
     form.append('file', file, file.name);

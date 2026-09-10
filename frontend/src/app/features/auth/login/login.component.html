@@ -16,12 +16,12 @@
       <div class="login__hero-content">
         <div class="ai-badge login__hero-badge">
           <span class="ai-spark"><i class="pi pi-sparkles"></i></span>
-          <span>AI Document Intelligence</span>
+          <span>Financial Reconciliation System</span>
         </div>
 
         <h1 class="login__hero-title ai-display">
-          Insurance policies,<br />
-          <span class="ai-gradient-text-shimmer">understood instantly</span><span class="ai-gradient-text">.</span>
+          Reconciliation,<br />
+          <span class="ai-gradient-text-shimmer">end to end</span><span class="ai-gradient-text">.</span>
         </h1>
 
         @for (t of [taglines[taglineIndex()]]; track taglineIndex()) {
@@ -36,6 +36,16 @@
             </li>
           }
         </ul>
+
+        <!-- Module strip — FRS is the platform; Insurance is one tab of several. -->
+        <div class="login__modules anim-fade-up" [style.animation-delay.ms]="600">
+          <span class="login__modules-label">Platform modules</span>
+          <ul class="login__modules-list">
+            @for (m of modules; track m.label) {
+              <li class="login__module" [class.login__module--active]="m.active">{{ m.label }}</li>
+            }
+          </ul>
+        </div>
       </div>
     </section>
 

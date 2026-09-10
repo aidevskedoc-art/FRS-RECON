@@ -1,0 +1,377 @@
+<div class="matching-rules">
+  <div class="matching-rules__header">
+    <div>
+      <h2>IP Payment Matching Rules</h2>
+      <p>{{ allRules().length }} rule{{ allRules().length === 1 ? '' : 's' }} — evaluated top to bottom; the first that matches wins</p>
+    </div>
+    <p-button label="Add Rule" icon="pi pi-plus" (onClick)="openAdd()" />
+  </div>
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <span class="search">
+    <i class="pi pi-search"></i>
+    <input pInputText type="text" placeholder="Search rule name, status…" (input)="onSearchInput($event, dt)" />
+  </span>
+
+  <div class="matching-rules__table-wrap">
+    <p-table
+      #dt
+      [value]="allRules()"
+      dataKey="id"
+      [paginator]="allRules().length > 10"
+      [rows]="10"
+      [globalFilterFields]="['name', 'action']"
+      styleClass="p-datatable-sm rules-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th class="priority-col" pTooltip="Evaluation order — the first active rule that matches a bank row wins">Priority</th>
+          <th>Name</th>
+          <th>Conditions</th>
+          <th>Match Status</th>
+          <th>Active</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-rule>
+        <tr>
+          <td class="priority-col">
+            <button type="button" class="action-icon" [disabled]="isFirst(rule) || reordering()" (click)="moveRule(rule, -1)" pTooltip="Move up">
+              <i class="pi pi-arrow-up"></i>
+            </button>
+            <button type="button" class="action-icon" [disabled]="isLast(rule) || reordering()" (click)="moveRule(rule, 1)" pTooltip="Move down">
+              <i class="pi pi-arrow-down"></i>
+            </button>
+          </td>
+          <td>{{ rule.name }}</td>
+          <td class="mono wrap condition-cell">
+            @for (line of conditionLines(rule); track $index) {
+              <div class="condition-cell__line">{{ line }}</div>
+            }
+          </td>
+          <td>{{ actionLabel(rule.action) }}</td>
+          <td>
+            <button
+              type="button"
+              class="status-pill"
+              [class.status-pill--active]="rule.active"
+              (click)="toggleActive(rule)"
+              [pTooltip]="rule.active ? 'Click to deactivate' : 'Click to activate'"
+            >
+              {{ rule.active ? 'Active' : 'Inactive' }}
+            </button>
+          </td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="openEdit(rule)" pTooltip="Edit"><i class="pi pi-pencil"></i></button>
+            <button type="button" class="action-icon action-icon--danger" (click)="deleteRule(rule.id)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="6" class="empty">No rules yet.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  <p-dialog
+    [header]="editingId() ? 'Edit Rule' : 'Add Rule'"
+    [visible]="dialogVisible()"
+    (visibleChange)="dialogVisible.set($event)"
+    [modal]="true"
+    [style]="{ width: '38rem' }"
+  >
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="notice notice--danger">
+          <i class="pi pi-times-circle"></i>
+          {{ err }}
+        </div>
+      }
+      <label>
+        <span>Name</span>
+        <input pInputText type="text" [ngModel]="draft().name" (ngModelChange)="updateDraft({ name: $event })" placeholder="e.g. Online: ref = bank chq/ref, same amount" />
+      </label>
+
+      <label>
+        <span>Rule Type</span>
+        <p-select
+          [options]="ruleKindOptions"
+          optionLabel="label"
+          optionValue="value"
+          [ngModel]="draft().kind"
+          (ngModelChange)="setRuleKind($event)"
+          appendTo="body"
+          styleClass="full-width"
+        />
+      </label>
+
+      @if (draft().kind === 'CONTRA_ENTRY') {
+        <section class="form-section">
+          <p class="form-section__title">Contra Entry</p>
+          <p class="form-section__hint">
+            A cheque that was collected and then refunded for the same patient and amount cancels out, so it never
+            reaches a bank statement. This rule has no conditions — it runs <strong>after</strong> the bank-statement
+            rules, on whatever they could not match, and never disturbs a match they already made.
+          </p>
+
+          <label>
+            <span>Fields that must all agree</span>
+            <p-multiSelect
+              [options]="contraKeyFieldOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().contraConfig?.keyFields"
+              (ngModelChange)="updateContraConfig({ keyFields: $event })"
+              appendTo="body"
+              styleClass="full-width"
+              placeholder="Choose matching fields"
+            />
+          </label>
+          <p class="form-section__hint">
+            The amount is always compared as well. Cheque No is required: it is what makes the key an identity rather
+            than a coincidence.
+          </p>
+
+          <label>
+            <span>Amount compared</span>
+            <p-select
+              [options]="contraAmountFieldOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().contraConfig?.amountField"
+              (ngModelChange)="updateContraConfig({ amountField: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>Amount tolerance (₹)</span>
+            <input
+              pInputText
+              type="number"
+              min="0"
+              [ngModel]="draft().contraConfig?.tolerance"
+              (ngModelChange)="updateContraConfig({ tolerance: $event })"
+            />
+          </label>
+
+          <label>
+            <span>Date window (days, blank = do not compare dates)</span>
+            <input
+              pInputText
+              type="number"
+              min="0"
+              [ngModel]="draft().contraConfig?.dateWindowDays"
+              (ngModelChange)="updateContraConfig({ dateWindowDays: $event === '' || $event === null ? null : $event })"
+            />
+          </label>
+
+          <label>
+            <span>A contra may never cross</span>
+            <p-select
+              [options]="contraScopeOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().contraConfig?.scope"
+              (ngModelChange)="updateContraConfig({ scope: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>When several refunds are indistinguishable</span>
+            <p-select
+              [options]="contraAmbiguityOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().contraConfig?.onAmbiguous"
+              (ngModelChange)="updateContraConfig({ onAmbiguous: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+          <p class="form-section__hint">
+            Candidates are first narrowed to the one closest in date to the receipt; this setting only applies when that
+            still leaves more than one.
+          </p>
+        </section>
+      }
+
+      @if (draft().kind === 'CNF') {
+
+      <section class="form-section">
+        <label>
+          <span>Match Status</span>
+          <p-select
+            [options]="actionOptions"
+            optionLabel="label"
+            optionValue="value"
+            [ngModel]="draft().action"
+            (ngModelChange)="updateDraft({ action: $event })"
+            placeholder="Choose what a match sets"
+            appendTo="body"
+            styleClass="full-width"
+          />
+        </label>
+      </section>
+
+      <section class="form-section">
+        <p class="form-section__title">Conditions</p>
+        <p class="form-section__hint">
+          A rule matches a payment ↔ bank row when <strong>every</strong> group holds. Within a group any one alternative is enough (OR).
+          At least one condition must be a non-negated text field-to-field match — that's the join key.
+        </p>
+
+        @for (group of groups(); track $index) {
+          <div class="cond-group">
+            <div class="cond-group__head">
+              <span class="cond-group__num">{{ $index === 0 ? 'Group 1' : 'AND · Group ' + ($index + 1) }}</span>
+              <button
+                type="button"
+                class="action-icon action-icon--danger"
+                [disabled]="groups().length === 1"
+                (click)="removeGroup(group)"
+                pTooltip="Remove group"
+              >
+                <i class="pi pi-times"></i>
+              </button>
+            </div>
+
+            @for (leaf of group; track $index) {
+              <div class="leaf">
+                @if ($index > 0) {
+                  <div class="leaf__or">OR</div>
+                }
+                <div class="leaf__toolbar">
+                  <div class="leaf-kind-toggle">
+                    @for (opt of leafKindOptions; track opt.value) {
+                      <button type="button" [class.active]="leaf.kind === opt.value" (click)="setLeafKind(group, leaf, opt.value)">{{ opt.label }}</button>
+                    }
+                  </div>
+                  <label class="leaf__not">
+                    <span>NOT</span>
+                    <p-toggleswitch [ngModel]="leaf.negate" (ngModelChange)="updateLeaf(group, leaf, { negate: $event })" />
+                  </label>
+                  <button
+                    type="button"
+                    class="action-icon action-icon--danger"
+                    [disabled]="group.length === 1"
+                    (click)="removeLeaf(group, leaf)"
+                    pTooltip="Remove condition"
+                  >
+                    <i class="pi pi-trash"></i>
+                  </button>
+                </div>
+
+                @if (leaf.kind === 'LITERAL') {
+                  <label>
+                    <span>Payment field</span>
+                    <p-select
+                      [options]="fieldOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.field"
+                      (ngModelChange)="updateLeaf(group, leaf, { field: $event })"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  <label>
+                    <span>Operator</span>
+                    <p-select
+                      [options]="operatorOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.operator"
+                      (ngModelChange)="updateLeaf(group, leaf, { operator: $event })"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  <label>
+                    <span>Value</span>
+                    <input pInputText type="text" [ngModel]="leaf.value" (ngModelChange)="updateLeaf(group, leaf, { value: $event })" placeholder="e.g. Online" />
+                  </label>
+                } @else {
+                  <label>
+                    <span>Source field (payment)</span>
+                    <p-select
+                      [options]="paymentFieldOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.sourceField"
+                      (ngModelChange)="updateLeaf(group, leaf, { sourceField: $event, pairOperator: null })"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  <label>
+                    <span>Destination field (bank statement)</span>
+                    <p-select
+                      [options]="bankFieldOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.destinationField"
+                      (ngModelChange)="updateLeaf(group, leaf, { destinationField: $event, pairOperator: null })"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  <label>
+                    <span>Operator</span>
+                    <p-select
+                      [options]="leafPairOperatorOptions(leaf)"
+                      optionLabel="label"
+                      optionValue="value"
+                      [ngModel]="leaf.pairOperator"
+                      (ngModelChange)="updateLeaf(group, leaf, { pairOperator: $event })"
+                      placeholder="Select source and destination fields first"
+                      appendTo="body"
+                      styleClass="full-width"
+                    />
+                  </label>
+                  @if (leafPairRequiresTolerance(leaf)) {
+                    <label>
+                      <span>{{ leaf.pairOperator === 'DATE_WITHIN_DAYS' ? 'Days tolerance' : 'Amount tolerance (₹)' }}</span>
+                      <input
+                        pInputText
+                        type="number"
+                        min="0"
+                        [ngModel]="leaf.pairTolerance"
+                        (ngModelChange)="updateLeaf(group, leaf, { pairTolerance: $event })"
+                      />
+                    </label>
+                  }
+                }
+              </div>
+            }
+
+            <p-button label="Add alternative (OR)" icon="pi pi-plus" [text]="true" (onClick)="addLeaf(group)" />
+          </div>
+        }
+
+        <p-button label="Add condition group (AND)" icon="pi pi-plus-circle" [text]="true" (onClick)="addGroup()" />
+      </section>
+      }
+
+      <label class="form__switch">
+        <span>Active</span>
+        <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
+      </label>
+    </div>
+    <ng-template #footer>
+      <p-button label="Cancel" severity="secondary" [text]="true" [disabled]="saving()" (onClick)="dialogVisible.set(false)" />
+      <p-button [label]="editingId() ? 'Save' : 'Add Rule'" icon="pi pi-check" [loading]="saving()" (onClick)="save()" />
+    </ng-template>
+  </p-dialog>
+</div>

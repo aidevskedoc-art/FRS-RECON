@@ -10,16 +10,24 @@ import { CursorGlowComponent } from '../../../shared/ambient/cursor-glow.compone
 import { MagneticDirective } from '../../../shared/motion/magnetic.directive';
 
 const TAGLINES = [
-  'Extracting policy data with AI precision.',
-  'Turning scanned PDFs into structured Excel.',
-  'Validation, confidence-scored in seconds.',
-  'Audit-ready output, every single time.',
+  'Matching payments to bank statements, automatically.',
+  'MIS data, bank statements, and matching rules in one workspace.',
+  'Insurance policy automation is one module of many.',
+  'Audit-ready reconciliation output, every single time.',
 ];
 
 const FEATURES = [
-  { icon: 'pi pi-bolt', text: 'AI-powered extraction in seconds, not hours' },
-  { icon: 'pi pi-verified', text: 'Confidence-scored, audit-ready accuracy' },
-  { icon: 'pi pi-file-excel', text: 'One-click Excel automation' },
+  { icon: 'pi pi-sync', text: 'Automated matching across payments and bank statements' },
+  { icon: 'pi pi-verified', text: 'Confidence-scored, audit-ready reconciliation' },
+  { icon: 'pi pi-th-large', text: 'Insurance automation — one module of the platform' },
+];
+
+/** Static module strip shown at the foot of the hero — Insurance is the entry module. */
+const MODULES = [
+  { label: 'Insurance Automation', active: true },
+  { label: 'Online Payments', active: false },
+  { label: 'Matching Rules', active: false },
+  { label: 'Master Data', active: false },
 ];
 
 /**
@@ -60,6 +68,7 @@ export class LoginComponent {
 
   protected readonly taglines = TAGLINES;
   protected readonly features = FEATURES;
+  protected readonly modules = MODULES;
 
   protected readonly form = this.fb.nonNullable.group({
     userId: ['', Validators.required],

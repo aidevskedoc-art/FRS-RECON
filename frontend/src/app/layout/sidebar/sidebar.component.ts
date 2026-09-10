@@ -29,12 +29,21 @@ interface NavGroup {
   /** Key into the --nav-color/grad/soft/line-* token sets in _nav-accents.scss. */
   accent: 'insurance' | 'online' | 'rules' | 'masters' | 'admin' | 'reports' | 'support';
   items: NavItem[];
+  /**
+   * Extra path prefixes this group owns without listing a link for them —
+   * drill-downs and off-nav pages. Without these the rail has nothing to match
+   * on such a route and simply keeps whichever group was last open, so the
+   * document workspace would sit under a stale section and accent colour.
+   */
+  owns?: readonly string[];
 }
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Automation Insurance',
     accent: 'insurance',
+    // '/insurance-policy/processing' and the documents/:id/* workspace steps.
+    owns: ['/insurance-policy'],
     items: [
       { label: 'Dashboard', icon: 'pi pi-th-large', path: '/insurance-policy/dashboard' },
       { label: 'Upload Documents', icon: 'pi pi-cloud-upload', path: '/insurance-policy/upload' },
@@ -43,26 +52,62 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: 'Upload Online',
+    // Grouped by subject rather than by verb: one upload screen feeds both
+    // payment lists, so "upload" is a step in this section, not a section.
+    label: 'Online Payments',
     accent: 'online',
+    // The off-nav legacy archive holds this section's own pre-migration data.
+    owns: ['/upload-online/payments'],
     items: [
       { label: 'Upload MIS Data', icon: 'pi pi-cloud-upload', path: '/upload-online/mis' },
-      { label: 'Upload Bank Statement', icon: 'pi pi-building-columns', path: '/upload-online/bank-statement' },
-      { label: 'View IP & Diag Payments', icon: 'pi pi-list', path: '/upload-online/payments' },
-      { label: 'New Online Payments', icon: 'pi pi-wallet', path: '/upload-online/ip-payments' },
-      { label: 'View Diag OP Payments', icon: 'pi pi-heart', path: '/upload-online/diag-op-payments' },
-      { label: 'View Bank Statements', icon: 'pi pi-book', path: '/upload-online/bank-statements' },
+      { label: 'IP Payments', icon: 'pi pi-wallet', path: '/upload-online/ip-payments' },
+      { label: 'Diag OP Payments', icon: 'pi pi-heart', path: '/upload-online/diag-op-payments' },
     ],
   },
   {
-    label: 'Matched Rules',
+    label: 'Bank & PayU',
+    accent: 'reports',
+    items: [
+      { label: 'Upload Bank Statement', icon: 'pi pi-building-columns', path: '/upload-online/bank-statement' },
+      { label: 'Bank Statements', icon: 'pi pi-book', path: '/upload-online/bank-statements' },
+      { label: 'Upload PayU MPR', icon: 'pi pi-wallet', path: '/upload-online/payu-mpr-upload' },
+      { label: 'PayU MPR Batches', icon: 'pi pi-receipt', path: '/upload-online/payu-mpr' },
+      { label: 'Upload EaseBuzz', icon: 'pi pi-bolt', path: '/upload-online/easebuzz-upload' },
+      { label: 'EaseBuzz Batches', icon: 'pi pi-receipt', path: '/upload-online/easebuzz' },
+    ],
+  },
+  {
+    // Reconciliation output. Rule *authoring* is deliberately absent here:
+    // '/matched-rules/<x>-payment-rules/manage' is reached from the Manage
+    // Rules button on the results page it configures, so configuring a rule
+    // never means leaving the section you are standing in.
+    label: 'Reconciliation',
     accent: 'rules',
     items: [
-      { label: 'Reconciliation Summary', icon: 'pi pi-chart-bar', path: '/matched-rules/summary' },
+      { label: 'Summary', icon: 'pi pi-chart-bar', path: '/matched-rules/summary' },
+      { label: 'Audit Working Report', icon: 'pi pi-file-excel', path: '/matched-rules/audit-report' },
       { label: 'Unit Matches', icon: 'pi pi-sitemap', path: '/matched-rules/unit-matches' },
+      { label: 'PayU Settlements', icon: 'pi pi-credit-card', path: '/matched-rules/payu-settlements' },
       { label: 'IP Payment Rules', icon: 'pi pi-list-check', path: '/matched-rules/ip-payment-rules' },
       { label: 'Diagnostics Payment Rules', icon: 'pi pi-list-check', path: '/matched-rules/diagnostics-payment-rules' },
     ],
+  },
+  {
+    // Cheque money reconciles against two documents rather than one, so its
+    // upload, its batches and the refund document it is checked against belong
+    // together. `support` is one of the two accents _nav-accents.scss defines
+    // and reserves for exactly this — no new token is needed.
+    label: 'Cheque & Refunds',
+    accent: 'support',
+    items: [
+      { label: 'Upload Cheque Collection', icon: 'pi pi-cloud-upload', path: '/upload-online/cheque-collection' },
+      { label: 'IP Cheque Collections', icon: 'pi pi-money-bill', path: '/upload-online/cheque-collections' },
+      { label: 'Diag Cheque Collections', icon: 'pi pi-heart', path: '/upload-online/diag-cheque-collections' },
+      { label: 'Upload Refund Document', icon: 'pi pi-cloud-upload', path: '/upload-online/refund-document' },
+      { label: 'Refund Documents', icon: 'pi pi-replay', path: '/upload-online/refund-documents' },
+    ],
+    // The rule editor is off-nav, reached from the batch it configures.
+    owns: ['/matched-rules/cheque-collection-rules'],
   },
   {
     label: 'Master Data',
@@ -70,16 +115,11 @@ const NAV_GROUPS: NavGroup[] = [
     items: [{ label: 'Division & Bank A/C', icon: 'pi pi-sitemap', path: '/master-data/division-bank-accounts' }],
   },
   {
-    label: 'Master Rules',
+    // The operating guide for the reconciliation workflow. `admin` is the one
+    // accent _nav-accents.scss defines that no nav group had claimed.
+    label: 'Help',
     accent: 'admin',
-    items: [
-      { label: 'Manage IP Payment Rules', icon: 'pi pi-cog', path: '/matched-rules/ip-payment-rules/manage' },
-      {
-        label: 'Manage Diagnostics Payment Rules',
-        icon: 'pi pi-cog',
-        path: '/matched-rules/diagnostics-payment-rules/manage',
-      },
-    ],
+    items: [{ label: 'How to Use', icon: 'pi pi-compass', path: '/how-to-use' }],
   },
 ];
 
@@ -157,10 +197,10 @@ export class SidebarComponent {
         return;
       }
 
-      // The accordion animates max-height; the pill can only land correctly
-      // once that transition has actually finished.
+      // The accordion animates grid-template-rows; the pill can only land
+      // correctly once that transition has actually finished.
       const onTransitionEnd = (event: TransitionEvent) => {
-        if (event.propertyName === 'max-height') {
+        if (event.propertyName === 'grid-template-rows') {
           this.measure();
         }
       };
@@ -198,20 +238,24 @@ export class SidebarComponent {
   /**
    * Opens the group that owns the current URL and adopts its accent.
    *
-   * Matched by longest prefix, not first hit: '/matched-rules/ip-payment-rules'
-   * (Matched Rules) is a prefix of '/matched-rules/ip-payment-rules/manage'
-   * (Master Rules), and a first-match scan would open the wrong group for
-   * every 'manage' route.
+   * Matched by longest prefix, not first hit. These are raw string prefixes,
+   * so '/upload-online/bank-statement' (Upload Bank Statement) is a prefix of
+   * '/upload-online/bank-statements' (Bank Statements) — a first-match scan
+   * would accent the rail from the upload screen while you stand on the list.
    */
   private syncToUrl(url: string): void {
     let bestGroup: NavGroup | null = null;
     let bestLength = -1;
 
     for (const group of this.navGroups()) {
-      for (const item of group.items) {
-        if (url.startsWith(item.path) && item.path.length > bestLength) {
+      // `owns` prefixes join the same scan rather than acting as a fallback:
+      // they are shorter than the links they sit above ('/insurance-policy'
+      // vs '/insurance-policy/dashboard'), so a real link always outranks
+      // them and they only decide the routes no link covers.
+      for (const path of [...group.items.map((i) => i.path), ...(group.owns ?? [])]) {
+        if (url.startsWith(path) && path.length > bestLength) {
           bestGroup = group;
-          bestLength = item.path.length;
+          bestLength = path.length;
         }
       }
     }
@@ -231,10 +275,11 @@ export class SidebarComponent {
   }
 
   /**
-   * routerLinkActive is prefix-based, so '/matched-rules/ip-payment-rules'
-   * is also "active" while you're on its '/manage' child. More than one link
-   * can therefore carry the active class; the indicator belongs on the most
-   * specific one, which is the longest matching path.
+   * routerLinkActive matches by URL segment and is not exact, so a link stays
+   * active across its child routes — which is what keeps 'IP Payments' lit
+   * while you're inside a batch detail, and 'IP Payment Rules' lit on its
+   * '/manage' child. No two nav paths currently nest, but if one ever does the
+   * indicator belongs on the most specific match, which is the longest href.
    */
   private activeLink(nav: HTMLElement): HTMLElement | undefined {
     return Array.from(nav.querySelectorAll<HTMLElement>('.sidebar__link--active'))

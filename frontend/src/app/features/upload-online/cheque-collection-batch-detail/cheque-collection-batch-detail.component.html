@@ -1,0 +1,199 @@
+<div class="batch-detail">
+  <div class="batch-detail__header">
+    <a class="back-link" [routerLink]="backLink()">
+      <i class="pi pi-arrow-left"></i> Back to {{ isDiagnostics() ? 'Diagnostics' : 'IP' }} Cheque Collections
+    </a>
+
+    @if (batch(); as b) {
+      <div class="batch-summary">
+        <div>
+          <h2>{{ b.fileName }}</h2>
+          <p>
+            {{ isDiagnostics() ? 'Diagnostics' : 'Inpatient' }} cheque collection ·
+            {{ b.rowCount }} receipt{{ b.rowCount === 1 ? '' : 's' }} ·
+            uploaded {{ b.uploadedAt | date: 'medium' }}
+            @if (b.uploadedBy) { by {{ b.uploadedBy }} }
+          </p>
+          @if (b.division || b.unitName) { <p class="unit-name">{{ b.division || b.unitName }}</p> }
+        </div>
+      </div>
+    }
+  </div>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (batch()?.rulesChangedSinceGenerate) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      Matching rules have changed since this batch was last generated — click Regenerate Matches to apply them.
+    </div>
+  }
+
+  <!-- Without a refund document Stage 2 can find nothing, and the symptom is
+       indistinguishable from a rule that does not work. Say which it is. -->
+  @if (refundsMissing()) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      No refund document has been uploaded, so contra entries cannot be found — every cheque the bank cannot account for
+      will read as unmatched.
+      <a routerLink="/upload-online/refund-document">Upload one</a>, then regenerate.
+    </div>
+  }
+
+  <div class="generate-bar">
+    <p-button
+      [label]="matchesGenerated() ? 'Regenerate Matches' : 'Generate'"
+      icon="pi pi-refresh"
+      size="small"
+      [loading]="matchesLoading()"
+      (onClick)="generateMatches()"
+    />
+    @if (matchesGenerated() && !matchesLoading() && !batch()?.rulesChangedSinceGenerate) {
+      <span class="generate-bar__hint">
+        <i class="pi pi-check-circle"></i> Matched against the bank statement, then the refund document
+      </span>
+    }
+    <p-button
+      label="Manage Rules"
+      icon="pi pi-sliders-h"
+      size="small"
+      [text]="true"
+      routerLink="/matched-rules/cheque-collection-rules/manage"
+    />
+  </div>
+
+  <div class="filters">
+    <p-select
+      [options]="statusOptions()"
+      optionLabel="label"
+      optionValue="value"
+      [ngModel]="statusFilter()"
+      (onChange)="setStatus($event.value)"
+      [disabled]="!matchesGenerated() || matchesLoading()"
+      class="filters__field filters__field--status"
+    />
+    <span class="filters__search">
+      <i class="pi pi-search"></i>
+      <input
+        pInputText
+        type="text"
+        placeholder="Search patient, reference, cheque no, IP / Diag no…"
+        [(ngModel)]="search"
+        (keyup.enter)="applyFilters()"
+      />
+    </span>
+    <p-select
+      [options]="payTypeOptions()"
+      optionLabel="label"
+      optionValue="value"
+      [(ngModel)]="payType"
+      (onChange)="applyFilters()"
+      class="filters__field"
+    />
+    <p-select
+      [options]="appliedRuleOptions()"
+      optionLabel="label"
+      optionValue="value"
+      [(ngModel)]="appliedRule"
+      (onChange)="applyFilters()"
+      class="filters__field"
+    />
+    <input pInputText type="date" [(ngModel)]="dateFrom" (change)="applyFilters()" class="filters__field" />
+    <input pInputText type="date" [(ngModel)]="dateTo" (change)="applyFilters()" class="filters__field" />
+
+    <p-multiSelect
+      [options]="exportColumns()"
+      optionLabel="label"
+      optionValue="key"
+      [(ngModel)]="selectedExportColumns"
+      appendTo="body"
+      selectedItemsLabel="{0} columns"
+      [maxSelectedLabels]="1"
+      placeholder="Export columns"
+      class="filters__field"
+    />
+    <p-button
+      label="Export"
+      icon="pi pi-download"
+      size="small"
+      [outlined]="true"
+      [loading]="downloading()"
+      [disabled]="!selectedExportColumns().length"
+      (onClick)="download()"
+    />
+    <p-button label="Clear" icon="pi pi-filter-slash" size="small" [text]="true" (onClick)="clearFilters()" />
+  </div>
+
+  <p class="result-count">
+    {{ total() }} record{{ total() === 1 ? '' : 's' }}
+    @if (isFiltered()) { of {{ batchTotal() }} in this batch }
+  </p>
+
+  <p-table
+    [value]="records()"
+    dataKey="id"
+    [lazy]="true"
+    (onLazyLoad)="onLazyLoad($event)"
+    [paginator]="true"
+    [rows]="25"
+    [totalRecords]="total()"
+    [loading]="loading()"
+    [scrollable]="true"
+    scrollDirection="both"
+    styleClass="p-datatable-sm records-table"
+  >
+    <ng-template #header>
+      <tr>
+        <th>Status</th>
+        @for (col of columns; track col.key) {
+          <th>{{ col.header }}</th>
+        }
+        <th>Match Basis</th>
+      </tr>
+    </ng-template>
+    <ng-template #body let-record>
+      <tr>
+        <td>
+          @if (record.matchStatus) {
+            <span
+              class="status-pill"
+              [class.status-pill--matched]="record.matchStatus === 'MATCHED'"
+              [class.status-pill--contra]="record.matchStatus === 'CONTRA_ENTRY'"
+              [class.status-pill--partial]="record.matchStatus === 'PARTIAL_MATCH'"
+              [class.status-pill--mismatch]="record.matchStatus === 'AMOUNT_MISMATCH'"
+              [class.status-pill--unmatched]="record.matchStatus === 'UNMATCHED'"
+              [class.status-pill--ambiguous]="record.matchStatus === 'AMBIGUOUS_MATCH'"
+              [pTooltip]="statusTooltip(record)"
+              tooltipPosition="top"
+            >
+              {{ statusLabel(record.matchStatus) }}
+            </span>
+          } @else {
+            <span class="status-pill" [pTooltip]="statusTooltip(record)" tooltipPosition="top">
+              {{ matchesGenerated() ? 'Excluded' : 'Not generated' }}
+            </span>
+          }
+        </td>
+        @for (col of columns; track col.key) {
+          <td
+            [class.mono]="col.key === 'receiptNumber' || col.key === 'chequeNo' || col.key === 'ipNo' || col.key === 'diagNo' || col.key === 'bankRefNo' || col.key === 'bankAccount' || col.key === 'refundNo'"
+            [class.wrap]="col.key === 'patientName'"
+          >
+            {{ cellValue(record, col) }}
+          </td>
+        }
+        <td class="wrap">{{ record.matchReason || '—' }}</td>
+      </tr>
+    </ng-template>
+    <ng-template #emptymessage>
+      <tr>
+        <td [attr.colspan]="columns.length + 2" class="empty">No records match these filters.</td>
+      </tr>
+    </ng-template>
+  </p-table>
+</div>

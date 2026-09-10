@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
+import { MultiSelectModule } from 'primeng/multiselect';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { BankStatementService } from '../../../core/services/bank-statement.service';
@@ -31,15 +33,26 @@ const COLUMNS: ColumnDef[] = [
  */
 const STATUS_LABELS: Record<MatchStatus, string> = {
   MATCHED: 'Matched',
+  EASEBUZZ_MATCHED: 'Easebuzz Matched',
+  CONTRA_ENTRY: 'Contra Entry',
+  PARTIAL_MATCH: 'Partially Matched',
   AMOUNT_MISMATCH: 'Amount Mismatch',
   UNMATCHED: 'Only in Bank Statement',
   AMBIGUOUS_MATCH: 'Ambiguous Match',
 };
 
+/** This component serves bank statements, PayU MPR and EaseBuzz uploads; an unclaimed row's label depends which. */
+const MPR_STATUS_OVERRIDES: Partial<Record<MatchStatus, string>> = {
+  UNMATCHED: 'Only in PayU MPR',
+};
+const EASEBUZZ_STATUS_OVERRIDES: Partial<Record<MatchStatus, string>> = {
+  UNMATCHED: 'Only in EaseBuzz Report',
+};
+
 @Component({
   selector: 'app-bank-statement-batch-detail',
   standalone: true,
-  imports: [DatePipe, ButtonModule, TableModule, TooltipModule],
+  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, MultiSelectModule, TableModule, TooltipModule],
   templateUrl: './bank-statement-batch-detail.component.html',
   styleUrl: './bank-statement-batch-detail.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -65,12 +78,27 @@ export class BankStatementBatchDetailComponent {
 
   protected readonly columns = COLUMNS;
 
+  /** Column picker for the Excel export. */
+  protected readonly exportColumns = signal<{ key: string; label: string }[]>([]);
+  protected readonly selectedExportColumns = signal<string[]>([]);
+  protected readonly downloading = signal(false);
+
   private page = 1;
   private pageSize = 25;
 
   constructor() {
     this.bankStatements.fetchBatch(this.batchId).subscribe({
-      next: (batch) => this.batch.set(batch),
+      next: (batch) => {
+        this.batch.set(batch);
+        const kind = batch.bankName === 'PayU' ? 'PAYU_MPR' : 'BANK';
+        this.bankStatements.fetchExportColumns(kind).subscribe({
+          next: (cols) => {
+            this.exportColumns.set(cols);
+            this.selectedExportColumns.set(cols.map((c) => c.key));
+          },
+          error: () => {},
+        });
+      },
       error: (err) => this.error.set(errorMessage(err)),
     });
     this.loadPage();
@@ -98,7 +126,14 @@ export class BankStatementBatchDetailComponent {
     this.loadPage();
   }
 
+  /** True for a PayU MPR upload — changes a few labels (see MPR_STATUS_OVERRIDES). */
+  protected readonly isMpr = computed(() => this.batch()?.source === 'PAYU_MPR' || this.batch()?.bankName === 'PayU');
+  /** True for an EaseBuzz gateway report upload. */
+  protected readonly isEasebuzz = computed(() => this.batch()?.source === 'EASEBUZZ' || this.batch()?.bankName === 'EaseBuzz');
+
   protected statusLabel(status: MatchStatus): string {
+    if (this.isMpr() && MPR_STATUS_OVERRIDES[status]) return MPR_STATUS_OVERRIDES[status]!;
+    if (this.isEasebuzz() && EASEBUZZ_STATUS_OVERRIDES[status]) return EASEBUZZ_STATUS_OVERRIDES[status]!;
     return STATUS_LABELS[status] ?? status;
   }
 
@@ -123,6 +158,21 @@ export class BankStatementBatchDetailComponent {
         this.loading.set(false);
       },
     });
+  }
+
+  protected download(): void {
+    if (this.downloading()) return;
+    this.downloading.set(true);
+    const status = this.statusFilter();
+    this.bankStatements
+      .downloadRecords(this.batchId, status === 'ALL' ? undefined : status, this.selectedExportColumns())
+      .subscribe({
+        next: () => this.downloading.set(false),
+        error: (err) => {
+          this.downloading.set(false);
+          this.error.set(errorMessage(err));
+        },
+      });
   }
 
   protected back(): void {

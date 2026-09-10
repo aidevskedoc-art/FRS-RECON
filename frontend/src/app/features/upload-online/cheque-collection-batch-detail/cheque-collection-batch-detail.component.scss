@@ -1,0 +1,365 @@
+@use 'styles/mixins';
+
+// The Cheque & Refunds section sits on a plain page ground rather than the
+// shell's ambient aurora. Scoped to this component, so the neighbouring
+// IP / Diag / Bank screens are untouched.
+:host {
+  @include mixins.opaque-page-surface;
+}
+
+.batch-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-2);
+
+  &:hover {
+    color: var(--ai-blue);
+  }
+}
+
+.batch-summary h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+  color: var(--text-primary);
+}
+
+.batch-summary p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.batch-summary .unit-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+}
+
+.notice--warning {
+  color: var(--status-warning-fg);
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+}
+
+.generate-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.generate-bar__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--status-success-fg);
+  font-size: var(--text-sm);
+}
+
+.filters {
+  @include mixins.card;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.filters__search {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 220px;
+
+  i {
+    position: absolute;
+    left: var(--space-3);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+    font-size: var(--text-sm);
+  }
+
+  input {
+    width: 100%;
+    padding-left: var(--space-7);
+  }
+}
+
+.filters__field {
+  width: 140px;
+}
+
+p-select.filters__field {
+  width: 190px;
+}
+
+p-select.filters__field--status {
+  width: 210px;
+}
+
+p-select.filters__field--rule {
+  width: 240px;
+}
+
+.filters__date {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+.filters__to {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.filters__spacer {
+  flex: 1 1 auto;
+}
+
+.result-count {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: calc(-1 * var(--space-2));
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+
+  i {
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+  }
+}
+
+.result-count__muted {
+  color: var(--text-tertiary);
+}
+
+.batch-detail__table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  overflow: auto;
+}
+
+:host ::ng-deep .records-table {
+  .p-datatable-thead > tr > th {
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+
+  .p-datatable-tbody > tr > td:not(.wrap) {
+    white-space: nowrap;
+  }
+}
+
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: var(--text-sm);
+}
+
+.wrap {
+  white-space: normal;
+  word-break: break-word;
+  min-width: 12rem;
+  max-width: 32rem;
+}
+
+.status-pill {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+}
+
+.status-pill--matched {
+  @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+// Neutral, deliberately not the success green: a contra entry IS reconciled,
+// but against the refund document rather than the bank. Colouring it like a
+// bank match would overstate what was proven; colouring it red would read as a
+// failure, which it is not.
+.status-pill--contra {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+}
+
+// Info blue, distinct from matched (green), mismatch (amber) and unmatched
+// (red): the counterpart is all but certain, but the MIS reference still needs
+// a human fix before it counts as reconciled.
+.status-pill--partial {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+}
+
+.status-pill--mismatch {
+  @include mixins.status-chip(var(--status-warning-fg), var(--status-warning-bg), var(--status-warning-border));
+}
+
+.status-pill--unmatched {
+  @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
+}
+
+// Neutral, not danger: an ambiguous result is not a failure, it is a decision
+// waiting on a person. Colouring it red would read as "broken".
+.status-pill--ambiguous {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}
+
+
+// ---------------------------------------------------------------------------
+// Unit drill-down (the expanded row). Without these the cells collapse into an
+// unreadable run of text, because a plain <table> inside the expanded cell
+// inherits no spacing from the PrimeNG grid around it.
+// ---------------------------------------------------------------------------
+.expander-col {
+  width: 2.5rem;
+  text-align: center;
+}
+
+.expander {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: var(--space-1);
+  line-height: 1;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.unit-detail-row > td {
+  background: var(--surface-soft);
+  padding: 0;
+}
+
+.unit-detail {
+  padding: var(--space-4) var(--space-6);
+}
+
+.unit-detail__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.unit-detail__label {
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+}
+
+.unit-detail__key {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.unit-detail__meta {
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+}
+
+.unit-detail__table {
+  border-collapse: collapse;
+  min-width: 34rem;
+
+  th,
+  td {
+    padding: var(--space-2) var(--space-4);
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  th {
+    color: var(--text-tertiary);
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  tfoot td {
+    font-weight: 600;
+    border-bottom: none;
+    border-top: 1px solid var(--border-strong, var(--border));
+  }
+}
+
+// The row you expanded from, so it is findable among its siblings.
+.unit-detail__self > td {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.unit-detail__diff td {
+  color: var(--status-warning-fg);
+}
+
+.unit-detail__empty,
+.unit-detail__warn {
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  margin: var(--space-2) 0 0;
+}
+
+.filters__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  height: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.filters__toggle--on {
+  border-color: var(--status-info-border);
+  color: var(--status-info-fg);
+  background: var(--status-info-bg);
+}

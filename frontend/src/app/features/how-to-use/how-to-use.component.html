@@ -1,0 +1,387 @@
+<div class="guide">
+  <app-page-header
+    icon="pi pi-compass"
+    title="How to Use"
+    subtitle="The reconciliation workflow — from uploading the source records to downloading the Audit Working Report."
+  >
+    <a actions routerLink="/matched-rules/summary" class="btn btn-secondary">
+      <i class="pi pi-chart-bar"></i> Open Reconciliation Summary
+    </a>
+  </app-page-header>
+
+  <nav class="guide__jump" aria-label="Jump to section">
+    <a href="#pipeline">The pipeline</a>
+    <a href="#steps">The five steps</a>
+    <a href="#upload">Upload sources</a>
+    <a href="#generate">Generate</a>
+    <a href="#report">Audit Working Report</a>
+    <a href="#twostage">Two-stage matching</a>
+    <a href="#statuses">Match statuses</a>
+    <a href="#trouble">Troubleshooting</a>
+  </nav>
+
+  <div class="guide__main">
+      <!-- ============ pipeline ============ -->
+      <section id="pipeline" class="card guide__card">
+        <h2>The pipeline</h2>
+        <p class="guide__lead">
+          Every upload screen loads one of three input families. The
+          <strong>Reconciliation</strong> menu runs the match and produces the workbook you submit.
+        </p>
+
+        <div class="figure">
+          <svg viewBox="0 0 760 300" role="img" aria-label="Data flow: sources on the left feed the reconcile step, which produces the Audit Working Report">
+            <!-- source boxes -->
+            <g class="svg-box">
+              <rect x="8" y="18" width="228" height="66" rx="10" />
+              <text x="24" y="44" class="svg-h">HOSPITAL MIS</text>
+              <text x="24" y="66" class="svg-t">IP online · Diagnostics online · cheque collections</text>
+            </g>
+            <g class="svg-box">
+              <rect x="8" y="117" width="228" height="66" rx="10" />
+              <text x="24" y="143" class="svg-h">BANK &amp; GATEWAY</text>
+              <text x="24" y="165" class="svg-t">Bank statements · PayU MPR · EaseBuzz</text>
+            </g>
+            <g class="svg-box">
+              <rect x="8" y="216" width="228" height="66" rx="10" />
+              <text x="24" y="242" class="svg-h">CHEQUE &amp; REFUNDS</text>
+              <text x="24" y="264" class="svg-t">Cheque registers · refund document</text>
+            </g>
+
+            <!-- arrows into reconcile (line + chevron tip, no marker needed) -->
+            <path class="svg-arrow" d="M236 51 H300 Q320 51 320 90 V132 H360 M352 127 L360 132 L352 137" />
+            <path class="svg-arrow" d="M236 150 H360 M352 145 L360 150 L352 155" />
+            <path class="svg-arrow" d="M236 249 H300 Q320 249 320 210 V168 H360 M352 163 L360 168 L352 173" />
+
+            <!-- reconcile -->
+            <g class="svg-box svg-box--accent">
+              <rect x="360" y="112" width="176" height="76" rx="10" />
+              <text x="448" y="140" class="svg-h" text-anchor="middle">RECONCILE</text>
+              <text x="448" y="162" class="svg-t" text-anchor="middle">press Generate</text>
+              <text x="448" y="178" class="svg-t" text-anchor="middle">on every batch</text>
+            </g>
+
+            <path class="svg-arrow" d="M536 150 H600 M592 145 L600 150 L592 155" />
+
+            <!-- output -->
+            <g class="svg-box svg-box--out">
+              <rect x="600" y="104" width="152" height="92" rx="10" />
+              <text x="676" y="140" class="svg-h" text-anchor="middle">AUDIT WORKING</text>
+              <text x="676" y="158" class="svg-h" text-anchor="middle">REPORT</text>
+              <text x="676" y="180" class="svg-t" text-anchor="middle">.xlsx — submit this</text>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <!-- ============ five steps ============ -->
+      <section id="steps" class="card guide__card">
+        <h2>The five steps</h2>
+        <ol class="stepstrip">
+          <li>
+            <span class="stepstrip__n">1</span>
+            <span class="stepstrip__h">Confirm Master Data</span>
+            <span class="stepstrip__d">Bank account &rarr; division mapping</span>
+          </li>
+          <li>
+            <span class="stepstrip__n">2</span>
+            <span class="stepstrip__h">Upload the sources</span>
+            <span class="stepstrip__d">MIS, bank, gateway, cheque, refunds</span>
+          </li>
+          <li>
+            <span class="stepstrip__n">3</span>
+            <span class="stepstrip__h">Generate</span>
+            <span class="stepstrip__d">On every batch + PayU Settlements</span>
+          </li>
+          <li>
+            <span class="stepstrip__n">4</span>
+            <span class="stepstrip__h">Review</span>
+            <span class="stepstrip__d">Reconciliation Summary for the period</span>
+          </li>
+          <li>
+            <span class="stepstrip__n">5</span>
+            <span class="stepstrip__h">Download the report</span>
+            <span class="stepstrip__d">Audit Working Report &rarr; Client Report</span>
+          </li>
+        </ol>
+
+        <div class="notice notice--req">
+          <i class="pi pi-info-circle"></i>
+          <span>
+            <strong>Golden rule:</strong> load <em>all</em> the source documents for a period
+            before you trust any number. A receipt shows as
+            <span class="chip chip--danger">Unmatched</span> simply because the bank statement
+            that would clear it has not been uploaded yet.
+          </span>
+        </div>
+
+        <h3>Step 1 — Confirm Master Data</h3>
+        <p>
+          Open <span class="loc">Master Data &rsaquo; Division &amp; Bank A/C</span>. It maps each
+          hospital bank account number to one of
+          <span class="chip">Hitech City</span> <span class="chip">Somajiguda</span>
+          <span class="chip">Secunderabad</span> <span class="chip">Malakpet</span>.
+          It is pre-loaded. Add a row whenever an account opens or closes, then re-generate any
+          affected bank statement. The division drives the report's <strong>LOCATION</strong> and
+          <strong>NAME OF THE AUDITOR</strong> columns.
+        </p>
+      </section>
+
+      <!-- ============ upload ============ -->
+      <section id="upload" class="card guide__card">
+        <h2>Step 2 — Upload the source records</h2>
+        <p class="guide__lead">
+          All uploads take <span class="ref">.xlsx</span> / <span class="ref">.xls</span> up to
+          70&nbsp;MB. A file already ingested is rejected, and duplicate rows inside a new file are
+          skipped — so it is safe to re-send a corrected file.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Source</th><th>Menu</th><th>What the file is</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>IP online MIS</td>
+                <td class="loc">Online Payments &rsaquo; Upload MIS Data</td>
+                <td>Inpatient online-collection export (a sheet per unit)</td>
+              </tr>
+              <tr>
+                <td>Diagnostics online MIS</td>
+                <td class="loc">Online Payments &rsaquo; Upload MIS Data</td>
+                <td>Diagnostics online-collection export (a sheet per unit)</td>
+              </tr>
+              <tr>
+                <td>Bank statement</td>
+                <td class="loc">Bank &amp; PayU &rsaquo; Upload Bank Statement</td>
+                <td>Bank's own export — one workbook per account; a combined workbook splits per sheet</td>
+              </tr>
+              <tr>
+                <td>PayU MPR</td>
+                <td class="loc">Bank &amp; PayU &rsaquo; Upload PayU MPR</td>
+                <td>PayU Merchant Payment Report (gateway settlement report)</td>
+              </tr>
+              <tr>
+                <td>EaseBuzz</td>
+                <td class="loc">Bank &amp; PayU &rsaquo; Upload EaseBuzz</td>
+                <td>EaseBuzz transaction report; only <em>success</em> rows are stored</td>
+              </tr>
+              <tr>
+                <td>Cheque collection</td>
+                <td class="loc">Cheque &amp; Refunds &rsaquo; Upload Cheque Collection</td>
+                <td>Inpatient and/or diagnostics cheque register</td>
+              </tr>
+              <tr>
+                <td>Refund document</td>
+                <td class="loc">Cheque &amp; Refunds &rsaquo; Upload Refund Document</td>
+                <td>The single 8-sheet IP &amp; OP refund workbook (reference data)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>
+            Each unit tab becomes its own <strong>batch</strong>, tagged with the unit name read
+            from row&nbsp;1 of the sheet. If that name has no recognisable division, the rows
+            cannot be division-scoped — check the export's first row.
+          </span>
+        </div>
+      </section>
+
+      <!-- ============ generate ============ -->
+      <section id="generate" class="card guide__card">
+        <h2>Step 3 — Generate the matches</h2>
+        <p class="guide__lead">
+          Uploading only loads raw rows. <strong>Generate</strong> runs the matching engine and
+          saves a verdict onto every row. Nothing is matched until you press it.
+        </p>
+
+        <figure class="mock">
+          <figcaption>On a batch screen</figcaption>
+          <div class="mock__frame">
+            <div class="mock__bar">
+              <span class="mock__crumb">&larr; Back to IP Payments</span>
+              <span class="mock__title">HITECH CITY — 1,204 rows</span>
+            </div>
+            <div class="mock__row mock__row--gen">
+              <span class="mock__btn mock__btn--primary"><i class="pi pi-refresh"></i> Generate</span>
+              <span class="mock__hint"><i class="pi pi-check-circle"></i> Matched against the bank statement</span>
+              <span class="mock__note mock__note--a">Press once per batch. Reads <em>Regenerate</em> afterwards.</span>
+            </div>
+            <div class="mock__row mock__row--filters">
+              <span class="mock__pill">Status: All</span>
+              <span class="mock__search">Search patient, receipt, reference…</span>
+              <span class="mock__pill mock__pill--ghost">Manage Rules</span>
+            </div>
+            <div class="mock__grid">
+              <div class="mock__gh">Status</div><div class="mock__gh">Receipt</div><div class="mock__gh">Amount</div><div class="mock__gh">Match reason</div>
+              <div><span class="chip chip--ok">Matched</span></div><div class="ref">RCT-88213</div><div class="num">32,000</div><div class="mock__muted">Matched by rule "reference matches bank"</div>
+              <div><span class="chip chip--danger">Unmatched</span></div><div class="ref">RCT-88240</div><div class="num">5,400</div><div class="mock__muted">Reference not on any uploaded bank line…</div>
+              <div><span class="chip chip--warning">Amount Mismatch</span></div><div class="ref">RCT-88251</div><div class="num">12,000</div><div class="mock__muted">Differs by ₹200 — MIS 12,000 vs bank 11,800</div>
+            </div>
+            <span class="mock__note mock__note--b">The <em>Match reason</em> column tells you exactly what to fix.</span>
+          </div>
+        </figure>
+
+        <h3>Where to press Generate</h3>
+        <ol class="numlist">
+          <li>Each <strong>Bank Statement</strong> batch — <span class="loc">Bank Statements</span> &rarr; open &rarr; Generate.</li>
+          <li>Each <strong>IP Payments</strong> and <strong>Diag OP Payments</strong> batch.</li>
+          <li>Each <strong>Cheque Collection</strong> batch (IP and Diagnostics).</li>
+          <li><strong>PayU Settlements</strong> — <span class="loc">Reconciliation &rsaquo; PayU Settlements</span> &rarr; Generate.</li>
+        </ol>
+
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>
+            <strong>Regenerate</strong> a batch when it shows the "matching rules have changed"
+            banner, or after uploading a new bank statement / refund document that covers it.
+          </span>
+        </div>
+
+        <h3>Step 4 — Review</h3>
+        <p>
+          Open <span class="loc">Reconciliation &rsaquo; Summary</span>, set <strong>From / To</strong>
+          to the period, press <strong>Apply</strong>. Clear every yellow
+          "&hellip;never been through Generate" banner before you rely on the totals. Check the
+          <strong>Amount Differences</strong> table at the bottom.
+        </p>
+      </section>
+
+      <!-- ============ report ============ -->
+      <section id="report" class="card guide__card guide__card--accent">
+        <h2>Step 5 — Produce the Audit Working Report <span class="tag-final">final output</span></h2>
+        <p class="guide__lead">Open <span class="loc">Reconciliation &rsaquo; Audit Working Report</span>.</p>
+
+        <figure class="mock">
+          <figcaption>The Audit Working Report screen</figcaption>
+          <div class="mock__frame">
+            <div class="mock__row mock__row--controls">
+              <span class="mock__field"><span class="mock__flabel">Period</span><span class="mock__fval">Monthly</span></span>
+              <span class="mock__field"><span class="mock__flabel">Month</span><span class="mock__fval">2026-07</span></span>
+              <span class="mock__field"><span class="mock__flabel">Filter on</span><span class="mock__fval">Receipt Date</span></span>
+              <span class="mock__note mock__note--a">Receipt Date = raised in the period · Realization Date = cleared in the period</span>
+            </div>
+            <div class="mock__grid mock__grid--report">
+              <div class="mock__gh">Sheet</div><div class="mock__gh">Rows</div><div class="mock__gh">Matched</div><div class="mock__gh">Contra</div><div class="mock__gh">Unmatched</div><div class="mock__gh">&Sigma; Difference</div>
+              <div>CHEQUE COLL AND REALIZN</div><div class="num">243</div><div class="num">44</div><div class="num">195</div><div class="num">4</div><div class="num">0</div>
+              <div>ONLINE COLLECTION</div><div class="num">2,013</div><div class="num">1,981</div><div class="num">0</div><div class="num">32</div><div class="num">0</div>
+              <div>ONLINE DIAG COLLECTION</div><div class="num">6,004</div><div class="num">5,900</div><div class="num">0</div><div class="num">104</div><div class="num">0</div>
+            </div>
+            <div class="mock__row mock__row--gen">
+              <span class="mock__btn mock__btn--primary"><i class="pi pi-download"></i> Client Report</span>
+              <span class="mock__btn"><i class="pi pi-download"></i> Internal Copy</span>
+              <span class="mock__note mock__note--b">Client Report = the file you submit. Internal Copy adds status / rule / reason columns for your working papers.</span>
+            </div>
+          </div>
+        </figure>
+
+        <ol class="numlist">
+          <li><strong>Pick the period</strong> — Monthly + <span class="ref">2026-07</span> gives the label <span class="ref">JUL-26</span>, used in the file name and every sheet title.</li>
+          <li><strong>Choose the date it filters on</strong> — Receipt Date (normal) or Realization Date (only receipts whose bank credit cleared in the period).</li>
+          <li><strong>Read the preview</strong> — confirm totals and that Unmatched is as low as you expect.</li>
+          <li><strong>Download <span class="ref">Client Report</span></strong> — saves as <span class="ref">Audit Working Report - JUL-26.xlsx</span>. This is the deliverable.</li>
+        </ol>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Report column</th><th>What it holds</th></tr></thead>
+            <tbody>
+              <tr><td class="loc">EFT NO</td><td>Narration / reference of the matched bank line</td></tr>
+              <tr><td class="loc">DATE OF REALIZATION</td><td>Bank credit date · or <span class="ref">CREDIT CONTRA ENTRY</span> · or blank if unmatched</td></tr>
+              <tr><td class="loc">REALIZATION AMOUNT</td><td>The bank credit (own share for a split settlement, so DIFFERENCE stays 0)</td></tr>
+              <tr><td class="loc">DIFFERENCE</td><td>Realization &minus; MIS amount — should be 0 for a clean match</td></tr>
+              <tr><td class="loc">REMARKS</td><td>Refund reference for a contra, or a split-settlement note</td></tr>
+              <tr><td class="loc">CENTRAL AUDIT OBSERVATION</td><td>Left blank for the auditor</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="notice notice--req">
+          <i class="pi pi-info-circle"></i>
+          <span>
+            The report reflects the saved verdicts at the moment of download. Upload more data
+            afterwards &rarr; regenerate the affected batches &rarr; download again.
+          </span>
+        </div>
+      </section>
+
+      <!-- ============ two-stage ============ -->
+      <section id="twostage" class="card guide__card">
+        <h2>Two-stage matching</h2>
+        <p class="guide__lead">Two streams reconcile in two hops rather than one.</p>
+
+        <div class="twostage">
+          <figure class="figure">
+            <figcaption>Cheques</figcaption>
+            <svg viewBox="0 0 620 96" role="img" aria-label="Cheque: cheque collection to bank statement, then leftovers to refund document as a contra entry">
+              <g class="svg-box"><rect x="4" y="24" width="150" height="48" rx="9" /><text x="79" y="53" class="svg-t" text-anchor="middle">Cheque collection</text></g>
+              <path class="svg-arrow" d="M154 48 H214 M206 43 L214 48 L206 53" />
+              <g class="svg-box"><rect x="214" y="24" width="150" height="48" rx="9" /><text x="289" y="47" class="svg-t" text-anchor="middle">Bank statement</text><text x="289" y="63" class="svg-t2" text-anchor="middle">cheque no + amount</text></g>
+              <path class="svg-arrow" d="M364 48 H424 M416 43 L424 48 L416 53" /><text x="394" y="38" class="svg-t2" text-anchor="middle">leftover</text>
+              <g class="svg-box svg-box--accent"><rect x="424" y="24" width="188" height="48" rx="9" /><text x="518" y="47" class="svg-t" text-anchor="middle">Refund document</text><text x="518" y="63" class="svg-t2" text-anchor="middle">= CONTRA ENTRY</text></g>
+            </svg>
+          </figure>
+
+          <figure class="figure">
+            <figcaption>Gateway UPI</figcaption>
+            <svg viewBox="0 0 620 96" role="img" aria-label="Gateway UPI: receipt to PayU MPR line, MPR lines grouped by settlement UTR, tied to one bank credit">
+              <g class="svg-box"><rect x="4" y="24" width="140" height="48" rx="9" /><text x="74" y="53" class="svg-t" text-anchor="middle">UPI receipt</text></g>
+              <path class="svg-arrow" d="M144 48 H204 M196 43 L204 48 L196 53" />
+              <g class="svg-box"><rect x="204" y="24" width="150" height="48" rx="9" /><text x="279" y="47" class="svg-t" text-anchor="middle">PayU MPR line</text><text x="279" y="63" class="svg-t2" text-anchor="middle">merchant txn id</text></g>
+              <path class="svg-arrow" d="M354 48 H414 M406 43 L414 48 L406 53" /><text x="384" y="38" class="svg-t2" text-anchor="middle">group by UTR</text>
+              <g class="svg-box svg-box--accent"><rect x="414" y="24" width="198" height="48" rx="9" /><text x="513" y="47" class="svg-t" text-anchor="middle">One bank credit</text><text x="513" y="63" class="svg-t2" text-anchor="middle">PayU Settlements screen</text></g>
+            </svg>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ============ statuses ============ -->
+      <section id="statuses" class="card guide__card">
+        <h2>Match statuses</h2>
+        <ul class="statuslist">
+          <li><span class="chip chip--ok">Matched</span> Reconciled 1:1 to a bank credit. The goal.</li>
+          <li><span class="chip chip--ok">EaseBuzz Matched</span> Reconciled against a successful EaseBuzz gateway transaction.</li>
+          <li><span class="chip chip--info">Contra Entry</span> Cheque collected then refunded — cancels out, matched to the refund document.</li>
+          <li><span class="chip chip--warning">Partial Match</span> Bank has the same reference with extra digits and the amount agrees. Fix the MIS reference, regenerate.</li>
+          <li><span class="chip chip--warning">Amount Mismatch</span> Reference matches a bank line but amounts differ beyond tolerance. Check both amounts.</li>
+          <li><span class="chip chip--warning">Ambiguous</span> More than one candidate; the engine will not guess.</li>
+          <li><span class="chip chip--danger">Unmatched</span> Nothing found. Read the <em>Match reason</em> — usually a missing upload or a data-entry slip.</li>
+          <li><span class="chip chip--muted">Excluded</span> A rule removed the row from scope; it does not appear in the report.</li>
+          <li><span class="chip chip--muted">Not generated</span> Generate has never been run on this batch.</li>
+        </ul>
+      </section>
+
+      <!-- ============ troubleshooting ============ -->
+      <section id="trouble" class="card guide__card">
+        <h2>Troubleshooting</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Symptom</th><th>Cause &amp; fix</th></tr></thead>
+            <tbody>
+              <tr><td>"All rows already present" / upload rejected</td><td>The file or its rows are already loaded. To reload, delete the old batch first.</td></tr>
+              <tr><td>Many Unmatched receipts</td><td>The bank statement / PayU MPR for that date range or account is not uploaded, or its batch was never generated. Check the Summary banners.</td></tr>
+              <tr><td><span class="chip chip--warning">Partial Match</span></td><td>MIS reference is truncated. Fix it on the MIS row, regenerate.</td></tr>
+              <tr><td>LOCATION blank or wrong in the report</td><td>Bank account not in Master Data, or the MIS unit name has no division. Fix Step 1, regenerate.</td></tr>
+              <tr><td>Report shows no rows</td><td>Wrong period format (Monthly needs <span class="ref">YYYY-MM</span>), nothing uploaded, or filtering on Realization Date before anything cleared.</td></tr>
+              <tr><td>Refunded cheque shows Unmatched</td><td>The refund document for that period is not uploaded. Upload it, regenerate the cheque batch.</td></tr>
+              <tr><td>"Rules have changed" banner</td><td>Press <strong>Regenerate Matches</strong>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>
+            <strong>Phase 1</strong> covers cheque, IP online and Diagnostics online collections —
+            three sheets: <span class="loc">CHEQUE COLL AND REALIZN</span>,
+            <span class="loc">ONLINE COLLECTION</span>, <span class="loc">ONLINE DIAG COLLECTION</span>.
+            Validate each report against your own control figures before circulating.
+          </span>
+        </div>
+      </section>
+  </div>
+</div>

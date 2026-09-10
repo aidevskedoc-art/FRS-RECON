@@ -46,6 +46,7 @@
 }
 
 .tally--matched { color: var(--status-success-fg); }
+.tally--partial { color: var(--status-info-fg); }
 .tally--mismatch { color: var(--status-warning-fg); }
 .tally--ambiguous { color: var(--status-neutral-fg); }
 
@@ -104,6 +105,25 @@
 
 .status-pill--matched {
   @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+
+// Indigo, unlike any other verdict colour: an EaseBuzz-gateway match is real
+// money, verified against the gateway report rather than the bank.
+.status-pill--easebuzz {
+  @include mixins.status-chip(#4f46e5, rgba(79, 70, 229, 0.12), rgba(79, 70, 229, 0.35));
+}
+// Neutral, deliberately not the success green: a contra entry IS reconciled,
+// but against the refund document rather than the bank. Colouring it like a
+// bank match would overstate what was proven; colouring it red would read as a
+// failure, which it is not.
+.status-pill--contra {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+}
+
+// Info blue: a partially-matched unit has genuinely reconciled some of the
+// expected amount — it is not a failure, just not complete.
+.status-pill--partial {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
 }
 
 .status-pill--mismatch {

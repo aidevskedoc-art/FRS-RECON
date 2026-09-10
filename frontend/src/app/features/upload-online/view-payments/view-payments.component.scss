@@ -108,3 +108,26 @@
   padding: var(--space-8);
   color: var(--text-tertiary);
 }
+
+// Angular scopes component styles, and `.notice` is defined per-page rather
+// than globally — the archive banner needs its own copy here.
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.notice--warning {
+  color: var(--status-warning-fg);
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+
+  a {
+    color: inherit;
+    font-weight: 600;
+    text-underline-offset: 2px;
+  }
+}

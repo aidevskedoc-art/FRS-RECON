@@ -23,24 +23,44 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/insurance-policy/history', { title: 'History', subtitle: 'Processed documents' }],
   ['/insurance-policy/documents', { title: 'Document', subtitle: 'Workspace' }],
 
-  ['/upload-online/mis', { title: 'MIS Upload', subtitle: 'Online data' }],
-  ['/upload-online/bank-statements', { title: 'Bank Statements', subtitle: 'Transactions' }],
-  ['/upload-online/bank-statement', { title: 'Bank Statement', subtitle: 'Upload' }],
-  ['/upload-online/ip-payments', { title: 'Online Payments', subtitle: 'In-patient' }],
-  ['/upload-online/diag-op-payments', { title: 'Diag OP Payments', subtitle: 'Outpatient' }],
-  ['/upload-online/payments', { title: 'Payments', subtitle: 'IP & Diagnostics' }],
+  ['/upload-online/mis', { title: 'Upload MIS Data', subtitle: 'Online payments' }],
+  ['/upload-online/ip-payments', { title: 'IP Payments', subtitle: 'Batches' }],
+  ['/upload-online/diag-op-payments', { title: 'Diag OP Payments', subtitle: 'Batches' }],
+
+  ['/upload-online/bank-statement', { title: 'Upload Bank Statement', subtitle: 'Bank & PayU' }],
+  ['/upload-online/bank-statements', { title: 'Bank Statements', subtitle: 'Batches' }],
+  ['/upload-online/payu-mpr-upload', { title: 'Upload PayU MPR', subtitle: 'Bank & PayU' }],
+  ['/upload-online/payu-mpr', { title: 'PayU MPR', subtitle: 'Batches' }],
+  ['/upload-online/easebuzz-upload', { title: 'Upload EaseBuzz', subtitle: 'Bank & PayU' }],
+  ['/upload-online/easebuzz', { title: 'EaseBuzz', subtitle: 'Batches' }],
+
+  // Off-nav archive: the pre-migration online_upload_batches rows. Nothing
+  // writes to that table any more, so this is reachable by URL only.
+  ['/upload-online/payments', { title: 'Legacy MIS Batches', subtitle: 'Archive' }],
+
+  ['/upload-online/cheque-collection', { title: 'Upload Cheque Collection', subtitle: 'Cheque & refunds' }],
+  ['/upload-online/cheque-collections', { title: 'IP Cheque Collections', subtitle: 'Batches' }],
+  ['/upload-online/diag-cheque-collections', { title: 'Diagnostics Cheque Collections', subtitle: 'Batches' }],
+  ['/upload-online/refund-document', { title: 'Upload Refund Document', subtitle: 'Cheque & refunds' }],
+  ['/upload-online/refund-documents', { title: 'Refund Documents', subtitle: 'Reference data' }],
 
   ['/matched-rules/summary', { title: 'Reconciliation', subtitle: 'Summary' }],
+  ['/matched-rules/audit-report', { title: 'Audit Working Report', subtitle: 'Reconciliation' }],
   ['/matched-rules/unit-matches', { title: 'Unit Matches', subtitle: 'Matched' }],
+  ['/matched-rules/payu-settlements', { title: 'PayU Settlements', subtitle: 'Matched' }],
   ['/matched-rules/ip-payment-rules/manage', { title: 'Matching Rules', subtitle: 'IP payments' }],
   ['/matched-rules/ip-payment-rules', { title: 'IP Payment Rules', subtitle: 'Matched' }],
   [
     '/matched-rules/diagnostics-payment-rules/manage',
     { title: 'Matching Rules', subtitle: 'Diagnostics' },
   ],
-  ['/matched-rules/diagnostics-payment-rules', { title: 'Diagnostics Rules', subtitle: 'Matched' }],
+  ['/matched-rules/diagnostics-payment-rules', { title: 'Diagnostics Payment Rules', subtitle: 'Matched' }],
+
+  ['/matched-rules/cheque-collection-rules/manage', { title: 'Matching Rules', subtitle: 'Cheque collection' }],
 
   ['/master-data/division-bank-accounts', { title: 'Division & Bank A/C', subtitle: 'Master data' }],
+
+  ['/how-to-use', { title: 'How to Use', subtitle: 'Reconciliation guide' }],
 ];
 
 const FALLBACK: RouteTitle = { title: 'FRS Recon', subtitle: 'Workspace' };

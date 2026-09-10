@@ -27,15 +27,21 @@
  *                          ONE settlement and must sum. The trailing letter is
  *                          a piece marker, so it is stripped to form the key.
  *
+ *   AFFIX (audit report)   A952497 + B952497 = one ₹3,00,000 credit, and
+ *                          UTIBR…351022 + UTIBR…351022A = one ₹2,50,000 credit.
+ *                          The split marker can be a LEADING or a trailing
+ *                          letter, so both are stripped (only when adjacent to
+ *                          a digit, so a real alphanumeric UTR is untouched).
+ *
  * Applying EXACT to the live data leaves every split unreconciled; applying
- * BASE to the §3 sample merges ACCOUNT001A with ACCOUNT001B, which AC-04
+ * BASE/AFFIX to the §3 sample merges ACCOUNT001A with ACCOUNT001B, which AC-04
  * forbids. So the mode is a property of the rule, chosen per data source.
  * ---------------------------------------------------------------------------
  */
 
 const { normalizeRef } = require('./matcher');
 
-const UNIT_KEY_MODES = ['EXACT', 'BASE'];
+const UNIT_KEY_MODES = ['EXACT', 'BASE', 'AFFIX'];
 
 /**
  * Joins scope and unit key into one Map key. NUL cannot occur in a division
@@ -61,11 +67,25 @@ const UNIT_NOT_AVAILABLE = 'Unit Not Available';
  */
 const MATCH = 'MATCHED';
 const AMOUNT_MISMATCH = 'AMOUNT_MISMATCH';
+const PARTIAL_MATCH = 'PARTIAL_MATCH';
 const UNMATCHED = 'UNMATCHED';
 const AMBIGUOUS_MATCH = 'AMBIGUOUS_MATCH';
 
-/** Every verdict this module can emit — the authoritative list for count buckets and filters. */
-const UNIT_STATUSES = [MATCH, AMOUNT_MISMATCH, UNMATCHED, AMBIGUOUS_MATCH];
+/**
+ * Every verdict this module can emit — the authoritative list for count buckets
+ * and filters.
+ *
+ * PARTIAL_MATCH vs AMOUNT_MISMATCH: once a group has been tied to a
+ * counterparty by its unit key, the SIGN of the shortfall carries meaning the
+ * client asked to see separately —
+ *   group total BELOW the expected amount  -> PARTIAL_MATCH  (some of the
+ *       expected money is accounted for; the rest is an unmatched balance)
+ *   group total ABOVE the expected amount  -> AMOUNT_MISMATCH (an excess /
+ *       over-matched credit — more collected than the bank shows)
+ * An exact tie (within tolerance) is still MATCH. "No counterparty at all" is
+ * still UNMATCHED — absence is not a shortfall.
+ */
+const UNIT_STATUSES = [MATCH, PARTIAL_MATCH, AMOUNT_MISMATCH, UNMATCHED, AMBIGUOUS_MATCH];
 
 /**
  * Money as integer paise. §13 requires currency arithmetic that does not rely
@@ -95,11 +115,15 @@ function fromPaise(paise) {
  */
 function unitKey(value, mode = 'EXACT') {
   if (value === null || value === undefined) return null;
-  const text = String(value).trim().toUpperCase();
+  let text = String(value).trim().toUpperCase();
   if (text === '') return null;
-  if (mode !== 'BASE') return normalizeRef(text);
-  const match = text.match(/^(.+\d)[A-Za-z]$/);
-  return normalizeRef(match ? match[1] : text);
+  if (mode === 'BASE') {
+    const match = text.match(/^(.+\d)[A-Z]$/);
+    text = match ? match[1] : text;
+  } else if (mode === 'AFFIX') {
+    text = text.replace(/^[A-Z](?=\d)/, '').replace(/(?<=\d)[A-Z]$/, '');
+  }
+  return normalizeRef(text);
 }
 
 /**
@@ -186,7 +210,9 @@ function groupByUnit(rows, { refOf, amountOf, scopeOf = () => '', dedupeOf = nul
  *   no candidate                      UNMATCHED       (§16: absence is not a
  *                                                     mismatch)
  *   one candidate, total equals it    MATCH
- *   one candidate, total differs      AMOUNT_MISMATCH (§17, with difference)
+ *   one candidate, total BELOW it     PARTIAL_MATCH   (short — an unmatched
+ *                                                     balance remains)
+ *   one candidate, total ABOVE it     AMOUNT_MISMATCH (excess / over-matched)
  *   several candidates                AMBIGUOUS_MATCH (§18/AC-10: never pick
  *                                                     one arbitrarily)
  *
@@ -229,15 +255,22 @@ function matchUnitGroup(group, candidates, { amountOf, tolerancePaise = 0 }) {
     return { ...base, status: UNMATCHED, counterparty: null, counterpartyAmount: null, difference: null };
   }
 
+  // difference is signed as (grouped total − expected). A negative value means
+  // the group came up SHORT of the expected amount; positive means it exceeds
+  // it. `unmatchedBalance` restates the shortfall the way the client reads it —
+  // "expected − collected", so a short group shows a positive balance still
+  // owed and an exact/excess group shows 0.
   const differencePaise = group.totalPaise - candidatePaise;
-  const isMatch = Math.abs(differencePaise) <= tolerancePaise;
+  const withinTolerance = Math.abs(differencePaise) <= tolerancePaise;
+  const status = withinTolerance ? MATCH : differencePaise < 0 ? PARTIAL_MATCH : AMOUNT_MISMATCH;
 
   return {
     ...base,
-    status: isMatch ? MATCH : AMOUNT_MISMATCH,
+    status,
     counterparty,
     counterpartyAmount: fromPaise(candidatePaise),
     difference: fromPaise(differencePaise),
+    unmatchedBalance: fromPaise(Math.max(0, -differencePaise)),
   };
 }
 
@@ -323,11 +356,13 @@ function reconcileByUnit(sourceRows, counterpartyRows, options) {
 }
 
 module.exports = {
+  KEY_SEPARATOR,
   UNIT_KEY_MODES,
   UNIT_STATUSES,
   UNIT_NOT_AVAILABLE,
   MATCH,
   AMOUNT_MISMATCH,
+  PARTIAL_MATCH,
   UNMATCHED,
   AMBIGUOUS_MATCH,
   toPaise,
