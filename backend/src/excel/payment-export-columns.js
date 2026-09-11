@@ -49,6 +49,7 @@ const PAYMENT_EXPORT_COLUMNS = [
   // disagree on real rows and only the cheque amount reconciles.
   { key: 'receiptAmount', label: 'Receipt Amount', types: ['cheque'], get: (r) => r.receiptAmount ?? '' },
   { key: 'onlineUpiAmount', label: 'Online / UPI Amount', types: MIS, get: (r) => r.onlineUpiAmount ?? '' },
+  { key: 'userId', label: 'User ID', get: (r) => r.userId ?? '' },
   { key: 'userName', label: 'User Name', get: (r) => r.userName ?? '' },
   { key: 'division', label: 'Division (unit)', get: (r) => r.division ?? '' },
   { key: 'matchStatus', label: 'Match Status', get: (r) => (r.matchStatus ? STATUS_LABEL[r.matchStatus] || r.matchStatus : 'Not Generated') },

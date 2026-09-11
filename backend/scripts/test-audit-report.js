@@ -200,9 +200,9 @@ const wbInt = buildAuditWorkbook({
   sheets: [{ key: 'ONLINE', rows: [row({ __result: { status: 'UNMATCHED', matchReason: 'Reference 999 is not on any uploaded bank line.' } })] }],
 });
 const oInt = XLSX.utils.sheet_to_json(wbInt.Sheets['ONLINE COLLECTION'], { header: 1, defval: '', blankrows: false });
-ok('internal header keeps the client columns then appends MATCH STATUS / APPLIED RULE / REASON', oInt[5][20] === 'CENTRAL AUDIT OBSERVATION' && oInt[5][21] === 'MATCH STATUS' && oInt[5][22] === 'APPLIED RULE' && oInt[5][23] === 'REASON', oInt[5].slice(20));
-ok('internal data row carries the verdict + reason', oInt[6][21] === 'Unmatched' && oInt[6][23] === 'Reference 999 is not on any uploaded bank line.', oInt[6].slice(21, 24));
-ok('client variant did NOT get the extra columns', online[5].length === 21, online[5].length);
+ok('internal header keeps the client columns then appends MATCH STATUS / APPLIED RULE / REASON', oInt[5][20] === 'USER ID' && oInt[5][21] === 'CENTRAL AUDIT OBSERVATION' && oInt[5][22] === 'MATCH STATUS' && oInt[5][23] === 'APPLIED RULE' && oInt[5][24] === 'REASON', oInt[5].slice(20));
+ok('internal data row carries the verdict + reason', oInt[6][22] === 'Unmatched' && oInt[6][24] === 'Reference 999 is not on any uploaded bank line.', oInt[6].slice(22, 25));
+ok('client variant keeps the client columns + appended USER ID', online[5].length === 22 && online[5][20] === 'USER ID', online[5].length);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

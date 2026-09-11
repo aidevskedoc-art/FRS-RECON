@@ -216,6 +216,7 @@ const ONLINE_COLUMNS = [
   { header: 'BANK ACCOUNT NO.', get: (r) => bankAcct(r.__result), total: 'count' },
   { header: DIFF_HEADER_ONLINE, get: (r) => differenceCell(realizationAmountCell(r.__result, misOnline(r)), misOnline(r)), total: 'sum', fmt: 'acctParen' },
   { header: 'REMARKS', get: (r) => remarksCell(r.__result), total: 'count' },
+  { header: 'USER ID', get: (r) => r.userId ?? '', total: 'count' },
   { header: 'CENTRAL AUDIT OBSERVATION', get: () => '', total: null },
 ];
 
@@ -240,6 +241,7 @@ const DIAG_COLUMNS = [
   { header: 'BANK ACCOUNT NO.', get: (r) => bankAcct(r.__result), total: 'count' },
   { header: DIFF_HEADER_ONLINE, get: (r) => differenceCell(realizationAmountCell(r.__result, misOnline(r)), misOnline(r)), total: 'sum', fmt: 'acctParen' },
   { header: 'REMARKS', get: (r) => remarksCell(r.__result), total: 'count' },
+  { header: 'USER ID', get: (r) => r.userId ?? '', total: 'count' },
   { header: 'CENTRAL AUDIT OBSERVATION', get: () => '', total: null },
 ];
 
@@ -262,6 +264,7 @@ const CHEQUE_COLUMNS = [
   { header: 'BANK ACCOUNT NO.', get: (r) => bankAcct(r.__result), total: 'count' },
   { header: DIFF_HEADER_CHEQUE, get: (r) => differenceCell(realizationAmountCell(r.__result, misCheque(r)), misCheque(r)), total: 'sum', fmt: 'acctParen' },
   { header: 'REMARKS', get: (r) => remarksCell(r.__result), total: 'count' },
+  { header: 'USER ID', get: (r) => r.userId ?? '', total: 'count' },
   { header: 'CENTRAL AUDIT OBSERVATION', get: () => '', total: null },
 ];
 
