@@ -190,10 +190,17 @@ function buildRecordsFilter(query) {
   }
   // The Online module reconciles bank transfers, not UPI — the batch pages
   // send excludeUpi=true so UPI-mode rows drop out of the list, the counts and
-  // the export unless the user ticks "Include UPI". Both payment_mode and
-  // pay_type are checked: UPI / ManualUPI / BHIM UPI appear in one or the other.
+  // the export unless the user ticks "Include UPI".
+  //
+  // Must define "UPI-mode" IDENTICALLY to isGatewayUpiRow in
+  // matched-rules.routes.js (the Audit Working Report's own ONLINE-sheet
+  // filter) or this list/export and the audit report disagree on which rows
+  // are online collection — see the identical fix + real numbers (222 rows)
+  // in diag-op-payments.routes.js's buildRecordsFilter. A blank payment_mode,
+  // or a payment_mode that IS (not merely contains) UPI/ManualUPI, is the
+  // only thing either side may treat as gateway-UPI.
   if (query.excludeUpi === 'true' || query.excludeUpi === true) {
-    clauses.push(`(COALESCE(r.payment_mode,'') NOT ILIKE '%UPI%' AND COALESCE(r.pay_type,'') NOT ILIKE '%UPI%')`);
+    clauses.push(`(TRIM(COALESCE(r.payment_mode,'')) <> '' AND TRIM(r.payment_mode) !~* '^(upi|manual\\s*upi)$')`);
   }
   if (query.paymentMode) {
     params.push(query.paymentMode);

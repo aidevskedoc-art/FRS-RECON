@@ -182,10 +182,21 @@ function buildRecordsFilter(query) {
   }
   // The Online module reconciles bank transfers, not UPI — the batch pages
   // send excludeUpi=true so UPI-mode rows drop out of the list, the counts and
-  // the export unless the user ticks "Include UPI". Checks pay_mode and
-  // pay_type (UPI / ManualUPI / BHIM UPI land in one or the other).
+  // the export unless the user ticks "Include UPI".
+  //
+  // Must define "UPI-mode" IDENTICALLY to isGatewayUpiRow in
+  // matched-rules.routes.js (the Audit Working Report's own DIAG-sheet
+  // filter) or this list/export and the audit report disagree on which rows
+  // are online collection. A substring match on pay_mode OR pay_type used to
+  // do exactly that: it caught "BHIM UPI" — a bank-transfer instrument the
+  // audit report explicitly keeps, per its own header comment — and any row
+  // whose unrelated pay_type happened to contain "UPI", and dropped both from
+  // this list/export while the audit report kept them (222 real rows on live
+  // data, Aug-26, all "BHIM UPI" or pay_mode "NEFT" with pay_type "UPI").
+  // A blank pay_mode, or a pay_mode that IS (not merely contains)
+  // UPI/ManualUPI, is the only thing either side may treat as gateway-UPI.
   if (query.excludeUpi === 'true' || query.excludeUpi === true) {
-    clauses.push(`(COALESCE(r.pay_mode,'') NOT ILIKE '%UPI%' AND COALESCE(r.pay_type,'') NOT ILIKE '%UPI%')`);
+    clauses.push(`(TRIM(COALESCE(r.pay_mode,'')) <> '' AND TRIM(r.pay_mode) !~* '^(upi|manual\\s*upi)$')`);
   }
   if (query.paymentMode) {
     params.push(query.paymentMode);
