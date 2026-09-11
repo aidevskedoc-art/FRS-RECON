@@ -1,8 +1,10 @@
 <div class="upload-mis">
-  <div class="page-header">
-    <h2>Upload EaseBuzz Report</h2>
-    <p>Import the EaseBuzz gateway transaction report — one workbook, a sheet per unit. Only successful transactions are stored; an IP online receipt reconciles by its Easebuzz ID.</p>
-  </div>
+  @if (!embedded()) {
+    <div class="page-header">
+      <h2>Upload EaseBuzz Report</h2>
+      <p>Import the EaseBuzz gateway transaction report — one workbook, a sheet per unit. Only successful transactions are stored; an IP online receipt reconciles by its Easebuzz ID.</p>
+    </div>
+  }
 
   <div
     class="dropzone"

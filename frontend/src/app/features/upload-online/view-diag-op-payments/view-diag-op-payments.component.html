@@ -4,7 +4,7 @@
       <h2>Diag OP Payments</h2>
       <p>{{ diagOpPayments.batches().length }} upload{{ diagOpPayments.batches().length === 1 ? '' : 's' }}</p>
     </div>
-    <p-button label="Upload MIS Data" icon="pi pi-cloud-upload" routerLink="/upload-online/mis" />
+    <p-button label="Upload MIS Data" icon="pi pi-cloud-upload" routerLink="/upload-online/collections" [queryParams]="{ tab: 'mis' }" />
   </div>
 
   @if (deleteError(); as err) {

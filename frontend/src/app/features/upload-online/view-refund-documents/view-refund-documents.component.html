@@ -7,7 +7,7 @@
         matching
       </p>
     </div>
-    <p-button label="Upload Refund Document" icon="pi pi-cloud-upload" routerLink="/upload-online/refund-document" />
+    <p-button label="Upload Refund Document" icon="pi pi-cloud-upload" routerLink="/upload-online/collections" [queryParams]="{ tab: 'refund' }" />
   </div>
 
   @if (error(); as err) {

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
 import { catchError, concatMap, from, map, of } from 'rxjs';
 import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
@@ -14,11 +14,18 @@ import { ChequeCollectionBatch } from '../../../core/models';
   templateUrl: './upload-cheque-collection.component.html',
   styleUrl: './upload-cheque-collection.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // The opaque page ground (see the scss) is only correct when this screen is
+  // routed directly under the shell; inside the Collections hub it must not
+  // apply its shell-padding-bleeding margins.
+  host: { '[class.embedded]': 'embedded()' },
 })
 export class UploadChequeCollectionComponent {
   private readonly router = inject(Router);
   private readonly chequeCollections = inject(ChequeCollectionService);
   private readonly auth = inject(AuthService);
+
+  /** Set by the Collections hub to suppress this screen's own page header. */
+  readonly embedded = input(false);
 
   protected readonly isDragging = signal(false);
   protected readonly pendingFiles = signal<File[]>([]);

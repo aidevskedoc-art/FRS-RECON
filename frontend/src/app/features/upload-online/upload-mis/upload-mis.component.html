@@ -1,8 +1,10 @@
 <div class="upload-mis">
-  <div class="page-header">
-    <h2>Upload MIS Data</h2>
-    <p>Import IP payment (Format 1) or Diag payment (Format 2) records from the MIS export.</p>
-  </div>
+  @if (!embedded()) {
+    <div class="page-header">
+      <h2>Upload MIS Data</h2>
+      <p>Import IP payment (Format 1) or Diag payment (Format 2) records from the MIS export.</p>
+    </div>
+  }
 
   <div class="format-picker">
     <button

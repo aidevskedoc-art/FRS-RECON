@@ -4,7 +4,7 @@
       <h2>Bank Statements</h2>
       <p>{{ bankStatements.batches().length }} statement{{ bankStatements.batches().length === 1 ? '' : 's' }} uploaded</p>
     </div>
-    <p-button label="Upload Bank Statement" icon="pi pi-cloud-upload" routerLink="/upload-online/bank-statement" />
+    <p-button label="Upload Bank Statement" icon="pi pi-cloud-upload" routerLink="/upload-online/bank-feeds" [queryParams]="{ tab: 'bank' }" />
   </div>
 
   @if (error(); as err) {

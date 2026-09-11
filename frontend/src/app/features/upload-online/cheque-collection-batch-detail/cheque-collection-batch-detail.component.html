@@ -41,7 +41,7 @@
       <i class="pi pi-exclamation-triangle"></i>
       No refund document has been uploaded, so contra entries cannot be found — every cheque the bank cannot account for
       will read as unmatched.
-      <a routerLink="/upload-online/refund-document">Upload one</a>, then regenerate.
+      <a routerLink="/upload-online/collections" [queryParams]="{ tab: 'refund' }">Upload one</a>, then regenerate.
     </div>
   }
 

@@ -1,0 +1,30 @@
+<div class="upload-hub">
+  <div class="page-header">
+    <h2>Upload Bank &amp; Gateway Feeds</h2>
+    <p>The bank statement, the PayU MPR and the EaseBuzz report — pick a feed and drop the file.</p>
+  </div>
+
+  <div class="hub-picker" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="hub-option"
+        [class.hub-option--active]="active() === tab.id"
+        [attr.aria-selected]="active() === tab.id"
+        (click)="select(tab.id)"
+      >
+        <span class="hub-option__title">{{ tab.label }}</span>
+        <span class="hub-option__hint">{{ tab.hint }}</span>
+      </button>
+    }
+  </div>
+
+  <div class="hub-panel">
+    @switch (active()) {
+      @case ('bank') { <app-upload-bank-statement [embedded]="true" /> }
+      @case ('payu') { <app-upload-payu-mpr [embedded]="true" /> }
+      @case ('easebuzz') { <app-upload-easebuzz [embedded]="true" /> }
+    }
+  </div>
+</div>

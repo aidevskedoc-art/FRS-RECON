@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { IpPaymentService } from '../../../core/services/ip-payment.service';
@@ -22,6 +22,9 @@ export class UploadMisComponent {
   private readonly ipPayments = inject(IpPaymentService);
   private readonly diagOpPayments = inject(DiagOpPaymentService);
   private readonly auth = inject(AuthService);
+
+  /** Set by the Collections hub to suppress this screen's own page header. */
+  readonly embedded = input(false);
 
   protected readonly format = signal<MisFormatChoice>('1');
   protected readonly isDragging = signal(false);

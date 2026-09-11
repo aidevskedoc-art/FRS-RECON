@@ -1,8 +1,10 @@
 <div class="upload-mis">
-  <div class="page-header">
-    <h2>Upload Bank Statement</h2>
-    <p>Import an HDFC-style statement export. Account details and the transaction table are read automatically.</p>
-  </div>
+  @if (!embedded()) {
+    <div class="page-header">
+      <h2>Upload Bank Statement</h2>
+      <p>Import an HDFC-style statement export. Account details and the transaction table are read automatically.</p>
+    </div>
+  }
 
   <div
     class="dropzone"

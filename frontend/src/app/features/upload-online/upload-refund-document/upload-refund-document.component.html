@@ -1,11 +1,13 @@
 <div class="upload-mis">
-  <div class="page-header">
-    <h2>Upload Refund Document</h2>
-    <p>
-      Import the IP and OP refund details workbook. It is reference data, not a payment source — a cheque collection the
-      bank cannot account for is looked up here, and a match on cheque number, IP number and amount makes it a contra entry.
-    </p>
-  </div>
+  @if (!embedded()) {
+    <div class="page-header">
+      <h2>Upload Refund Document</h2>
+      <p>
+        Import the IP and OP refund details workbook. It is reference data, not a payment source — a cheque collection the
+        bank cannot account for is looked up here, and a match on cheque number, IP number and amount makes it a contra entry.
+      </p>
+    </div>
+  }
 
   <div
     class="dropzone"

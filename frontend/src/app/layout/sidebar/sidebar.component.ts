@@ -59,7 +59,9 @@ const NAV_GROUPS: NavGroup[] = [
     // The off-nav legacy archive holds this section's own pre-migration data.
     owns: ['/upload-online/payments'],
     items: [
-      { label: 'Upload MIS Data', icon: 'pi pi-cloud-upload', path: '/upload-online/mis' },
+      // One screen for MIS / cheque / refund uploads — the old per-report
+      // upload paths redirect here.
+      { label: 'Upload Collections', icon: 'pi pi-cloud-upload', path: '/upload-online/collections' },
       { label: 'IP Payments', icon: 'pi pi-wallet', path: '/upload-online/ip-payments' },
       { label: 'Diag OP Payments', icon: 'pi pi-heart', path: '/upload-online/diag-op-payments' },
     ],
@@ -68,12 +70,12 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Bank & PayU',
     accent: 'reports',
     items: [
-      { label: 'Upload Bank Statement', icon: 'pi pi-building-columns', path: '/upload-online/bank-statement' },
+      // One screen for bank statement / PayU MPR / EaseBuzz uploads — the old
+      // per-feed upload paths redirect here.
+      { label: 'Upload Bank & PayU', icon: 'pi pi-cloud-upload', path: '/upload-online/bank-feeds' },
       { label: 'Bank Statements', icon: 'pi pi-book', path: '/upload-online/bank-statements' },
-      { label: 'Upload PayU MPR', icon: 'pi pi-wallet', path: '/upload-online/payu-mpr-upload' },
       { label: 'PayU MPR Batches', icon: 'pi pi-receipt', path: '/upload-online/payu-mpr' },
-      { label: 'Upload EaseBuzz', icon: 'pi pi-bolt', path: '/upload-online/easebuzz-upload' },
-      { label: 'EaseBuzz Batches', icon: 'pi pi-receipt', path: '/upload-online/easebuzz' },
+      { label: 'EaseBuzz Batches', icon: 'pi pi-bolt', path: '/upload-online/easebuzz' },
     ],
   },
   {
@@ -100,10 +102,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Cheque & Refunds',
     accent: 'support',
     items: [
-      { label: 'Upload Cheque Collection', icon: 'pi pi-cloud-upload', path: '/upload-online/cheque-collection' },
+      // Cheque + refund uploads moved to the Collections hub under Online
+      // Payments; these screens are the reconciled views.
       { label: 'IP Cheque Collections', icon: 'pi pi-money-bill', path: '/upload-online/cheque-collections' },
       { label: 'Diag Cheque Collections', icon: 'pi pi-heart', path: '/upload-online/diag-cheque-collections' },
-      { label: 'Upload Refund Document', icon: 'pi pi-cloud-upload', path: '/upload-online/refund-document' },
       { label: 'Refund Documents', icon: 'pi pi-replay', path: '/upload-online/refund-documents' },
     ],
     // The rule editor is off-nav, reached from the batch it configures.

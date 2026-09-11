@@ -2,8 +2,10 @@
 
 // The Cheque & Refunds section sits on a plain page ground rather than the
 // shell's ambient aurora. Scoped to this component, so the neighbouring
-// IP / Diag / Bank screens are untouched.
-:host {
+// IP / Diag / Bank screens are untouched. Skipped when embedded in the
+// Collections hub — the mixin's shell-padding-bleeding margins are only
+// correct for a component routed directly under .shell__content.
+:host(:not(.embedded)) {
   @include mixins.opaque-page-surface;
 }
 

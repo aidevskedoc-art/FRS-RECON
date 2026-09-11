@@ -1,8 +1,10 @@
 <div class="upload-mis">
-  <div class="page-header">
-    <h2>Upload PayU MPR</h2>
-    <p>Import the PayU Merchant Payment Report. Columns are matched by name — Merchant Txn ID, PayU ID, Bank Reference No, amount and date.</p>
-  </div>
+  @if (!embedded()) {
+    <div class="page-header">
+      <h2>Upload PayU MPR</h2>
+      <p>Import the PayU Merchant Payment Report. Columns are matched by name — Merchant Txn ID, PayU ID, Bank Reference No, amount and date.</p>
+    </div>
+  }
 
   <div
     class="dropzone"

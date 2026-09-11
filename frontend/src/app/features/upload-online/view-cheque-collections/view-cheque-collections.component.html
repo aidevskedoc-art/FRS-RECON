@@ -4,7 +4,7 @@
       <h2>{{ heading }}</h2>
       <p>{{ batches().length }} upload{{ batches().length === 1 ? '' : 's' }}</p>
     </div>
-    <p-button label="Upload Cheque Collection" icon="pi pi-cloud-upload" routerLink="/upload-online/cheque-collection" />
+    <p-button label="Upload Cheque Collection" icon="pi pi-cloud-upload" routerLink="/upload-online/collections" [queryParams]="{ tab: 'cheque' }" />
   </div>
 
   @if (deleteError(); as err) {

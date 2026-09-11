@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
 import { catchError, concatMap, from, map, of } from 'rxjs';
 import { Router } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
@@ -19,6 +19,9 @@ export class UploadBankStatementComponent {
   private readonly router = inject(Router);
   private readonly bankStatements = inject(BankStatementService);
   private readonly auth = inject(AuthService);
+
+  /** Set by the Bank Feeds hub to suppress this screen's own page header. */
+  readonly embedded = input(false);
 
   protected readonly isDragging = signal(false);
   protected readonly pendingFiles = signal<File[]>([]);

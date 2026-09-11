@@ -88,27 +88,28 @@ export const routes: Routes = [
             title: 'How to Use — FRS - Recon',
           },
           {
-            path: 'upload-online/mis',
+            // One screen for every collection-side report (MIS / cheque /
+            // refund). The three standalone upload paths below redirect here.
+            path: 'upload-online/collections',
             loadComponent: () =>
-              import('./features/upload-online/upload-mis/upload-mis.component').then((m) => m.UploadMisComponent),
-            title: 'Upload MIS Data — Online Payments',
-          },
-          {
-            path: 'upload-online/bank-statement',
-            loadComponent: () =>
-              import('./features/upload-online/upload-bank-statement/upload-bank-statement.component').then(
-                (m) => m.UploadBankStatementComponent,
+              import('./features/upload-online/upload-collections/upload-collections.component').then(
+                (m) => m.UploadCollectionsComponent,
               ),
-            title: 'Upload Bank Statement — Bank & PayU',
+            title: 'Upload Collection Reports — Online Payments',
           },
+          { path: 'upload-online/mis', redirectTo: 'upload-online/collections', pathMatch: 'full' },
           {
-            path: 'upload-online/payu-mpr-upload',
+            // One screen for every bank-side feed (bank statement / PayU MPR /
+            // EaseBuzz). The three standalone upload paths below redirect here.
+            path: 'upload-online/bank-feeds',
             loadComponent: () =>
-              import('./features/upload-online/upload-payu-mpr/upload-payu-mpr.component').then(
-                (m) => m.UploadPayuMprComponent,
+              import('./features/upload-online/upload-bank-feeds/upload-bank-feeds.component').then(
+                (m) => m.UploadBankFeedsComponent,
               ),
-            title: 'Upload PayU MPR — Bank & PayU',
+            title: 'Upload Bank & Gateway Feeds — Bank & PayU',
           },
+          { path: 'upload-online/bank-statement', redirectTo: 'upload-online/bank-feeds', pathMatch: 'full' },
+          { path: 'upload-online/payu-mpr-upload', redirectTo: 'upload-online/bank-feeds', pathMatch: 'full' },
           {
             path: 'upload-online/payu-mpr',
             loadComponent: () =>
@@ -117,14 +118,7 @@ export const routes: Routes = [
               ),
             title: 'PayU MPR Batches — Bank & PayU',
           },
-          {
-            path: 'upload-online/easebuzz-upload',
-            loadComponent: () =>
-              import('./features/upload-online/upload-easebuzz/upload-easebuzz.component').then(
-                (m) => m.UploadEasebuzzComponent,
-              ),
-            title: 'Upload EaseBuzz — Bank & PayU',
-          },
+          { path: 'upload-online/easebuzz-upload', redirectTo: 'upload-online/bank-feeds', pathMatch: 'full' },
           {
             path: 'upload-online/easebuzz',
             loadComponent: () =>
@@ -185,14 +179,7 @@ export const routes: Routes = [
               ).then((m) => m.DiagOpPaymentBatchDetailComponent),
             title: 'Diag OP Payment Batch — Online Payments',
           },
-          {
-            path: 'upload-online/cheque-collection',
-            loadComponent: () =>
-              import('./features/upload-online/upload-cheque-collection/upload-cheque-collection.component').then(
-                (m) => m.UploadChequeCollectionComponent,
-              ),
-            title: 'Upload Cheque Collection — Cheque & Refunds',
-          },
+          { path: 'upload-online/cheque-collection', redirectTo: 'upload-online/collections', pathMatch: 'full' },
           {
             // One component, two screens. `collectionKind` is the only thing
             // that differs, so it is route data rather than a second component.
@@ -221,14 +208,7 @@ export const routes: Routes = [
               ).then((m) => m.ChequeCollectionBatchDetailComponent),
             title: 'Cheque Collection Batch — Cheque & Refunds',
           },
-          {
-            path: 'upload-online/refund-document',
-            loadComponent: () =>
-              import('./features/upload-online/upload-refund-document/upload-refund-document.component').then(
-                (m) => m.UploadRefundDocumentComponent,
-              ),
-            title: 'Upload Refund Document — Cheque & Refunds',
-          },
+          { path: 'upload-online/refund-document', redirectTo: 'upload-online/collections', pathMatch: 'full' },
           {
             path: 'upload-online/refund-documents',
             loadComponent: () =>

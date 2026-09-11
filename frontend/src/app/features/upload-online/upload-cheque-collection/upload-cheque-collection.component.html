@@ -1,12 +1,14 @@
 <div class="upload-mis">
-  <div class="page-header">
-    <h2>Upload Cheque Collection</h2>
-    <p>
-      Import an IP or a Diagnostics cheque collection export — the report is detected from the file, so either can be
-      dropped here. Each receipt is reconciled against the bank statement first, and anything the bank cannot account
-      for is then checked against the refund document for a contra entry.
-    </p>
-  </div>
+  @if (!embedded()) {
+    <div class="page-header">
+      <h2>Upload Cheque Collection</h2>
+      <p>
+        Import an IP or a Diagnostics cheque collection export — the report is detected from the file, so either can be
+        dropped here. Each receipt is reconciled against the bank statement first, and anything the bank cannot account
+        for is then checked against the refund document for a contra entry.
+      </p>
+    </div>
+  }
 
   <div
     class="dropzone"
