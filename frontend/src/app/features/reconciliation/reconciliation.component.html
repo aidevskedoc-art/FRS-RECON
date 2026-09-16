@@ -10,7 +10,8 @@
       label="Audit Report"
       icon="pi pi-file-excel"
       [outlined]="true"
-      routerLink="/matched-rules/audit-report"
+      routerLink="/matched-rules/results"
+      [queryParams]="{ tab: 'audit-report' }"
     />
   </div>
 

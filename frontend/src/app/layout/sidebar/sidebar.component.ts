@@ -40,91 +40,20 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    // The consolidated front door: upload everything, run everything, read the
-    // result — in one place. The per-feed hubs and per-batch screens below are
-    // kept intact for the detailed work; this is simply the way in.
+    // The whole reconciliation workflow, front to back: upload everything, see
+    // every uploaded batch, see every result, manage every rule — four
+    // screens, each already tabbed internally by type. Nothing per-type is
+    // listed here any more; the tabs are the detail.
     label: 'Reconciliation',
     accent: 'rules',
-    items: [{ label: 'Upload & Run', icon: 'pi pi-play-circle', path: '/reconciliation' }],
-  },
-  {
-    // Grouped by subject rather than by verb: one upload screen feeds both
-    // payment lists, so "upload" is a step in this section, not a section.
-    label: 'Online Payments',
-    accent: 'online',
-    // The off-nav legacy archive holds this section's own pre-migration data.
+    // The off-nav legacy MIS archive is otherwise unreachable from the rail.
     owns: ['/upload-online/payments'],
     items: [
-      // One screen for MIS / cheque / refund uploads — the old per-report
-      // upload paths redirect here.
-      { label: 'Upload Collections', icon: 'pi pi-cloud-upload', path: '/upload-online/collections' },
-      { label: 'IP Payments', icon: 'pi pi-wallet', path: '/upload-online/ip-payments' },
-      { label: 'Diag OP Payments', icon: 'pi pi-heart', path: '/upload-online/diag-op-payments' },
+      { label: 'Upload & Run', icon: 'pi pi-play-circle', path: '/reconciliation' },
+      { label: 'Statements', icon: 'pi pi-book', path: '/upload-online/statements' },
+      { label: 'Reconciliation Results', icon: 'pi pi-chart-bar', path: '/matched-rules/results' },
+      { label: 'Manage Rules', icon: 'pi pi-sliders-h', path: '/matched-rules/manage-rules' },
     ],
-  },
-  {
-    label: 'Bank & PayU',
-    accent: 'reports',
-    items: [
-      // One screen for bank statement / PayU MPR / EaseBuzz uploads — the old
-      // per-feed upload paths redirect here.
-      { label: 'Upload Bank & PayU', icon: 'pi pi-cloud-upload', path: '/upload-online/bank-feeds' },
-      { label: 'Bank Statements', icon: 'pi pi-book', path: '/upload-online/bank-statements' },
-      { label: 'PayU MPR Batches', icon: 'pi pi-receipt', path: '/upload-online/payu-mpr' },
-      { label: 'EaseBuzz Batches', icon: 'pi pi-bolt', path: '/upload-online/easebuzz' },
-      // UPI & Card Reconciliation is a wholly separate pipeline (its own
-      // tables, parser, matcher — see backend/sql/schema.sql's UCR section)
-      // but every _nav-accents.scss accent is already claimed by an existing
-      // group, so its upload hub sits here alongside the other gateway feeds
-      // rather than spinning up a new accent token for one entry.
-      { label: 'Upload UPI & Card Feeds', icon: 'pi pi-credit-card', path: '/upload-online/ucr-feeds' },
-      { label: 'UPI & Card Uploads', icon: 'pi pi-list', path: '/upload-online/ucr-batches' },
-    ],
-  },
-  {
-    // Reconciliation output. Rule *authoring* is deliberately absent here:
-    // '/matched-rules/<x>-payment-rules/manage' is reached from the Manage
-    // Rules button on the results page it configures, so configuring a rule
-    // never means leaving the section you are standing in.
-    // Renamed from "Reconciliation" so the consolidated Upload & Run entry can
-    // take that name and lead the rail. These are the detailed, per-type views
-    // the day-to-day flow no longer has to go through — all still intact.
-    label: 'Reconciliation Detail',
-    accent: 'rules',
-    items: [
-      { label: 'Summary', icon: 'pi pi-chart-bar', path: '/matched-rules/summary' },
-      { label: 'Audit Working Report', icon: 'pi pi-file-excel', path: '/matched-rules/audit-report' },
-      { label: 'Unit Matches', icon: 'pi pi-sitemap', path: '/matched-rules/unit-matches' },
-      { label: 'PayU Settlements', icon: 'pi pi-credit-card', path: '/matched-rules/payu-settlements' },
-      { label: 'EaseBuzz Settlements', icon: 'pi pi-bolt', path: '/matched-rules/easebuzz-settlements' },
-      { label: 'Card Reconciliation', icon: 'pi pi-credit-card', path: '/matched-rules/card-reconciliation' },
-      { label: 'UPI Reconciliation', icon: 'pi pi-qrcode', path: '/matched-rules/upi-reconciliation' },
-      { label: 'IP Payment Rules', icon: 'pi pi-list-check', path: '/matched-rules/ip-payment-rules' },
-      { label: 'Diagnostics Payment Rules', icon: 'pi pi-list-check', path: '/matched-rules/diagnostics-payment-rules' },
-    ],
-    // The gateway rule editor is off-nav like the rest, reached from the Manage
-    // Rules button on each of the four settlement/reconciliation screens above.
-    // Claiming it here keeps this group open while it is being edited. Safe
-    // against the cheque claim below: syncToUrl matches by longest prefix, so
-    // '/matched-rules/cheque-collection-rules' still wins for that path.
-    owns: ['/matched-rules/gateway-rules'],
-  },
-  {
-    // Cheque money reconciles against two documents rather than one, so its
-    // upload, its batches and the refund document it is checked against belong
-    // together. `support` is one of the two accents _nav-accents.scss defines
-    // and reserves for exactly this — no new token is needed.
-    label: 'Cheque & Refunds',
-    accent: 'support',
-    items: [
-      // Cheque + refund uploads moved to the Collections hub under Online
-      // Payments; these screens are the reconciled views.
-      { label: 'IP Cheque Collections', icon: 'pi pi-money-bill', path: '/upload-online/cheque-collections' },
-      { label: 'Diag Cheque Collections', icon: 'pi pi-heart', path: '/upload-online/diag-cheque-collections' },
-      { label: 'Refund Documents', icon: 'pi pi-replay', path: '/upload-online/refund-documents' },
-    ],
-    // The rule editor is off-nav, reached from the batch it configures.
-    owns: ['/matched-rules/cheque-collection-rules'],
   },
   {
     label: 'Master Data',
@@ -272,9 +201,10 @@ export class SidebarComponent {
    * Opens the group that owns the current URL and adopts its accent.
    *
    * Matched by longest prefix, not first hit. These are raw string prefixes,
-   * so '/upload-online/bank-statement' (Upload Bank Statement) is a prefix of
-   * '/upload-online/bank-statements' (Bank Statements) — a first-match scan
-   * would accent the rail from the upload screen while you stand on the list.
+   * so a shorter `owns` entry never outranks a real link with a longer path
+   * that starts the same way (e.g. '/insurance-policy' vs
+   * '/insurance-policy/dashboard' below) — a first-match scan could otherwise
+   * land on the wrong group.
    */
   private syncToUrl(url: string): void {
     let bestGroup: NavGroup | null = null;

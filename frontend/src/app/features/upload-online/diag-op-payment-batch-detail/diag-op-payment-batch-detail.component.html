@@ -88,7 +88,7 @@
 
     <span class="filters__spacer"></span>
 
-    <p-button label="Manage Rules" icon="pi pi-cog" size="small" [outlined]="true" routerLink="/matched-rules/diagnostics-payment-rules/manage" />
+    <p-button label="Manage Rules" icon="pi pi-cog" size="small" [outlined]="true" routerLink="/matched-rules/manage-rules" [queryParams]="{ tab: 'diag' }" />
     <p-multiSelect
       [options]="exportColumns()"
       optionLabel="label"

@@ -25,44 +25,15 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/insurance-policy/history', { title: 'History', subtitle: 'Processed documents' }],
   ['/insurance-policy/documents', { title: 'Document', subtitle: 'Workspace' }],
 
-  ['/upload-online/collections', { title: 'Upload Collection Reports', subtitle: 'Online payments' }],
-  ['/upload-online/ip-payments', { title: 'IP Payments', subtitle: 'Batches' }],
-  ['/upload-online/diag-op-payments', { title: 'Diag OP Payments', subtitle: 'Batches' }],
-
-  ['/upload-online/bank-feeds', { title: 'Upload Bank & Gateway Feeds', subtitle: 'Bank & PayU' }],
-  ['/upload-online/bank-statements', { title: 'Bank Statements', subtitle: 'Batches' }],
-  ['/upload-online/payu-mpr', { title: 'PayU MPR', subtitle: 'Batches' }],
-  ['/upload-online/easebuzz', { title: 'EaseBuzz', subtitle: 'Batches' }],
-
-  ['/upload-online/ucr-feeds', { title: 'Upload UPI & Card Feeds', subtitle: 'UPI & Card Reconciliation' }],
-  ['/upload-online/ucr-batches', { title: 'UPI & Card Uploads', subtitle: 'Batches' }],
-
   // Off-nav archive: the pre-migration online_upload_batches rows. Nothing
   // writes to that table any more, so this is reachable by URL only.
   ['/upload-online/payments', { title: 'Legacy MIS Batches', subtitle: 'Archive' }],
 
-  ['/upload-online/cheque-collections', { title: 'IP Cheque Collections', subtitle: 'Batches' }],
-  ['/upload-online/diag-cheque-collections', { title: 'Diagnostics Cheque Collections', subtitle: 'Batches' }],
-  ['/upload-online/refund-documents', { title: 'Refund Documents', subtitle: 'Reference data' }],
+  ['/upload-online/statements', { title: 'Statements', subtitle: 'Batches' }],
 
-  ['/matched-rules/summary', { title: 'Reconciliation', subtitle: 'Summary' }],
-  ['/matched-rules/audit-report', { title: 'Audit Working Report', subtitle: 'Reconciliation' }],
-  ['/matched-rules/unit-matches', { title: 'Unit Matches', subtitle: 'Matched' }],
-  ['/matched-rules/payu-settlements', { title: 'PayU Settlements', subtitle: 'Matched' }],
-  ['/matched-rules/easebuzz-settlements', { title: 'EaseBuzz Settlements', subtitle: 'Matched' }],
-  ['/matched-rules/card-reconciliation', { title: 'Card Reconciliation', subtitle: 'UPI & Card' }],
-  ['/matched-rules/upi-reconciliation', { title: 'UPI Reconciliation', subtitle: 'UPI & Card' }],
-  ['/matched-rules/ip-payment-rules/manage', { title: 'Matching Rules', subtitle: 'IP payments' }],
-  ['/matched-rules/ip-payment-rules', { title: 'IP Payment Rules', subtitle: 'Matched' }],
-  [
-    '/matched-rules/diagnostics-payment-rules/manage',
-    { title: 'Matching Rules', subtitle: 'Diagnostics' },
-  ],
-  ['/matched-rules/diagnostics-payment-rules', { title: 'Diagnostics Payment Rules', subtitle: 'Matched' }],
+  ['/matched-rules/results', { title: 'Reconciliation Results', subtitle: 'Reconciliation' }],
 
-  ['/matched-rules/cheque-collection-rules/manage', { title: 'Matching Rules', subtitle: 'Cheque collection' }],
-
-  ['/matched-rules/gateway-rules/manage', { title: 'Matching Rules', subtitle: 'Gateway & settlements' }],
+  ['/matched-rules/manage-rules', { title: 'Manage Rules', subtitle: 'Reconciliation' }],
 
   ['/master-data/division-bank-accounts', { title: 'Division & Bank A/C', subtitle: 'Master data' }],
 

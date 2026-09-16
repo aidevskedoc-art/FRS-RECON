@@ -402,7 +402,7 @@ export class IpPaymentBatchDetailComponent {
   }
 
   protected back(): void {
-    this.router.navigate(['/upload-online/ip-payments']);
+    this.router.navigate(['/upload-online/statements'], { queryParams: { tab: 'ip-payments' } });
   }
 
   /** Rupee formatting for the expanded unit rows, which are not driven by a ColumnDef. */

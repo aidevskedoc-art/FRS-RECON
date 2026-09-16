@@ -1,0 +1,48 @@
+<div class="statements">
+  <div class="hub-picker" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="hub-option"
+        [class.hub-option--active]="active() === tab.id"
+        [attr.aria-selected]="active() === tab.id"
+        (click)="select(tab.id)"
+      >
+        <span class="hub-option__title">{{ tab.label }}</span>
+      </button>
+    }
+  </div>
+
+  <div class="statements__body">
+    @switch (active()) {
+      @case ('bank-statements') {
+        <app-view-bank-statements />
+      }
+      @case ('payu-mpr') {
+        <app-view-payu-mpr />
+      }
+      @case ('easebuzz') {
+        <app-view-easebuzz />
+      }
+      @case ('ucr-batches') {
+        <app-view-ucr-batches />
+      }
+      @case ('ip-payments') {
+        <app-view-ip-payments />
+      }
+      @case ('diag-op-payments') {
+        <app-view-diag-op-payments />
+      }
+      @case ('ip-cheque-collections') {
+        <app-view-cheque-collections collectionKind="IP" />
+      }
+      @case ('diag-cheque-collections') {
+        <app-view-cheque-collections collectionKind="OP" />
+      }
+      @case ('refund-documents') {
+        <app-view-refund-documents />
+      }
+    }
+  </div>
+</div>

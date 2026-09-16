@@ -38,7 +38,7 @@
       <h3>Card Reconciliation</h3>
       <p class="section-note">
         UPI &amp; Card Reconciliation module — Card MIS rows matched against CARD MPR / Pine Labs by approval code.
-        <a routerLink="/matched-rules/card-reconciliation">Open Card Reconciliation</a> to run Generate and see each row.
+        <a routerLink="/matched-rules/results" [queryParams]="{ tab: 'card-reconciliation' }">Open Card Reconciliation</a> to run Generate and see each row.
       </p>
       @if (s.cardPayments.notGenerated > 0) {
         <div class="notice notice--warning">
@@ -76,7 +76,7 @@
       <p class="section-note">
         UPI &amp; Card Reconciliation module — UPI MIS rows matched against the UPI MPR by RRN. A separate, gateway-verified
         figure from the "UPI Payments" row above (which reconciles against the bank statement instead).
-        <a routerLink="/matched-rules/upi-reconciliation">Open UPI Reconciliation</a> to run Generate and see each row.
+        <a routerLink="/matched-rules/results" [queryParams]="{ tab: 'upi-reconciliation' }">Open UPI Reconciliation</a> to run Generate and see each row.
       </p>
       @if (s.upiGatewayPayments.notGenerated > 0) {
         <div class="notice notice--warning">
@@ -215,7 +215,7 @@
       <h3>PayU Settlement (MPR → Bank)</h3>
       <p class="section-note">
         Stage 2: PayU MPR lines grouped by settlement UTR, each lump tied to the bank credit carrying that UTR.
-        <a routerLink="/matched-rules/payu-settlements">Open PayU Settlements</a> to run Generate and see each batch.
+        <a routerLink="/matched-rules/results" [queryParams]="{ tab: 'payu-settlements' }">Open PayU Settlements</a> to run Generate and see each batch.
       </p>
       <div class="table-wrap">
         <table class="breakdown-table">

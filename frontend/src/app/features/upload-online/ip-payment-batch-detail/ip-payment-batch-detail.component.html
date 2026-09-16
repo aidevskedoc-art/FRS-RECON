@@ -98,7 +98,7 @@
 
     <span class="filters__spacer"></span>
 
-    <p-button label="Manage Rules" icon="pi pi-cog" size="small" [outlined]="true" routerLink="/matched-rules/ip-payment-rules/manage" />
+    <p-button label="Manage Rules" icon="pi pi-cog" size="small" [outlined]="true" routerLink="/matched-rules/manage-rules" [queryParams]="{ tab: 'ip' }" />
     <p-multiSelect
       [options]="exportColumns()"
       optionLabel="label"

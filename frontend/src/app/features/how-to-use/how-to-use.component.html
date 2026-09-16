@@ -4,7 +4,7 @@
     title="How to Use"
     subtitle="The reconciliation workflow — from uploading the source records to downloading the Audit Working Report."
   >
-    <a actions routerLink="/matched-rules/summary" class="btn btn-secondary">
+    <a actions routerLink="/matched-rules/results" class="btn btn-secondary">
       <i class="pi pi-chart-bar"></i> Open Reconciliation Summary
     </a>
   </app-page-header>
@@ -133,58 +133,65 @@
         <p class="guide__lead">
           All uploads take <span class="ref">.xlsx</span> / <span class="ref">.xls</span> up to
           70&nbsp;MB. A file already ingested is rejected, and duplicate rows inside a new file are
-          skipped — so it is safe to re-send a corrected file.
+          skipped — so it is safe to re-send a corrected file. Every source below is uploaded from
+          the same place: <span class="loc">Reconciliation &rsaquo; Upload &amp; Run</span> — drop
+          the file into the matching zone (MIS / Bank &amp; Gateway / Cheque) and the report type is
+          detected automatically.
         </p>
 
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Source</th><th>Menu</th><th>What the file is</th></tr>
+              <tr><th>Source</th><th>Drop zone</th><th>What the file is</th></tr>
             </thead>
             <tbody>
               <tr>
                 <td>IP online MIS</td>
-                <td class="loc">Online Payments &rsaquo; Upload Collections &rsaquo; MIS Data</td>
+                <td class="loc">MIS</td>
                 <td>Inpatient online-collection export (a sheet per unit)</td>
               </tr>
               <tr>
                 <td>Diagnostics online MIS</td>
-                <td class="loc">Online Payments &rsaquo; Upload Collections &rsaquo; MIS Data</td>
+                <td class="loc">MIS</td>
                 <td>Diagnostics online-collection export (a sheet per unit)</td>
               </tr>
               <tr>
                 <td>Bank statement</td>
-                <td class="loc">Bank &amp; PayU &rsaquo; Upload Bank &amp; PayU &rsaquo; Bank Statement</td>
+                <td class="loc">Bank &amp; Gateway</td>
                 <td>Bank's own export — one workbook per account; a combined workbook splits per sheet</td>
               </tr>
               <tr>
                 <td>PayU MPR</td>
-                <td class="loc">Bank &amp; PayU &rsaquo; Upload Bank &amp; PayU &rsaquo; PayU MPR</td>
+                <td class="loc">Bank &amp; Gateway</td>
                 <td>PayU Merchant Payment Report (gateway settlement report)</td>
               </tr>
               <tr>
                 <td>EaseBuzz</td>
-                <td class="loc">Bank &amp; PayU &rsaquo; Upload Bank &amp; PayU &rsaquo; EaseBuzz</td>
+                <td class="loc">Bank &amp; Gateway</td>
                 <td>EaseBuzz transaction report; only <em>success</em> rows are stored</td>
               </tr>
               <tr>
                 <td>EaseBuzz Settlement</td>
-                <td class="loc">Bank &amp; PayU &rsaquo; Upload Bank &amp; PayU &rsaquo; EaseBuzz Settlement</td>
+                <td class="loc">Bank &amp; Gateway</td>
                 <td>EaseBuzz's own settlement export — one row per payout, ties to the real bank credit</td>
               </tr>
               <tr>
                 <td>Cheque collection</td>
-                <td class="loc">Online Payments &rsaquo; Upload Collections &rsaquo; Cheque Collection</td>
+                <td class="loc">Cheque</td>
                 <td>Inpatient and/or diagnostics cheque register</td>
               </tr>
               <tr>
                 <td>Refund document</td>
-                <td class="loc">Online Payments &rsaquo; Upload Collections &rsaquo; Refund Document</td>
+                <td class="loc">Cheque</td>
                 <td>The single 8-sheet IP &amp; OP refund workbook (reference data)</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <p>
+          Every uploaded batch — before or after Generate — can be reviewed at
+          <span class="loc">Reconciliation &rsaquo; Statements</span>, one tab per source.
+        </p>
 
         <div class="notice notice--warning">
           <i class="pi pi-exclamation-triangle"></i>
@@ -233,10 +240,10 @@
 
         <h3>Where to press Generate</h3>
         <ol class="numlist">
-          <li>Each <strong>Bank Statement</strong> batch — <span class="loc">Bank Statements</span> &rarr; open &rarr; Generate.</li>
-          <li>Each <strong>IP Payments</strong> and <strong>Diag OP Payments</strong> batch.</li>
-          <li>Each <strong>Cheque Collection</strong> batch (IP and Diagnostics).</li>
-          <li><strong>PayU Settlements</strong> — <span class="loc">Reconciliation &rsaquo; PayU Settlements</span> &rarr; Generate.</li>
+          <li>Each <strong>Bank Statement</strong> batch — <span class="loc">Reconciliation &rsaquo; Statements</span>, Bank Statements tab &rarr; open &rarr; Generate.</li>
+          <li>Each <strong>IP Payments</strong> and <strong>Diag OP Payments</strong> batch (same Statements page, their own tabs).</li>
+          <li>Each <strong>Cheque Collection</strong> batch (IP and Diagnostics tabs).</li>
+          <li><strong>PayU Settlements</strong> — <span class="loc">Reconciliation &rsaquo; Reconciliation Results</span>, PayU Settlements tab &rarr; Generate.</li>
         </ol>
 
         <div class="notice notice--warning">
@@ -249,7 +256,7 @@
 
         <h3>Step 4 — Review</h3>
         <p>
-          Open <span class="loc">Reconciliation &rsaquo; Summary</span>, set <strong>From / To</strong>
+          Open <span class="loc">Reconciliation &rsaquo; Reconciliation Results</span> (Summary tab), set <strong>From / To</strong>
           to the period, press <strong>Apply</strong>. Clear every yellow
           "&hellip;never been through Generate" banner before you rely on the totals. Check the
           <strong>Amount Differences</strong> table at the bottom.
@@ -259,7 +266,7 @@
       <!-- ============ report ============ -->
       <section id="report" class="card guide__card guide__card--accent">
         <h2>Step 5 — Produce the Audit Working Report <span class="tag-final">final output</span></h2>
-        <p class="guide__lead">Open <span class="loc">Reconciliation &rsaquo; Audit Working Report</span>.</p>
+        <p class="guide__lead">Open <span class="loc">Reconciliation &rsaquo; Reconciliation Results</span>, Audit Working Report tab.</p>
 
         <figure class="mock">
           <figcaption>The Audit Working Report screen</figcaption>

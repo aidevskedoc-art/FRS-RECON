@@ -9,8 +9,8 @@
   <div class="notice notice--warning">
     <i class="pi pi-info-circle"></i>
     Archive. MIS uploads now land in
-    <a routerLink="/upload-online/ip-payments">IP Payments</a> and
-    <a routerLink="/upload-online/diag-op-payments">Diag OP Payments</a> — nothing new is written here.
+    <a routerLink="/upload-online/statements" [queryParams]="{ tab: 'ip-payments' }">IP Payments</a> and
+    <a routerLink="/upload-online/statements" [queryParams]="{ tab: 'diag-op-payments' }">Diag OP Payments</a> — nothing new is written here.
   </div>
 
   <div class="filter-tabs">

@@ -91,66 +91,30 @@ export const routes: Routes = [
               import('./features/how-to-use/how-to-use.component').then((m) => m.HowToUseComponent),
             title: 'How to Use — FRS - Recon',
           },
+          // Upload hubs — superseded by the /reconciliation screen, which
+          // uploads every one of these report types itself. Kept as redirects
+          // so old links/bookmarks still land somewhere useful.
+          { path: 'upload-online/collections', redirectTo: 'reconciliation', pathMatch: 'full' },
+          { path: 'upload-online/mis', redirectTo: 'reconciliation', pathMatch: 'full' },
+          { path: 'upload-online/bank-feeds', redirectTo: 'reconciliation', pathMatch: 'full' },
+          { path: 'upload-online/bank-statement', redirectTo: 'reconciliation', pathMatch: 'full' },
+          { path: 'upload-online/payu-mpr-upload', redirectTo: 'reconciliation', pathMatch: 'full' },
+          { path: 'upload-online/easebuzz-upload', redirectTo: 'reconciliation', pathMatch: 'full' },
+          { path: 'upload-online/ucr-feeds', redirectTo: 'reconciliation', pathMatch: 'full' },
+          // Batch/statement list screens — folded into the one tabbed
+          // Statements page below.
+          { path: 'upload-online/payu-mpr', redirectTo: 'upload-online/statements', pathMatch: 'full' },
+          { path: 'upload-online/easebuzz', redirectTo: 'upload-online/statements', pathMatch: 'full' },
+          { path: 'upload-online/ucr-batches', redirectTo: 'upload-online/statements', pathMatch: 'full' },
           {
-            // One screen for every collection-side report (MIS / cheque /
-            // refund). The three standalone upload paths below redirect here.
-            path: 'upload-online/collections',
+            // Every uploaded-batch list (bank / PayU / EaseBuzz / UPI & Card /
+            // IP / Diag OP / cheque / refund) in one place, as tabs.
+            path: 'upload-online/statements',
             loadComponent: () =>
-              import('./features/upload-online/upload-collections/upload-collections.component').then(
-                (m) => m.UploadCollectionsComponent,
+              import('./features/upload-online/statements/statements.component').then(
+                (m) => m.StatementsComponent,
               ),
-            title: 'Upload Collection Reports — Online Payments',
-          },
-          { path: 'upload-online/mis', redirectTo: 'upload-online/collections', pathMatch: 'full' },
-          {
-            // One screen for every bank-side feed (bank statement / PayU MPR /
-            // EaseBuzz). The three standalone upload paths below redirect here.
-            path: 'upload-online/bank-feeds',
-            loadComponent: () =>
-              import('./features/upload-online/upload-bank-feeds/upload-bank-feeds.component').then(
-                (m) => m.UploadBankFeedsComponent,
-              ),
-            title: 'Upload Bank & Gateway Feeds — Bank & PayU',
-          },
-          { path: 'upload-online/bank-statement', redirectTo: 'upload-online/bank-feeds', pathMatch: 'full' },
-          { path: 'upload-online/payu-mpr-upload', redirectTo: 'upload-online/bank-feeds', pathMatch: 'full' },
-          {
-            path: 'upload-online/payu-mpr',
-            loadComponent: () =>
-              import('./features/upload-online/view-payu-mpr/view-payu-mpr.component').then(
-                (m) => m.ViewPayuMprComponent,
-              ),
-            title: 'PayU MPR Batches — Bank & PayU',
-          },
-          { path: 'upload-online/easebuzz-upload', redirectTo: 'upload-online/bank-feeds', pathMatch: 'full' },
-          {
-            path: 'upload-online/easebuzz',
-            loadComponent: () =>
-              import('./features/upload-online/view-easebuzz/view-easebuzz.component').then(
-                (m) => m.ViewEasebuzzComponent,
-              ),
-            title: 'EaseBuzz Batches — Bank & PayU',
-          },
-          {
-            // One screen for every UPI & Card Reconciliation feed (instrument-
-            // level MIS + CARD MPR + Pine Labs + UPI MPR) — a wholly separate
-            // module from Upload Bank & Gateway Feeds above.
-            path: 'upload-online/ucr-feeds',
-            loadComponent: () =>
-              import('./features/upload-online/upload-ucr-feeds/upload-ucr-feeds.component').then(
-                (m) => m.UploadUcrFeedsComponent,
-              ),
-            title: 'Upload UPI & Card Feeds — UPI & Card Reconciliation',
-          },
-          {
-            // Upload history (file/rows/uploaded/matched/delete) for the 4 UCR
-            // sources — one screen with a tab picker, not 4 separate routes.
-            path: 'upload-online/ucr-batches',
-            loadComponent: () =>
-              import('./features/upload-online/view-ucr-batches/view-ucr-batches.component').then(
-                (m) => m.ViewUcrBatchesComponent,
-              ),
-            title: 'UPI & Card Uploads — UPI & Card Reconciliation',
+            title: 'Statements — FRS Recon',
           },
           // Legacy, off-nav: these two read online_upload_batches, the
           // pre-migration MIS table. POST /api/online-upload/mis now rejects
@@ -172,14 +136,7 @@ export const routes: Routes = [
               ),
             title: 'Legacy MIS Batch (Archive) — FRS - Recon',
           },
-          {
-            path: 'upload-online/ip-payments',
-            loadComponent: () =>
-              import('./features/upload-online/view-ip-payments/view-ip-payments.component').then(
-                (m) => m.ViewIpPaymentsComponent,
-              ),
-            title: 'IP Payments — Online Payments',
-          },
+          { path: 'upload-online/ip-payments', redirectTo: 'upload-online/statements', pathMatch: 'full' },
           {
             path: 'upload-online/ip-payments/:batchId',
             loadComponent: () =>
@@ -188,14 +145,7 @@ export const routes: Routes = [
               ),
             title: 'IP Payment Batch — Online Payments',
           },
-          {
-            path: 'upload-online/diag-op-payments',
-            loadComponent: () =>
-              import('./features/upload-online/view-diag-op-payments/view-diag-op-payments.component').then(
-                (m) => m.ViewDiagOpPaymentsComponent,
-              ),
-            title: 'Diag OP Payments — Online Payments',
-          },
+          { path: 'upload-online/diag-op-payments', redirectTo: 'upload-online/statements', pathMatch: 'full' },
           {
             path: 'upload-online/diag-op-payments/:batchId',
             loadComponent: () =>
@@ -204,26 +154,12 @@ export const routes: Routes = [
               ).then((m) => m.DiagOpPaymentBatchDetailComponent),
             title: 'Diag OP Payment Batch — Online Payments',
           },
-          { path: 'upload-online/cheque-collection', redirectTo: 'upload-online/collections', pathMatch: 'full' },
-          {
-            // One component, two screens. `collectionKind` is the only thing
-            // that differs, so it is route data rather than a second component.
-            path: 'upload-online/cheque-collections',
-            loadComponent: () =>
-              import('./features/upload-online/view-cheque-collections/view-cheque-collections.component').then(
-                (m) => m.ViewChequeCollectionsComponent,
-              ),
-            data: { collectionKind: 'IP' },
-            title: 'IP Cheque Collections — Cheque & Refunds',
-          },
+          { path: 'upload-online/cheque-collection', redirectTo: 'reconciliation', pathMatch: 'full' },
+          { path: 'upload-online/cheque-collections', redirectTo: 'upload-online/statements', pathMatch: 'full' },
           {
             path: 'upload-online/diag-cheque-collections',
-            loadComponent: () =>
-              import('./features/upload-online/view-cheque-collections/view-cheque-collections.component').then(
-                (m) => m.ViewChequeCollectionsComponent,
-              ),
-            data: { collectionKind: 'OP' },
-            title: 'Diagnostics Cheque Collections — Cheque & Refunds',
+            redirectTo: 'upload-online/statements',
+            pathMatch: 'full',
           },
           {
             path: 'upload-online/cheque-collections/:batchId',
@@ -233,23 +169,9 @@ export const routes: Routes = [
               ).then((m) => m.ChequeCollectionBatchDetailComponent),
             title: 'Cheque Collection Batch — Cheque & Refunds',
           },
-          { path: 'upload-online/refund-document', redirectTo: 'upload-online/collections', pathMatch: 'full' },
-          {
-            path: 'upload-online/refund-documents',
-            loadComponent: () =>
-              import('./features/upload-online/view-refund-documents/view-refund-documents.component').then(
-                (m) => m.ViewRefundDocumentsComponent,
-              ),
-            title: 'Refund Documents — Cheque & Refunds',
-          },
-          {
-            path: 'upload-online/bank-statements',
-            loadComponent: () =>
-              import('./features/upload-online/view-bank-statements/view-bank-statements.component').then(
-                (m) => m.ViewBankStatementsComponent,
-              ),
-            title: 'Bank Statements — Bank & PayU',
-          },
+          { path: 'upload-online/refund-document', redirectTo: 'reconciliation', pathMatch: 'full' },
+          { path: 'upload-online/refund-documents', redirectTo: 'upload-online/statements', pathMatch: 'full' },
+          { path: 'upload-online/bank-statements', redirectTo: 'upload-online/statements', pathMatch: 'full' },
           {
             path: 'upload-online/bank-statements/:batchId',
             loadComponent: () =>
@@ -258,123 +180,62 @@ export const routes: Routes = [
               ).then((m) => m.BankStatementBatchDetailComponent),
             title: 'Bank Statement Transactions — Bank & PayU',
           },
+          // Reconciliation result screens — folded into one tabbed page below.
+          { path: 'matched-rules/summary', redirectTo: 'matched-rules/results', pathMatch: 'full' },
+          { path: 'matched-rules/unit-matches', redirectTo: 'matched-rules/results', pathMatch: 'full' },
+          { path: 'matched-rules/payu-settlements', redirectTo: 'matched-rules/results', pathMatch: 'full' },
+          { path: 'matched-rules/easebuzz-settlements', redirectTo: 'matched-rules/results', pathMatch: 'full' },
+          { path: 'matched-rules/card-reconciliation', redirectTo: 'matched-rules/results', pathMatch: 'full' },
+          { path: 'matched-rules/upi-reconciliation', redirectTo: 'matched-rules/results', pathMatch: 'full' },
+          { path: 'matched-rules/audit-report', redirectTo: 'matched-rules/results', pathMatch: 'full' },
+          { path: 'matched-rules/ip-payment-rules', redirectTo: 'matched-rules/results', pathMatch: 'full' },
           {
-            path: 'matched-rules/summary',
-            loadComponent: () =>
-              import('./features/matched-rules/reconciliation-summary/reconciliation-summary.component').then(
-                (m) => m.ReconciliationSummaryComponent,
-              ),
-            title: 'Reconciliation Summary — Reconciliation',
+            path: 'matched-rules/diagnostics-payment-rules',
+            redirectTo: 'matched-rules/results',
+            pathMatch: 'full',
           },
           {
-            path: 'matched-rules/unit-matches',
+            // Every reconciliation result screen (Summary, Audit Report, Unit
+            // Matches, PayU/EaseBuzz Settlements, Card/UPI Reconciliation, IP/
+            // Diag Payment Rules) in one place, as tabs.
+            path: 'matched-rules/results',
             loadComponent: () =>
-              import('./features/matched-rules/unit-matches/unit-matches.component').then(
-                (m) => m.UnitMatchesComponent,
+              import('./features/matched-rules/reconciliation-results/reconciliation-results.component').then(
+                (m) => m.ReconciliationResultsComponent,
               ),
-            title: 'Unit Matches — Reconciliation',
-          },
-          {
-            path: 'matched-rules/payu-settlements',
-            loadComponent: () =>
-              import('./features/matched-rules/payu-settlements/payu-settlements.component').then(
-                (m) => m.PayuSettlementsComponent,
-              ),
-            title: 'PayU Settlements — Reconciliation',
-          },
-          {
-            path: 'matched-rules/easebuzz-settlements',
-            loadComponent: () =>
-              import('./features/matched-rules/easebuzz-settlements/easebuzz-settlements.component').then(
-                (m) => m.EasebuzzSettlementsComponent,
-              ),
-            title: 'EaseBuzz Settlements — Reconciliation',
+            title: 'Reconciliation Results — Reconciliation',
           },
           {
             // The consolidated screen: drop every report in one place, run all
             // reconciliations from one button, read the result below it.
-            // The individual upload hubs and per-batch Generate screens are
-            // deliberately left in place and keep working.
             path: 'reconciliation',
             loadComponent: () =>
               import('./features/reconciliation/reconciliation.component').then((m) => m.ReconciliationComponent),
             title: 'Reconciliation — FRS Recon',
           },
-          {
-            path: 'matched-rules/card-reconciliation',
-            loadComponent: () =>
-              import('./features/matched-rules/card-reconciliation/card-reconciliation.component').then(
-                (m) => m.CardReconciliationComponent,
-              ),
-            title: 'Card Reconciliation — UPI & Card Reconciliation',
-          },
-          {
-            path: 'matched-rules/upi-reconciliation',
-            loadComponent: () =>
-              import('./features/matched-rules/upi-reconciliation/upi-reconciliation.component').then(
-                (m) => m.UpiReconciliationComponent,
-              ),
-            title: 'UPI Reconciliation — UPI & Card Reconciliation',
-          },
-          {
-            path: 'matched-rules/audit-report',
-            loadComponent: () =>
-              import('./features/matched-rules/audit-report/audit-report.component').then((m) => m.AuditReportComponent),
-            title: 'Audit Working Report — Reconciliation',
-          },
-          {
-            path: 'matched-rules/ip-payment-rules',
-            loadComponent: () =>
-              import('./features/matched-rules/ip-payment-rules/ip-payment-rules.component').then(
-                (m) => m.IpPaymentRulesComponent,
-              ),
-            title: 'IP Payment Rules — Reconciliation',
-          },
-          {
-            path: 'matched-rules/diagnostics-payment-rules',
-            loadComponent: () =>
-              import('./features/matched-rules/diag-payment-rules/diag-payment-rules.component').then(
-                (m) => m.DiagPaymentRulesComponent,
-              ),
-            title: 'Diagnostics Payment Rules — Reconciliation',
-          },
-          {
-            path: 'matched-rules/ip-payment-rules/manage',
-            loadComponent: () =>
-              import('./features/matched-rules/ip-matching-rules/ip-matching-rules.component').then(
-                (m) => m.IpMatchingRulesComponent,
-              ),
-            title: 'IP Matching Rules — Reconciliation',
-          },
+          // Rule editors — folded into one tabbed Manage Rules page below.
+          { path: 'matched-rules/ip-payment-rules/manage', redirectTo: 'matched-rules/manage-rules', pathMatch: 'full' },
           {
             path: 'matched-rules/diagnostics-payment-rules/manage',
-            loadComponent: () =>
-              import('./features/matched-rules/diag-matching-rules/diag-matching-rules.component').then(
-                (m) => m.DiagMatchingRulesComponent,
-              ),
-            title: 'Diagnostics Matching Rules — Reconciliation',
+            redirectTo: 'matched-rules/manage-rules',
+            pathMatch: 'full',
           },
           {
-            // Off-nav, like the other rule editors: reached from the Manage
-            // Rules button on the batch it configures, so configuring a rule
-            // never means leaving the section you are standing in.
             path: 'matched-rules/cheque-collection-rules/manage',
-            loadComponent: () =>
-              import('./features/matched-rules/cheque-matching-rules/cheque-matching-rules.component').then(
-                (m) => m.ChequeMatchingRulesComponent,
-              ),
-            title: 'Cheque Matching Rules — Reconciliation',
+            redirectTo: 'matched-rules/manage-rules',
+            pathMatch: 'full',
           },
+          { path: 'matched-rules/gateway-rules/manage', redirectTo: 'matched-rules/manage-rules', pathMatch: 'full' },
           {
-            // Off-nav like the other rule editors. `?target=` picks which of the
-            // four gateway reconciliations it opens on, so the Manage Rules
-            // button on each results screen lands on the right one.
-            path: 'matched-rules/gateway-rules/manage',
+            // Every rule editor (IP/Diagnostics/Cheque Matching, Gateway
+            // Matching) in one place, as tabs. `?target=` still picks which of
+            // the four gateway reconciliations the Gateway tab opens on.
+            path: 'matched-rules/manage-rules',
             loadComponent: () =>
-              import('./features/matched-rules/gateway-matching-rules/gateway-matching-rules.component').then(
-                (m) => m.GatewayMatchingRulesComponent,
+              import('./features/matched-rules/manage-rules/manage-rules.component').then(
+                (m) => m.ManageRulesComponent,
               ),
-            title: 'Gateway Matching Rules — Reconciliation',
+            title: 'Manage Rules — Reconciliation',
           },
           {
             path: 'master-data/division-bank-accounts',

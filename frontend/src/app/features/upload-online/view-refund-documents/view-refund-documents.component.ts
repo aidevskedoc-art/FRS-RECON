@@ -1,7 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { RefundService } from '../../../core/services/refund.service';
@@ -19,7 +17,7 @@ import { RefundBatch } from '../../../core/models';
 @Component({
   selector: 'app-view-refund-documents',
   standalone: true,
-  imports: [RouterLink, DatePipe, DecimalPipe, ButtonModule, TableModule, TooltipModule],
+  imports: [DatePipe, DecimalPipe, TableModule, TooltipModule],
   templateUrl: './view-refund-documents.component.html',
   styleUrl: './view-refund-documents.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

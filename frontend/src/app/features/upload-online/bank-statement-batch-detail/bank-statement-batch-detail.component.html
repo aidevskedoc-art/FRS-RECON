@@ -16,7 +16,7 @@
             <p class="batch-detail__hint">
               This is Stage 1: each MPR line matched to a UPI receipt.
               For the settlement rollup (MPR → bank credit) see
-              <a routerLink="/matched-rules/payu-settlements">PayU Settlements</a>.
+              <a routerLink="/matched-rules/results" [queryParams]="{ tab: 'payu-settlements' }">PayU Settlements</a>.
             </p>
           }
         </div>

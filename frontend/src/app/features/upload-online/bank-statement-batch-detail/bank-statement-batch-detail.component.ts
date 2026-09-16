@@ -176,7 +176,7 @@ export class BankStatementBatchDetailComponent {
   }
 
   protected back(): void {
-    this.router.navigate(['/upload-online/bank-statements']);
+    this.router.navigate(['/upload-online/statements'], { queryParams: { tab: 'bank-statements' } });
   }
 
   protected deleteAll(): void {

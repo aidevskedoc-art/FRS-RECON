@@ -284,7 +284,7 @@ export class DiagOpPaymentBatchDetailComponent {
   }
 
   protected back(): void {
-    this.router.navigate(['/upload-online/diag-op-payments']);
+    this.router.navigate(['/upload-online/statements'], { queryParams: { tab: 'diag-op-payments' } });
   }
 
   protected cellValue(record: OnlinePaymentRecord, column: ColumnDef): string {

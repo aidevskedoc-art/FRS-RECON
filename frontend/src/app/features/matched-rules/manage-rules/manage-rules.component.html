@@ -1,0 +1,33 @@
+<div class="manage-rules">
+  <div class="hub-picker" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="hub-option"
+        [class.hub-option--active]="active() === tab.id"
+        [attr.aria-selected]="active() === tab.id"
+        (click)="select(tab.id)"
+      >
+        <span class="hub-option__title">{{ tab.label }}</span>
+      </button>
+    }
+  </div>
+
+  <div class="manage-rules__body">
+    @switch (active()) {
+      @case ('ip') {
+        <app-ip-matching-rules />
+      }
+      @case ('diag') {
+        <app-diag-matching-rules />
+      }
+      @case ('cheque') {
+        <app-cheque-matching-rules />
+      }
+      @case ('gateway') {
+        <app-gateway-matching-rules />
+      }
+    }
+  </div>
+</div>

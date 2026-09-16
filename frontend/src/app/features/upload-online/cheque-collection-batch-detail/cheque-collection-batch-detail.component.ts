@@ -129,8 +129,8 @@ export class ChequeCollectionBatchDetailComponent {
 
   /** True when this batch came from the diagnostics report, which drives the header wording and the back link. */
   protected readonly isDiagnostics = computed(() => this.batch()?.collectionKind === 'OP');
-  protected readonly backLink = computed(() =>
-    this.isDiagnostics() ? '/upload-online/diag-cheque-collections' : '/upload-online/cheque-collections',
+  protected readonly backTab = computed(() =>
+    this.isDiagnostics() ? 'diag-cheque-collections' : 'ip-cheque-collections',
   );
 
   protected readonly search = signal('');

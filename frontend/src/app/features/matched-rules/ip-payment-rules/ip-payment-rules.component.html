@@ -4,7 +4,7 @@
       <h2>IP Payment Rules</h2>
       <p>{{ total() }} matched group{{ total() === 1 ? '' : 's' }}</p>
     </div>
-    <p-button label="Manage Rules" icon="pi pi-cog" [outlined]="true" routerLink="/matched-rules/ip-payment-rules/manage" />
+    <p-button label="Manage Rules" icon="pi pi-cog" [outlined]="true" routerLink="/matched-rules/manage-rules" [queryParams]="{ tab: 'ip' }" />
   </div>
 
   @if (error(); as err) {
