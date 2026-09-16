@@ -82,7 +82,7 @@ const PAYMENT_EXPORT_COLUMNS = [
   // Positive only when the group came up short of the expected amount.
   {
     key: 'unmatchedBalance',
-    label: 'Unmatched Balance',
+    label: 'Balance Amount',
     types: MIS,
     get: (r) => (r.matchUnitDifference != null && r.matchUnitDifference < 0 ? Number((-r.matchUnitDifference).toFixed(2)) : ''),
   },

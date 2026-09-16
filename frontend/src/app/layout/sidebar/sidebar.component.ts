@@ -40,16 +40,12 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'Automation Insurance',
-    accent: 'insurance',
-    // '/insurance-policy/processing' and the documents/:id/* workspace steps.
-    owns: ['/insurance-policy'],
-    items: [
-      { label: 'Dashboard', icon: 'pi pi-th-large', path: '/insurance-policy/dashboard' },
-      { label: 'Upload Documents', icon: 'pi pi-cloud-upload', path: '/insurance-policy/upload' },
-      { label: 'Excel Export', icon: 'pi pi-file-excel', path: '/insurance-policy/excel-preview' },
-      { label: 'Processing History', icon: 'pi pi-history', path: '/insurance-policy/history' },
-    ],
+    // The consolidated front door: upload everything, run everything, read the
+    // result — in one place. The per-feed hubs and per-batch screens below are
+    // kept intact for the detailed work; this is simply the way in.
+    label: 'Reconciliation',
+    accent: 'rules',
+    items: [{ label: 'Upload & Run', icon: 'pi pi-play-circle', path: '/reconciliation' }],
   },
   {
     // Grouped by subject rather than by verb: one upload screen feeds both
@@ -76,6 +72,13 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Bank Statements', icon: 'pi pi-book', path: '/upload-online/bank-statements' },
       { label: 'PayU MPR Batches', icon: 'pi pi-receipt', path: '/upload-online/payu-mpr' },
       { label: 'EaseBuzz Batches', icon: 'pi pi-bolt', path: '/upload-online/easebuzz' },
+      // UPI & Card Reconciliation is a wholly separate pipeline (its own
+      // tables, parser, matcher — see backend/sql/schema.sql's UCR section)
+      // but every _nav-accents.scss accent is already claimed by an existing
+      // group, so its upload hub sits here alongside the other gateway feeds
+      // rather than spinning up a new accent token for one entry.
+      { label: 'Upload UPI & Card Feeds', icon: 'pi pi-credit-card', path: '/upload-online/ucr-feeds' },
+      { label: 'UPI & Card Uploads', icon: 'pi pi-list', path: '/upload-online/ucr-batches' },
     ],
   },
   {
@@ -83,16 +86,28 @@ const NAV_GROUPS: NavGroup[] = [
     // '/matched-rules/<x>-payment-rules/manage' is reached from the Manage
     // Rules button on the results page it configures, so configuring a rule
     // never means leaving the section you are standing in.
-    label: 'Reconciliation',
+    // Renamed from "Reconciliation" so the consolidated Upload & Run entry can
+    // take that name and lead the rail. These are the detailed, per-type views
+    // the day-to-day flow no longer has to go through — all still intact.
+    label: 'Reconciliation Detail',
     accent: 'rules',
     items: [
       { label: 'Summary', icon: 'pi pi-chart-bar', path: '/matched-rules/summary' },
       { label: 'Audit Working Report', icon: 'pi pi-file-excel', path: '/matched-rules/audit-report' },
       { label: 'Unit Matches', icon: 'pi pi-sitemap', path: '/matched-rules/unit-matches' },
       { label: 'PayU Settlements', icon: 'pi pi-credit-card', path: '/matched-rules/payu-settlements' },
+      { label: 'EaseBuzz Settlements', icon: 'pi pi-bolt', path: '/matched-rules/easebuzz-settlements' },
+      { label: 'Card Reconciliation', icon: 'pi pi-credit-card', path: '/matched-rules/card-reconciliation' },
+      { label: 'UPI Reconciliation', icon: 'pi pi-qrcode', path: '/matched-rules/upi-reconciliation' },
       { label: 'IP Payment Rules', icon: 'pi pi-list-check', path: '/matched-rules/ip-payment-rules' },
       { label: 'Diagnostics Payment Rules', icon: 'pi pi-list-check', path: '/matched-rules/diagnostics-payment-rules' },
     ],
+    // The gateway rule editor is off-nav like the rest, reached from the Manage
+    // Rules button on each of the four settlement/reconciliation screens above.
+    // Claiming it here keeps this group open while it is being edited. Safe
+    // against the cheque claim below: syncToUrl matches by longest prefix, so
+    // '/matched-rules/cheque-collection-rules' still wins for that path.
+    owns: ['/matched-rules/gateway-rules'],
   },
   {
     // Cheque money reconciles against two documents rather than one, so its
@@ -115,6 +130,22 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Master Data',
     accent: 'masters',
     items: [{ label: 'Division & Bank A/C', icon: 'pi pi-sitemap', path: '/master-data/division-bank-accounts' }],
+  },
+  {
+    // A separate product that happens to share this shell — not part of the
+    // reconciliation workflow above, so it sits near the bottom rather than
+    // leading the rail. It is also the only section a non-Super-Admin can
+    // reach, which is why superAdminGuard falls back to its dashboard.
+    label: 'Automation Insurance',
+    accent: 'insurance',
+    // '/insurance-policy/processing' and the documents/:id/* workspace steps.
+    owns: ['/insurance-policy'],
+    items: [
+      { label: 'Dashboard', icon: 'pi pi-th-large', path: '/insurance-policy/dashboard' },
+      { label: 'Upload Documents', icon: 'pi pi-cloud-upload', path: '/insurance-policy/upload' },
+      { label: 'Excel Export', icon: 'pi pi-file-excel', path: '/insurance-policy/excel-preview' },
+      { label: 'Processing History', icon: 'pi pi-history', path: '/insurance-policy/history' },
+    ],
   },
   {
     // The operating guide for the reconciliation workflow. `admin` is the one

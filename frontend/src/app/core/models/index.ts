@@ -9,3 +9,5 @@ export * from './master-data.model';
 export * from './matched-rules.model';
 export * from './matching-rules.model';
 export * from './cheque-collection.model';
+export * from './ucr.model';
+export * from './upload-detect.model';

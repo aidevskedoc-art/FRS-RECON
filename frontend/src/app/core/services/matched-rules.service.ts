@@ -4,6 +4,8 @@ import { Observable, tap } from 'rxjs';
 import {
   AuditReportPreview,
   AuditReportQuery,
+  EasebuzzSettlementsPage,
+  EasebuzzSettlementsQuery,
   MatchedRulesPage,
   MatchedRulesQuery,
   PayuSettlementsPage,
@@ -40,6 +42,12 @@ export interface GenerateBankMatchesResult {
 
 /** Counts from a POST .../payu-settlements/generate run — Stage 2 of gateway-UPI reconciliation. */
 export interface GeneratePayuSettlementsResult {
+  generatedAt: string;
+  counts: { total: number; matched: number; mismatched: number; unmatched: number };
+}
+
+/** Counts from a POST .../easebuzz-settlements/generate run. */
+export interface GenerateEasebuzzSettlementsResult {
   generatedAt: string;
   counts: { total: number; matched: number; mismatched: number; unmatched: number };
 }
@@ -118,6 +126,18 @@ export class MatchedRulesService {
     return this.http.post<GeneratePayuSettlementsResult>(`${API_BASE_URL}/matched-rules/payu-settlements/generate`, null);
   }
 
+  /** GET /api/matched-rules/easebuzz-settlements — every uploaded settlement row and its bank-match verdict. */
+  fetchEasebuzzSettlements(query: EasebuzzSettlementsQuery = {}): Observable<EasebuzzSettlementsPage> {
+    return this.http.get<EasebuzzSettlementsPage>(`${API_BASE_URL}/matched-rules/easebuzz-settlements`, {
+      params: toHttpParams(query as Record<string, unknown>),
+    });
+  }
+
+  /** POST /api/matched-rules/easebuzz-settlements/generate — re-verdict every uploaded settlement row against the bank statement. */
+  generateEasebuzzSettlements(): Observable<GenerateEasebuzzSettlementsResult> {
+    return this.http.post<GenerateEasebuzzSettlementsResult>(`${API_BASE_URL}/matched-rules/easebuzz-settlements/generate`, null);
+  }
+
   /** GET /api/matched-rules/audit-report/preview — per-sheet rollup for the Audit Working Report screen, before the (large) workbook is generated. */
   fetchAuditReportPreview(query: AuditReportQuery): Observable<AuditReportPreview> {
     return this.http.get<AuditReportPreview>(`${API_BASE_URL}/matched-rules/audit-report/preview`, {
@@ -125,7 +145,7 @@ export class MatchedRulesService {
     });
   }
 
-  /** GET /api/matched-rules/audit-report — the 4-sheet workbook for the chosen period; streamed as a blob and saved. variant 'internal' appends the engine's status/rule/reason columns. */
+  /** GET /api/matched-rules/audit-report — the workbook for the chosen period (CHEQUE COLL AND REALIZN / ONLINE COLLECTION / ONLINE DIAG COLLECTION / CARD AND UPI COLLECTION); streamed as a blob and saved. variant 'internal' appends the engine's rule/reason columns. */
   downloadAuditReport(query: AuditReportQuery, periodLabel: string): Observable<Blob> {
     const suffix = query.variant === 'internal' ? ' (internal)' : '';
     return this.http

@@ -5,12 +5,15 @@ const db = require('../db');
 const { parseBankStatementWorkbook } = require('../online-upload/bank-statement-parser');
 const { parsePayuMprWorkbook } = require('../online-upload/payu-mpr-parser');
 const { parseEasebuzzWorkbook } = require('../online-upload/easebuzz-parser');
+const { parseEasebuzzSettlementWorkbook } = require('../online-upload/easebuzz-settlement-parser');
 const { assertNewFile } = require('../online-upload/dedupe');
 const {
   onlineUploadBatchRowToApi,
   onlinePaymentRecordRowToApi,
   bankStatementUploadRowToApi,
   bankStatementRecordRowToApi,
+  easebuzzSettlementBatchRowToApi,
+  easebuzzSettlementRecordRowToApi,
 } = require('../mappers');
 
 const router = express.Router();
@@ -475,6 +478,123 @@ router.get('/easebuzz/batches/:id/records', async (req, res, next) => {
 router.delete('/easebuzz/batches/:id', async (req, res, next) => {
   try {
     const { rowCount } = await db.query(`DELETE FROM bank_statement_uploads WHERE id = $1 AND source = 'EASEBUZZ'`, [req.params.id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// EaseBuzz SETTLEMENT report — a different document from the transaction
+// report above. It is not a candidate pool for the CNF engine (it carries no
+// per-transaction line), so it rides on its own tables, not
+// bank_statement_records — see the header comment on those tables in
+// schema.sql. Matched against the real bank credit by reconciliation/
+// easebuzz-settlement.js, the same way PayU's settlement stage works.
+// ---------------------------------------------------------------------------
+
+// POST /api/online-upload/easebuzz-settlement
+router.post('/easebuzz-settlement', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
+
+    const fileHash = await assertNewFile('easebuzz_settlement_upload_batches', req.file.buffer);
+    const { rows, mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped } = parseEasebuzzSettlementWorkbook(req.file.buffer);
+    if (rows.length === 0) {
+      return res.status(400).json({
+        error: `No settlement rows recognised in this file. Columns seen: ${fileHeaders.join(', ') || '(none)'}`,
+      });
+    }
+
+    const uploadedBy = req.body.uploadedBy || null;
+
+    const batch = await db.withTransaction(async (client) => {
+      const { rows: batchRows } = await client.query(
+        `INSERT INTO easebuzz_settlement_upload_batches (file_name, file_size_bytes, row_count, uploaded_by, file_hash)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [req.file.originalname, req.file.size, rows.length, uploadedBy, fileHash],
+      );
+      const created = batchRows[0];
+
+      for (const r of rows) {
+        await client.query(
+          `INSERT INTO easebuzz_settlement_records
+             (batch_id, settlement_id, bank_id, account_number, bank_name, total_amount, service_charge, gst,
+              refund_amount, settled_amount, paid, settlement_date, express_service_charge, express_service_tax)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            created.id, r.settlementId, r.bankId, r.accountNumber, r.bank, r.totalAmount, r.serviceCharge, r.gst,
+            r.refundAmount, r.settledAmount, r.paid, r.settlementDate, r.expressServiceCharge, r.expressServiceTax,
+          ],
+        );
+      }
+      return created;
+    });
+
+    res.status(201).json({ ...easebuzzSettlementBatchRowToApi(batch), mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/online-upload/easebuzz-settlement/batches
+router.get('/easebuzz-settlement/batches', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(`SELECT * FROM easebuzz_settlement_upload_batches ORDER BY uploaded_at DESC`);
+    res.json(rows.map(easebuzzSettlementBatchRowToApi));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/online-upload/easebuzz-settlement/batches/:id
+router.get('/easebuzz-settlement/batches/:id', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(`SELECT * FROM easebuzz_settlement_upload_batches WHERE id = $1`, [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
+    res.json(easebuzzSettlementBatchRowToApi(rows[0]));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/online-upload/easebuzz-settlement/batches/:id/records?page=&pageSize=&status=
+router.get('/easebuzz-settlement/batches/:id/records', async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
+
+    const clauses = ['r.batch_id = $1'];
+    const params = [req.params.id];
+    if (req.query.status) {
+      params.push(req.query.status);
+      clauses.push(`r.match_status = $${params.length}`);
+    }
+    const where = `WHERE ${clauses.join(' AND ')}`;
+
+    const { rows: countRows } = await db.query(`SELECT COUNT(*)::int AS total FROM easebuzz_settlement_records r ${where}`, params);
+    const { rows } = await db.query(
+      `SELECT r.*, b.txn_date AS bank_txn_date, b.narration AS bank_narration, b.chq_ref_no AS bank_chq_ref_no,
+              b.deposit_amt AS bank_deposit_amt, bu.account_no AS bank_account_no
+         FROM easebuzz_settlement_records r
+         LEFT JOIN bank_statement_records b ON b.id = r.match_bank_record_id
+         LEFT JOIN bank_statement_uploads bu ON bu.id = b.batch_id
+         ${where}
+        ORDER BY r.settlement_date, r.id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, pageSize, (page - 1) * pageSize],
+    );
+
+    res.json({ total: countRows[0].total, page, pageSize, records: rows.map(easebuzzSettlementRecordRowToApi) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/online-upload/easebuzz-settlement/batches/:id
+router.delete('/easebuzz-settlement/batches/:id', async (req, res, next) => {
+  try {
+    const { rowCount } = await db.query(`DELETE FROM easebuzz_settlement_upload_batches WHERE id = $1`, [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
     res.status(204).end();
   } catch (err) {

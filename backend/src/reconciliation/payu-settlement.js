@@ -18,6 +18,7 @@
  */
 
 const { normalizeRef, tokenize } = require('./matcher');
+const { resolveGatewayPolicy } = require('./gateway-policy');
 
 const MATCHED = 'MATCHED';
 const AMOUNT_MISMATCH = 'AMOUNT_MISMATCH';
@@ -31,13 +32,20 @@ const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
  *                  (settlementUtr, netAmount, depositAmt, ...)
  * @param bankRows  bank_statement_records rows with source='BANK', mapped
  *                  (id, chqRefNo, narration, depositAmt, txnDate, ...)
- * @param tolerance rupees of slack on the lump-vs-credit comparison
+ * @param policy    the configured PAYU policy (see reconciliation/gateway-policy.js).
+ *                  Omit it and the built-in defaults apply, which reproduce this
+ *                  matcher's original hardcoded behaviour exactly.
+ * @param tolerance LEGACY: rupees of slack, equivalent to `policy.tolerance`.
+ *                  Kept so the existing unit tests exercise this function
+ *                  unchanged — they are the regression net for this file.
  *
  * @returns [{ settlementUtr, lineCount, grossTotal, netTotal, bankRecordId,
  *             bankAmount, difference, status, memberIds, bankCandidateCount }]
+ *   Both totals are always returned regardless of which one was compared.
  */
-function reconcilePayuSettlements({ mprRows, bankRows, tolerance = 1 }) {
-  const tolPaise = Math.round(Number(tolerance || 0) * 100);
+function reconcilePayuSettlements({ mprRows, bankRows, tolerance, policy }) {
+  const p = resolveGatewayPolicy('PAYU', { ...(tolerance !== undefined ? { tolerance } : null), ...policy });
+  const tolPaise = Math.round(p.tolerance * 100);
 
   // --- index the bank side by the UTR it carries -------------------------
   // A PayU payout credit files the UTR in chq_ref_no AND repeats it at the
@@ -51,7 +59,9 @@ function reconcilePayuSettlements({ mprRows, bankRows, tolerance = 1 }) {
   };
   for (const row of bankRows) {
     addBank(normalizeRef(row.chqRefNo), row);
-    for (const tok of tokenize(row.narration)) if (tok.length >= 8) addBank(tok, row);
+    if (p.useNarrationTokens) {
+      for (const tok of tokenize(row.narration)) if (tok.length >= p.minTokenLength) addBank(tok, row);
+    }
   }
 
   // --- group the MPR side by settlement UTR -----------------------------
@@ -70,21 +80,27 @@ function reconcilePayuSettlements({ mprRows, bankRows, tolerance = 1 }) {
       lines.reduce((s, r) => s + (r.netAmount != null ? Number(r.netAmount) : Number(r.depositAmt) || 0), 0),
     );
 
+    // Which total the bank credit is held against. PayU deducts its fee before
+    // paying out, so NET is what actually lands and is the default; a gross
+    // settlement arrangement compares the other one. Both are reported either way.
+    const compared = p.compareAmount === 'GROSS' ? grossTotal : netTotal;
+
     const candidates = bankByUtr.get(utr) || [];
     let bank = null;
     if (candidates.length === 1) {
       bank = candidates[0];
-    } else if (candidates.length > 1) {
+    } else if (candidates.length > 1 && p.onAmbiguous !== 'UNMATCHED') {
       // More than one credit tagged with this UTR (a split payout, or an
       // unrelated row that happens to carry the token). Take the one whose
-      // amount is closest to the settled net — that is the payout.
+      // amount is closest to the settled total — that is the payout. Under
+      // onAmbiguous 'UNMATCHED' the rule declines to guess instead.
       bank = candidates.reduce((best, r) =>
-        Math.abs((Number(r.depositAmt) || 0) - netTotal) < Math.abs((Number(best.depositAmt) || 0) - netTotal) ? r : best,
+        Math.abs((Number(r.depositAmt) || 0) - compared) < Math.abs((Number(best.depositAmt) || 0) - compared) ? r : best,
       );
     }
 
     const bankAmount = bank ? round2(Number(bank.depositAmt) || 0) : null;
-    const difference = bank ? round2(netTotal - bankAmount) : null;
+    const difference = bank ? round2(compared - bankAmount) : null;
     let status = UNMATCHED;
     if (bank) status = Math.abs(Math.round(difference * 100)) <= tolPaise ? MATCHED : AMOUNT_MISMATCH;
 

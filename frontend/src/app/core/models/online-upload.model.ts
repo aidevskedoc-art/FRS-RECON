@@ -156,6 +156,24 @@ export interface BankStatementUpload {
   matchedAt: string | null;
 }
 
+/**
+ * The EaseBuzz Settlement Report upload — a different document from the
+ * transaction report (BankStatementUpload with source='EASEBUZZ'): it is
+ * already one row per settlement, not one per customer payment, so it rides
+ * on its own tables. See core/models/matched-rules.model.ts's
+ * EasebuzzSettlement for the per-row shape and its match verdict.
+ */
+export interface EasebuzzSettlementBatch {
+  id: string;
+  fileName: string;
+  fileSizeBytes: number;
+  rowCount: number;
+  uploadedBy: string | null;
+  uploadedAt: string;
+  /** When the settlement<->bank matching pass was last run — null means it never has been. */
+  matchedAt: string | null;
+}
+
 export type BankMatchPaymentType = 'IP_PAYMENT' | 'DIAG_PAYMENT';
 
 export interface BankStatementRecord {

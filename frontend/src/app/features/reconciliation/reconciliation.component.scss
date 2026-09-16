@@ -1,0 +1,405 @@
+@use 'styles/mixins';
+
+.recon {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    max-width: 78ch;
+  }
+}
+
+/* Keeps the heading and its blurb together as one flex item, so the button is
+   pushed to the right edge rather than sitting between them. */
+.page-header__text {
+  min-width: 0;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+}
+
+.notice--warning {
+  color: var(--status-warning-fg);
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+}
+
+.card {
+  @include mixins.card;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+
+  h3 {
+    margin: 0;
+    font-size: var(--text-lg);
+    color: var(--text-primary);
+  }
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+
+  &:hover:not(:disabled) {
+    color: var(--ai-blue);
+    text-decoration: underline;
+  }
+}
+
+/* Three across on desktop, stacking down as the viewport narrows. */
+.zones {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5);
+
+  @media (max-width: 1100px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (max-width: 760px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.zone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.zone__label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.zone__qualifier {
+  font-weight: 400;
+  color: var(--ai-blue);
+}
+
+.zone__count {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-2);
+  min-height: 128px;
+  padding: var(--space-5) var(--space-4);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  transition: border-color var(--transition-base), background var(--transition-base);
+
+  &:hover {
+    border-color: var(--ai-blue);
+  }
+}
+
+.dropzone--active {
+  border-color: var(--ai-blue);
+  background: var(--ai-blue-soft);
+}
+
+.dropzone__title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.dropzone {
+  cursor: pointer;
+}
+
+.dropzone__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  max-width: 42ch;
+}
+
+.dropzone__multi {
+  margin: 0;
+  font-size: var(--text-2xs, var(--text-xs));
+  color: var(--ai-blue);
+}
+
+.staged__ok-tick {
+  color: var(--status-success-fg);
+  flex: 0 0 auto;
+}
+
+:host ::ng-deep .staged__select {
+  min-width: 210px;
+  font-size: var(--text-xs);
+}
+
+.staged {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.staged__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  font-size: var(--text-xs);
+  flex-wrap: wrap;
+}
+
+.staged__row--problem {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+}
+
+.staged__main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.staged__name {
+  @include mixins.truncate;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.staged__size {
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.staged__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.staged__state--ready {
+  color: var(--text-secondary);
+}
+
+.staged__state--ok {
+  color: var(--status-success-fg);
+}
+
+.staged__state--bad {
+  color: var(--status-danger-fg);
+  @include mixins.truncate;
+}
+
+.staged__moved {
+  color: var(--ai-blue);
+  margin-left: var(--space-1);
+}
+
+.staged__resolve {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.staged__ask {
+  color: var(--status-warning-fg);
+  font-weight: 600;
+}
+
+.staged__remove {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+
+  &:hover:not(:disabled) {
+    color: var(--status-danger-fg);
+  }
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.actions__blocked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--status-warning-fg);
+}
+
+.actions__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* ---- run progress ---- */
+
+.progress__count {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress__failed {
+  color: var(--status-danger-fg);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.steps__group {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+.steps__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.step {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  padding: var(--space-1) 0;
+  min-width: 0;
+}
+
+.step--failed {
+  color: var(--status-danger-fg);
+}
+
+.step__icon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+
+  .pi-check-circle {
+    color: var(--status-success-fg);
+  }
+
+  .pi-times-circle {
+    color: var(--status-danger-fg);
+  }
+
+  .pi-spinner {
+    color: var(--ai-blue);
+  }
+}
+
+.step__label {
+  @include mixins.truncate;
+  color: var(--text-primary);
+  flex: 0 1 auto;
+}
+
+.step__detail {
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.notice--ok {
+  color: var(--status-success-fg);
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+}
+
+.card--quiet {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}

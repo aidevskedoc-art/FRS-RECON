@@ -197,7 +197,7 @@ function runUnitPass({ groupResults, records, bankRecords, rule }) {
     if (group.status === AMBIGUOUS_MATCH) {
       reason = `Ambiguous: unit "${group.unitKey}" totals ${group.total} across ${group.count} transactions and ${group.ambiguousCandidates.length} candidates match — none selected automatically`;
     } else if (group.status === PARTIAL_MATCH) {
-      reason = `Partially matched by rule "${rule.name}": base "${group.unitKey}"${accountsIncluded} totals ${group.total} across ${group.count} transactions; expected ${group.counterpartyAmount}; unmatched balance ${group.unmatchedBalance}`;
+      reason = `Partially matched by rule "${rule.name}": base "${group.unitKey}"${accountsIncluded} totals ${group.total} across ${group.count} transactions; expected ${group.counterpartyAmount}; balance amount ${group.unmatchedBalance}`;
     } else if (group.status === AMOUNT_MISMATCH) {
       reason = `Amount excess on rule "${rule.name}": base "${group.unitKey}"${accountsIncluded} totals ${group.total} across ${group.count} transactions — ${group.difference} more than the expected ${group.counterpartyAmount} (over-matched)`;
     } else {

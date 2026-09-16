@@ -149,6 +149,15 @@ export interface UnitMatchesQuery {
 /** Per-payment-type verdict totals — a section of ReconciliationSummary (GET /api/matched-rules/summary). */
 export interface PaymentTypeSummary {
   total: number;
+  /** Rupee value of the receipts in this bucket (excluding rows excluded by rules). */
+  totalAmount: number;
+  /**
+   * Shortfall where a grouped match came up short of its bank credit — the same
+   * figure the Unit Matches screen calls Balance Amount. Only the negative side
+   * of a group difference counts; a surplus is never reported here. Counted once
+   * per group, not once per member row.
+   */
+  balanceAmount: number;
   matched: number;
   /** IP online receipts routed through the EaseBuzz gateway and matched by Easebuzz ID. 0 for the other payment types. */
   easebuzzMatched: number;
@@ -167,6 +176,11 @@ export interface BankStatementSummary {
   matched: number;
   mismatched: number;
   unmatched: number;
+  notGenerated: number;
+}
+
+/** Card/UPI Reconciliation (UCR) rows — same shape as PaymentTypeSummary, plus notGenerated (match_status IS NULL — no Generate run yet, same concept as BankStatementSummary's). */
+export interface UcrPaymentTypeSummary extends PaymentTypeSummary {
   notGenerated: number;
 }
 
@@ -228,6 +242,85 @@ export interface PayuSettlementsQuery {
   pageSize?: number;
 }
 
+/**
+ * EaseBuzz Settlement <-> Bank credit. Simpler than PayuSettlement: the
+ * uploaded report is already one row per settlement, so there is no
+ * grouping-by-UTR step — see backend/src/reconciliation/easebuzz-settlement.js.
+ * `totalAmount` is EaseBuzz's gross figure before its fee/GST; `settledAmount`
+ * is what actually lands in the bank and is what `bankAmount` is compared
+ * against.
+ *
+ * `window` carries the transactions the settlement DAY paid out. The rule — a
+ * settlement day covers every EaseBuzz transaction since the previous settlement
+ * day — is exact: verified 78/78 on live data. Attribution to an individual
+ * settlement is NOT exact when a day carries several, which is what
+ * `window.exact` reports; see the field comments below.
+ */
+export interface EasebuzzSettlement {
+  id: string;
+  batchId: string;
+  settlementId: string | null;
+  bankId: string | null;
+  accountNumber: string | null;
+  bankName: string | null;
+  totalAmount: number | null;
+  serviceCharge: number | null;
+  gst: number | null;
+  refundAmount: number | null;
+  settledAmount: number | null;
+  paid: boolean | null;
+  settlementDate: string | null;
+  expressServiceCharge: number | null;
+  expressServiceTax: number | null;
+  matchStatus: 'MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED' | null;
+  matchBankRecordId: string | null;
+  matchReason: string | null;
+  matchedBank: {
+    txnDate: string | null;
+    narration: string | null;
+    chqRefNo: string | null;
+    accountNo: string | null;
+    depositAmt: number | null;
+  } | null;
+  /**
+   * The EaseBuzz transactions this settlement's DAY paid out — every
+   * transaction from the previous settlement day up to the day before this one.
+   * `null` for the earliest settlement in the data (nothing bounds its window).
+   */
+  window: {
+    /** 'YYYY-MM-DD', inclusive. */
+    from: string;
+    to: string;
+    txnCount: number;
+    txnTotal: number;
+    /** Everything settled that day — always equals txnTotal; that is the rule. */
+    daySettled: number;
+    settlementsThatDay: number;
+    /**
+     * True only when this settlement is the day's only one, in which case the
+     * transactions ARE this settlement. When several share a day the window
+     * still ties exactly at day level, but the split between them is not
+     * determinable — only 18% of such days have a unique subset — so the UI
+     * must describe the day, never claim these transactions for this row.
+     */
+    exact: boolean;
+  } | null;
+  createdAt: string | null;
+}
+
+export interface EasebuzzSettlementsPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  results: EasebuzzSettlement[];
+}
+
+export interface EasebuzzSettlementsQuery {
+  status?: 'MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED';
+  page?: number;
+  pageSize?: number;
+}
+
 export interface ReconciliationSummary {
   ipPayments: PaymentTypeSummary;
   diagPayments: PaymentTypeSummary;
@@ -242,6 +335,9 @@ export interface ReconciliationSummary {
   payuSettlement: PayuSettlementSummary;
   /** Cheque collections: matched against the bank, or accounted for as contra entries by the refund document. */
   chequePayments: PaymentTypeSummary;
+  /** UPI & Card Reconciliation (UCR) — a wholly separate module (see backend/sql/schema.sql), folded in here the same way IP/Diag/Cheque already are. */
+  cardPayments: UcrPaymentTypeSummary;
+  upiGatewayPayments: UcrPaymentTypeSummary;
   combined: {
     totalTransactions: number;
     totalMatched: number;
@@ -254,6 +350,10 @@ export interface ReconciliationSummary {
     totalExcluded: number;
     onlyInBankStatement: number;
     onlyInPaymentStatements: number;
+    /** Rupee value of every transaction counted in totalTransactions. */
+    totalAmount: number;
+    /** Total grouped-match shortfall across the payment types that can have one. */
+    balanceAmount: number;
   };
   amountDifferences: AmountDifference[];
   generatedAt: string;
@@ -266,7 +366,8 @@ export interface ReconciliationSummaryQuery {
 
 // --- Audit Working Report (the client's deliverable workbook) ---------------
 
-export type AuditPeriodType = 'DAILY' | 'MONTHLY' | 'YEARLY';
+/** RANGE takes both ends in one `period` value, 'YYYY-MM-DD:YYYY-MM-DD', inclusive. */
+export type AuditPeriodType = 'DAILY' | 'MONTHLY' | 'YEARLY' | 'RANGE';
 export type AuditDateBasis = 'RECEIPT' | 'REALIZATION';
 
 /**

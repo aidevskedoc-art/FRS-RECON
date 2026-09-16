@@ -1,0 +1,86 @@
+<div class="upload-mis">
+  @if (!embedded()) {
+    <div class="page-header">
+      <h2>Upload CARD MPR</h2>
+      <p>Import the bank/processor's Card Merchant Payout Report — approval code, gross charged amount and settlement date per swipe. Matched against Card MIS rows by approval code.</p>
+    </div>
+  }
+
+  <div
+    class="dropzone"
+    [class.dropzone--active]="isDragging()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <div class="dropzone__icon">
+      <i class="pi pi-building-columns"></i>
+    </div>
+    <h3>Drop the CARD MPR Excel file here</h3>
+    <p>Columns are matched by name — MECODE, APP_CODE, PYMT_CHGAMNT and the rest.</p>
+
+    <div class="dropzone__actions">
+      <input #fileInput type="file" accept=".xlsx,.xls" multiple hidden (change)="onFileInput($event)" />
+      <p-button label="Browse Files" icon="pi pi-folder-open" [outlined]="true" (onClick)="fileInput.click()" />
+    </div>
+
+    <p class="dropzone__hint">Supported formats: .xlsx, .xls — max 70MB</p>
+  </div>
+
+  @if (rejected()) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      That file was skipped — only .xlsx / .xls files are supported.
+    </div>
+  }
+
+  @if (uploadError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (pendingFiles().length) {
+    <div class="pending">
+      @for (file of pendingFiles(); track file.name + $index) {
+        <div class="pending__row">
+          <i class="pi pi-file-excel"></i>
+          <span class="pending__name">{{ file.name }}</span>
+          <span class="pending__size">{{ fileSizeLabel(file.size) }}</span>
+          <button type="button" class="pending__remove" [disabled]="uploading()" (click)="removeFile($index)">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+      }
+      <p-button
+        [label]="progress() ? 'Uploading ' + progress()!.done + ' / ' + progress()!.total : 'Save ' + pendingFiles().length + ' file' + (pendingFiles().length === 1 ? '' : 's') + ' to Database'"
+        icon="pi pi-upload"
+        [loading]="uploading()"
+        (onClick)="upload()"
+      />
+    </div>
+  }
+
+  @if (uploadedBatches().length) {
+    <div class="success">
+      <i class="pi pi-check-circle"></i>
+      <div class="success__text">
+        <strong>{{ uploadedBatches().length }} file{{ uploadedBatches().length === 1 ? '' : 's' }} saved</strong>
+        @for (batch of uploadedBatches(); track batch.id) {
+          <span>{{ batch.fileName }} · {{ batch.rowCount }} rows</span>
+        }
+        <span>Open Card Reconciliation and click Generate to match against uploaded Card MIS rows.</span>
+      </div>
+      <p-button label="View Card Reconciliation" icon="pi pi-eye" size="small" [outlined]="true" (onClick)="viewCardRecon()" />
+    </div>
+  }
+
+  @if (uploadErrors().length) {
+    <div class="notice notice--danger">
+      @for (e of uploadErrors(); track e.fileName) {
+        <div><strong>{{ e.fileName }}:</strong> {{ e.message }}</div>
+      }
+    </div>
+  }
+</div>

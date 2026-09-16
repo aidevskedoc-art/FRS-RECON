@@ -195,8 +195,21 @@ function buildRecordsFilter(query) {
   // data, Aug-26, all "BHIM UPI" or pay_mode "NEFT" with pay_type "UPI").
   // A blank pay_mode, or a pay_mode that IS (not merely contains)
   // UPI/ManualUPI, is the only thing either side may treat as gateway-UPI.
+  //
+  // EXCEPT a row already EASEBUZZ_MATCHED — that is not gateway-UPI noise, it
+  // is a confirmed, reconciled receipt with a real realization date/amount.
+  // Hiding it behind the same toggle that hides raw unreconciled UPI attempts
+  // made 30 real, already-settled IP receipts invisible in the exported
+  // "processed" file — verified against a real client report
+  // (ip-payments-2026-09-10 SMJ, "30 Transactions" sheet). No EaseBuzz rule is
+  // seeded for Diag today (no diag_payment_matching_rules row names it, zero
+  // EASEBUZZ_MATCHED rows exist here) — this is a no-op right now, kept only
+  // so the two routes stay identical and this doesn't quietly break the day
+  // Diag EaseBuzz matching is added.
   if (query.excludeUpi === 'true' || query.excludeUpi === true) {
-    clauses.push(`(TRIM(COALESCE(r.pay_mode,'')) <> '' AND TRIM(r.pay_mode) !~* '^(upi|manual\\s*upi)$')`);
+    clauses.push(
+      `((TRIM(COALESCE(r.pay_mode,'')) <> '' AND TRIM(r.pay_mode) !~* '^(upi|manual\\s*upi)$') OR r.match_status = 'EASEBUZZ_MATCHED')`,
+    );
   }
   if (query.paymentMode) {
     params.push(query.paymentMode);

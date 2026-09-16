@@ -1,0 +1,65 @@
+<div class="ucr-batches">
+  <div class="page-header">
+    <h2>UPI &amp; Card Uploads</h2>
+    <p>Every file uploaded for the UPI &amp; Card Reconciliation module — pick a source to see its upload history.</p>
+  </div>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i> {{ err }}
+    </div>
+  }
+
+  <div class="hub-picker" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="hub-option"
+        [class.hub-option--active]="active() === tab.id"
+        [attr.aria-selected]="active() === tab.id"
+        (click)="select(tab.id)"
+      >
+        <span class="hub-option__title">{{ tab.label }}</span>
+      </button>
+    }
+  </div>
+
+  <div class="ucr-batches__table-wrap">
+    <p-table [value]="batches()" dataKey="id" styleClass="p-datatable-sm">
+      <ng-template #header>
+        <tr>
+          <th>File</th>
+          <th class="num">Rows</th>
+          <th>Uploaded</th>
+          <th>Matched</th>
+          <th style="width:4rem;"></th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-batch>
+        <tr>
+          <td>{{ batch.fileName }}</td>
+          <td class="num">{{ batch.rowCount }}</td>
+          <td>{{ batch.uploadedAt ? (batch.uploadedAt | date: 'medium') : '—' }}</td>
+          <td>{{ batch.matchedAt ? (batch.matchedAt | date: 'medium') : 'Not generated' }}</td>
+          <td>
+            <button
+              type="button"
+              class="action-icon action-icon--danger"
+              [disabled]="deletingId() === batch.id"
+              (click)="deleteBatch(batch.id)"
+              pTooltip="Delete"
+            >
+              <i class="pi pi-trash"></i>
+            </button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="5" class="empty">{{ emptyMessage() }}</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

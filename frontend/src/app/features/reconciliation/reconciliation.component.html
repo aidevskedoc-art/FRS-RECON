@@ -1,0 +1,244 @@
+<div class="recon">
+  <div class="page-header">
+    <div class="page-header__text">
+      <h2>Reconciliation</h2>
+      <p>Drop the MIS, bank and cheque reports together — the system works out what each file is — then run every reconciliation in one go.</p>
+    </div>
+    <!-- The deliverable this whole screen feeds. Sits here so it is reachable
+         straight after a run, without going back out to the sidebar. -->
+    <p-button
+      label="Audit Report"
+      icon="pi pi-file-excel"
+      [outlined]="true"
+      routerLink="/matched-rules/audit-report"
+    />
+  </div>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (rejected()) {
+    <div class="notice notice--warning">
+      <i class="pi pi-exclamation-triangle"></i>
+      Some files were skipped — only .xlsx / .xls files are supported.
+    </div>
+  }
+
+  <div class="card">
+    <div class="card__head">
+      <h3>Upload Reports</h3>
+      @if (hasFiles()) {
+        <button type="button" class="link-btn" [disabled]="running()" (click)="clearAll()">Clear all</button>
+      }
+    </div>
+
+    <div class="zones">
+      @for (zone of zones; track zone.id) {
+        <div class="zone">
+          <div class="zone__label">
+            {{ zone.title }}
+            @if (zone.qualifier) { <span class="zone__qualifier">{{ zone.qualifier }}</span> }
+          </div>
+
+          <!-- The whole box is the click target, not just the text line. -->
+          <div
+            class="dropzone"
+            [class.dropzone--active]="draggingZone() === zone.id"
+            (dragover)="onDragOver($event, zone.id)"
+            (dragleave)="onDragLeave()"
+            (drop)="onDrop($event, zone.id)"
+            (click)="picker.click()"
+          >
+            <!-- `multiple` is a property binding, not a bare attribute, so the
+                 DOM property is set explicitly and the OS dialog always allows
+                 picking several files. The click guard matters too: this input
+                 lives inside the clickable dropzone, so without it the
+                 programmatic .click() bubbles back up and re-opens the dialog. -->
+            <input
+              #picker
+              type="file"
+              accept=".xlsx,.xls"
+              [multiple]="true"
+              hidden
+              (click)="$event.stopPropagation()"
+              (change)="onFileInput($event, zone.id)"
+            />
+            <p class="dropzone__title">Drag &amp; drop .xlsx / .xls files here, or click to browse</p>
+            <p class="dropzone__hint">{{ zone.hint }}</p>
+            <p class="dropzone__multi">You can select several files at once</p>
+          </div>
+
+          <p class="zone__count">{{ filesIn(zone.id).length }} file(s) selected</p>
+
+          @if (filesIn(zone.id).length) {
+            <ul class="staged">
+              @for (entry of filesIn(zone.id); track entry.id) {
+                <li class="staged__row" [class.staged__row--problem]="entry.status === 'needs-input' || entry.status === 'failed'">
+                  <div class="staged__main">
+                    <span class="staged__name" [pTooltip]="entry.file.name">{{ entry.file.name }}</span>
+                    <span class="staged__size">{{ fileSizeLabel(entry.file.size) }}</span>
+                  </div>
+
+                  @switch (entry.status) {
+                    @case ('detecting') {
+                      <span class="staged__state"><i class="pi pi-spin pi-spinner"></i> identifying…</span>
+                    }
+                    @case ('uploading') {
+                      <span class="staged__state"><i class="pi pi-spin pi-spinner"></i> saving…</span>
+                    }
+                    @case ('uploaded') {
+                      <span class="staged__state staged__state--ok">
+                        <i class="pi pi-check-circle"></i>
+                        {{ labelFor(entry) }}@if (entry.rowCount !== null) { · {{ entry.rowCount }} rows }
+                      </span>
+                    }
+                    @case ('failed') {
+                      <span class="staged__state staged__state--bad" [pTooltip]="entry.error || ''">
+                        <i class="pi pi-times-circle"></i> {{ entry.error }}
+                      </span>
+                    }
+                    @default {
+                      <!-- Type is always changeable, not only when detection was
+                           unsure — otherwise a confident-but-wrong answer would
+                           be uncorrectable without removing the file. -->
+                      <div class="staged__resolve">
+                        @if (entry.status === 'needs-input') {
+                          <span class="staged__ask">
+                            @if (entry.alternatives.length) {
+                              Contains {{ entry.alternatives.length + 1 }} types — confirm
+                            } @else {
+                              Not recognised — pick a type
+                            }
+                          </span>
+                        } @else {
+                          <span class="staged__ok-tick" [pTooltip]="entry.detected?.reason || ''"><i class="pi pi-check"></i></span>
+                        }
+                        <!-- Multi-select, because one workbook can genuinely be
+                             more than one type (bank statements + EaseBuzz in
+                             the same file). Each ticked type is ingested
+                             separately through its own endpoint. -->
+                        <p-multiselect
+                          [options]="typeOptionsFor(zone.id)"
+                          optionLabel="label"
+                          optionValue="value"
+                          placeholder="Choose type(s)"
+                          appendTo="body"
+                          display="chip"
+                          [showToggleAll]="false"
+                          [filter]="false"
+                          styleClass="staged__select"
+                          [ngModel]="entry.chosenTypes"
+                          (ngModelChange)="setTypes(entry.id, $event)"
+                        />
+                        @if (misplaced(entry)) {
+                          <span class="staged__moved" pTooltip="Detected as belonging to another zone — it will still be filed correctly">
+                            → {{ zoneTitle(entry.detected?.zone || zone.id) }}
+                          </span>
+                        }
+                      </div>
+                    }
+                  }
+
+                  <button
+                    type="button"
+                    class="staged__remove"
+                    [disabled]="running()"
+                    (click)="remove(entry.id)"
+                    pTooltip="Remove"
+                  >
+                    <i class="pi pi-times"></i>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="actions">
+      <p-button
+        label="Run Reconciliation"
+        icon="pi pi-play"
+        [loading]="running()"
+        [disabled]="!canRun()"
+        (onClick)="run()"
+      />
+      @if (hasFiles() && unresolved() > 0) {
+        <span class="actions__blocked">
+          <i class="pi pi-exclamation-circle"></i>
+          {{ unresolved() }} file(s) still need a type before this can run
+        </span>
+      }
+      <label class="actions__opt" pTooltip="Every reconciliation is re-run by default. Tick this to leave batches that have already been generated alone — much faster on a repeat run.">
+        <input type="checkbox" [checked]="skipGenerated()" [disabled]="running()" (change)="skipGenerated.set($any($event.target).checked)" />
+        Skip batches already generated
+      </label>
+    </div>
+  </div>
+
+  @if (steps().length) {
+    <div class="card">
+      <div class="card__head">
+        <h3>Run progress</h3>
+        <span class="progress__count">
+          {{ stepsDone() }} / {{ steps().length }}
+          @if (stepsFailed() > 0) { <span class="progress__failed">· {{ stepsFailed() }} failed</span> }
+        </span>
+      </div>
+
+      @for (group of stepGroups(); track group.name) {
+        <div class="steps">
+          <p class="steps__group">{{ group.name }}</p>
+          <ul class="steps__list">
+            @for (step of group.steps; track step.id) {
+              <li class="step" [class.step--failed]="step.status === 'failed'">
+                <span class="step__icon">
+                  @switch (step.status) {
+                    @case ('running') { <i class="pi pi-spin pi-spinner"></i> }
+                    @case ('done') { <i class="pi pi-check-circle"></i> }
+                    @case ('failed') { <i class="pi pi-times-circle"></i> }
+                    @default { <i class="pi pi-circle"></i> }
+                  }
+                </span>
+                <span class="step__label">{{ step.label }}</span>
+                @if (step.detail) { <span class="step__detail">{{ step.detail }}</span> }
+              </li>
+            }
+          </ul>
+        </div>
+      }
+
+      @if (runFinishedAt()) {
+        <div class="notice" [class.notice--warning]="stepsFailed() > 0" [class.notice--ok]="stepsFailed() === 0">
+          <i class="pi" [class.pi-check-circle]="stepsFailed() === 0" [class.pi-exclamation-triangle]="stepsFailed() > 0"></i>
+          @if (stepsFailed() === 0) {
+            Reconciliation complete — all {{ steps().length }} steps finished.
+          } @else {
+            Finished with {{ stepsFailed() }} failed step(s). The rest completed; re-run once the cause is fixed.
+          }
+        </div>
+      }
+    </div>
+  }
+
+  @if (summaryLoading()) {
+    <div class="card card--quiet">
+      <i class="pi pi-spin pi-spinner"></i> Loading results…
+    </div>
+  }
+
+  @if (summary(); as s) {
+    <div class="card">
+      <div class="card__head">
+        <h3>Results</h3>
+        <button type="button" class="link-btn" [disabled]="running()" (click)="loadSummary()">Refresh</button>
+      </div>
+      <app-summary-panel [summary]="s" />
+    </div>
+  }
+</div>

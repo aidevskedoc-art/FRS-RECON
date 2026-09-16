@@ -18,7 +18,14 @@
     "test-contra-pass": "node scripts/test-contra-pass.js",
     "test-cheque-parsers": "node scripts/test-cheque-parsers.js",
     "test-audit-report": "node scripts/test-audit-report.js",
-    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js && node scripts/test-payu-settlement.js && node scripts/test-easebuzz-rule.js && node scripts/test-contra-pass.js && node scripts/test-cheque-parsers.js && node scripts/test-audit-report.js"
+    "test-card-matcher": "node scripts/test-card-matcher.js",
+    "test-upi-matcher": "node scripts/test-upi-matcher.js",
+    "test-detect-file-type": "node scripts/test-detect-file-type.js",
+    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js && node scripts/test-payu-settlement.js && node scripts/test-easebuzz-rule.js && node scripts/test-contra-pass.js && node scripts/test-cheque-parsers.js && node scripts/test-audit-report.js && node scripts/test-card-matcher.js && node scripts/test-upi-matcher.js && node scripts/test-detect-file-type.js && node scripts/test-gateway-policy.js && node scripts/test-easebuzz-window.js",
+    "test-gateway-policy": "node scripts/test-gateway-policy.js",
+    "test-easebuzz-window": "node scripts/test-easebuzz-window.js",
+    "verify-easebuzz-windows": "node scripts/verify-easebuzz-windows.js",
+    "verify-easebuzz-division-windows": "node scripts/verify-easebuzz-division-windows.js"
   },
   "engines": {
     "node": ">=18"

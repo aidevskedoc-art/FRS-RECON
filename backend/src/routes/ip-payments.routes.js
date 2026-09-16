@@ -199,8 +199,19 @@ function buildRecordsFilter(query) {
   // in diag-op-payments.routes.js's buildRecordsFilter. A blank payment_mode,
   // or a payment_mode that IS (not merely contains) UPI/ManualUPI, is the
   // only thing either side may treat as gateway-UPI.
+  //
+  // EXCEPT a row already EASEBUZZ_MATCHED — that is not gateway-UPI noise, it
+  // is a confirmed, reconciled receipt with a real realization date/amount
+  // (via "EaseBuzz — Transaction Id matches Easebuzz ID"). Hiding it behind
+  // the same toggle that hides raw unreconciled UPI attempts made 30 real,
+  // already-settled receipts invisible in the exported "processed" file while
+  // the client's own Audit Working File showed them — verified against a
+  // real client report (ip-payments-2026-09-10 SMJ, "30 Transactions" sheet):
+  // all 30 are EASEBUZZ_MATCHED and all 30 were missing from this export.
   if (query.excludeUpi === 'true' || query.excludeUpi === true) {
-    clauses.push(`(TRIM(COALESCE(r.payment_mode,'')) <> '' AND TRIM(r.payment_mode) !~* '^(upi|manual\\s*upi)$')`);
+    clauses.push(
+      `((TRIM(COALESCE(r.payment_mode,'')) <> '' AND TRIM(r.payment_mode) !~* '^(upi|manual\\s*upi)$') OR r.match_status = 'EASEBUZZ_MATCHED')`,
+    );
   }
   if (query.paymentMode) {
     params.push(query.paymentMode);

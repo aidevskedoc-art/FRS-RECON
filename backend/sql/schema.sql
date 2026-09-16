@@ -978,3 +978,387 @@ CREATE INDEX IF NOT EXISTS cheque_collection_records_diag_no_idx ON cheque_colle
 -- Rows loaded before this column existed are all inpatient, by definition.
 UPDATE cheque_collection_records SET collection_kind = 'IP' WHERE collection_kind IS NULL;
 UPDATE cheque_collection_upload_batches SET collection_kind = 'IP' WHERE collection_kind IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- EaseBuzz Settlement Report.
+--
+-- Unlike the PayU MPR (one row per transaction, grouped into a settlement by
+-- reconciliation/payu-settlement.js), EaseBuzz's own settlement export is
+-- already ONE ROW PER SETTLEMENT BATCH -- there is no per-transaction line to
+-- group. So this rides on its own dedicated tables (the payu_settlements
+-- shape, but uploaded rather than computed) instead of bank_statement_records:
+-- a settlement row is not itself a bank-side candidate the CNF engine should
+-- ever join a payment against, it is closer to a reference document like the
+-- refund workbook.
+--
+-- `bank_id` is the join key to the real bank credit -- verified against live
+-- data: it equals the credit's chq_ref_no exactly, and where matched the
+-- credit's deposit_amt equals this report's settled_amount to the rupee.
+-- `settlement_date` is therefore the true "Date of Realisation" for the
+-- settlement as a whole.
+--
+-- ATTRIBUTION, as of 2026-09-15. Neither report carries a reference tying a
+-- transaction to a settlement (tested exhaustively: 0 of 269). But the DAY is
+-- derivable and exact: a settlement day pays out every EaseBuzz transaction
+-- since the PREVIOUS settlement day -- verified 78/78 to the rupee by
+-- scripts/verify-easebuzz-windows.js, and implemented once in
+-- reconciliation/easebuzz-settlement.js (settlementWindows / settlementDateFor).
+-- The audit report uses it so an EaseBuzz receipt's Date of Realisation is the
+-- payout date rather than the customer's payment date.
+--
+-- What is still NOT determinable is which individual receipts make up one
+-- settlement when a day carries several -- only 18% of such days have a unique
+-- subset -- so anything per-settlement stays advisory and says so.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS easebuzz_settlement_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now(),
+  matched_at        TIMESTAMP,
+  file_hash         VARCHAR(64)
+);
+
+CREATE INDEX IF NOT EXISTS easebuzz_settlement_upload_batches_file_hash_idx ON easebuzz_settlement_upload_batches(file_hash);
+
+CREATE TABLE IF NOT EXISTS easebuzz_settlement_records (
+  id                      SERIAL PRIMARY KEY,
+  batch_id                INTEGER NOT NULL REFERENCES easebuzz_settlement_upload_batches(id) ON DELETE CASCADE,
+  settlement_id           VARCHAR(64),
+  bank_id                 VARCHAR(64),
+  account_number          VARCHAR(64),
+  bank_name               VARCHAR(255),
+  total_amount            NUMERIC(14,2),
+  service_charge          NUMERIC(14,2),
+  gst                     NUMERIC(14,2),
+  refund_amount           NUMERIC(14,2),
+  settled_amount          NUMERIC(14,2),
+  paid                    BOOLEAN,
+  settlement_date         TIMESTAMP,
+  express_service_charge  NUMERIC(14,2),
+  express_service_tax     NUMERIC(14,2),
+  match_status            VARCHAR(20),
+  match_bank_record_id    INTEGER REFERENCES bank_statement_records(id) ON DELETE SET NULL,
+  match_reason            TEXT,
+  created_at              TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS easebuzz_settlement_records_batch_id_idx ON easebuzz_settlement_records(batch_id);
+-- Indexed for the same reason documented on ip_payment_records' equivalent
+-- back-reference: without it, deleting a bank statement forces a full scan of
+-- this table for every ON DELETE SET NULL cascade row.
+CREATE INDEX IF NOT EXISTS easebuzz_settlement_records_bank_ref_idx ON easebuzz_settlement_records(match_bank_record_id);
+CREATE INDEX IF NOT EXISTS easebuzz_settlement_records_status_idx ON easebuzz_settlement_records(match_status);
+
+-- ---------------------------------------------------------------------------
+-- UPI & Card Reconciliation (UCR). A wholly SEPARATE reconciliation module,
+-- deliberately not wired into ip_payment_records / diag_op_payment_records /
+-- bank_statement_records / reconciliation/rules.js (the main CNF engine).
+-- The client's own HIS export can produce a different, richer MIS report —
+-- one row per payment INSTRUMENT (a split-payment receipt appears as several
+-- rows), each carrying a `Reference ID` that is the processor's own approval
+-- code (Card) or RRN (UPI) — verified directly against a real weekly export.
+-- ucr_ip_records is the MIS-side; ucr_card_mpr_records / ucr_card_pinelabs_records
+-- / ucr_upi_mpr_records are the three processor/gateway sides it is matched
+-- against. Despite the table name, ucr_ip_records holds rows from THREE MIS
+-- sources — IP, OP and DIAG — distinguished by `mis_source`. OP and DIAG are
+-- each a genuinely different raw HIS export from IP, each with its own
+-- header/data column-shift quirk solved by direct row-by-row verification
+-- against real data (see ucr-op-parser.js / ucr-diag-parser.js). Sharing one
+-- table (rather than a sibling ucr_op_records/ucr_diag_records pair) keeps
+-- Card/UPI matching automatic across all three sources with no route changes
+-- — the matchers already just query `WHERE instrument_type = 'CARD'/'UPI'`.
+--
+-- DIAG in particular only contributes a Card pathway, not UPI — see
+-- ucr-diag-parser.js's header comment for why (its "UPI" amount bucket never
+-- carries a reference anywhere in the row, confirmed against the real file;
+-- its "Online" bucket is where genuine Card transactions turned out to be,
+-- confirmed by two exact matches against real CARD MPR/Pine Labs rows).
+--
+-- match_status/match_source_type/match_source_id/match_reason live on the
+-- MIS-side row (ucr_ip_records), same reasoning as easebuzz_settlement_records
+-- above: the uploaded MIS row IS the reconciled entity, not a grouping rolled
+-- up into a derived table. match_source_type + match_source_id (no FK — a
+-- Card row can point at either ucr_card_mpr_records or
+-- ucr_card_pinelabs_records) mirrors the existing polymorphic
+-- match_payment_type/match_payment_record_id pattern already used elsewhere.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS ucr_ip_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now(),
+  matched_at        TIMESTAMP,
+  file_hash         VARCHAR(64)
+);
+
+-- Added after the table's first release (OP/DIAG support came later) — ALTER
+-- rather than a CREATE TABLE column, since IF NOT EXISTS on CREATE TABLE is a
+-- no-op once the table already exists on a live database.
+ALTER TABLE ucr_ip_upload_batches ADD COLUMN IF NOT EXISTS mis_source VARCHAR(10) NOT NULL DEFAULT 'IP'; -- 'IP' | 'OP' | 'DIAG'
+
+CREATE INDEX IF NOT EXISTS ucr_ip_upload_batches_file_hash_idx ON ucr_ip_upload_batches(file_hash);
+CREATE INDEX IF NOT EXISTS ucr_ip_upload_batches_mis_source_idx ON ucr_ip_upload_batches(mis_source);
+
+CREATE TABLE IF NOT EXISTS ucr_ip_records (
+  id                  SERIAL PRIMARY KEY,
+  batch_id            INTEGER NOT NULL REFERENCES ucr_ip_upload_batches(id) ON DELETE CASCADE,
+  receipt_no          VARCHAR(255),
+  receipt_date        TIMESTAMP,
+  yh_no               VARCHAR(255),
+  ip_no               VARCHAR(255),
+  patient_name        VARCHAR(255),
+  bill_no             VARCHAR(255),
+  instrument_type     VARCHAR(20),   -- 'CARD' | 'UPI' — only these two are ingested
+  amount              NUMERIC(14,2),
+  user_id             VARCHAR(255),
+  user_name           VARCHAR(255),
+  reference_id        VARCHAR(64),   -- Card approval code, or UPI RRN
+  match_status        VARCHAR(20),
+  match_source_type   VARCHAR(20),   -- 'CARD_MPR' | 'CARD_PINELABS' | 'UPI_MPR'
+  match_source_id     INTEGER,       -- no FK: polymorphic across 3 possible tables
+  match_reason        TEXT,
+  created_at          TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Same reasoning as ucr_ip_upload_batches.mis_source above.
+ALTER TABLE ucr_ip_records ADD COLUMN IF NOT EXISTS mis_source VARCHAR(10) NOT NULL DEFAULT 'IP'; -- denormalized for easy filtering, no join needed
+ALTER TABLE ucr_ip_records ADD COLUMN IF NOT EXISTS diag_no VARCHAR(255); -- DIAG only
+
+-- The card/UPI matchers already compute a per-group shortfall but previously
+-- discarded it, leaving the number recoverable only by re-parsing the prose in
+-- match_reason. The audit report needs it as a real column.
+--
+-- IMPORTANT: this is the GROUP figure. Several receipts can share one reference
+-- (a split payment), and the verdict is decided on their summed amount — so
+-- match_group_amount is the sum over the reference, not this row's own amount,
+-- and recomputing the difference per row would contradict match_status.
+ALTER TABLE ucr_ip_records ADD COLUMN IF NOT EXISTS match_difference   NUMERIC(14,2);
+ALTER TABLE ucr_ip_records ADD COLUMN IF NOT EXISTS match_group_amount NUMERIC(14,2);
+
+CREATE INDEX IF NOT EXISTS ucr_ip_records_batch_id_idx ON ucr_ip_records(batch_id);
+CREATE INDEX IF NOT EXISTS ucr_ip_records_status_idx ON ucr_ip_records(match_status);
+CREATE INDEX IF NOT EXISTS ucr_ip_records_reference_id_idx ON ucr_ip_records(reference_id);
+CREATE INDEX IF NOT EXISTS ucr_ip_records_mis_source_idx ON ucr_ip_records(mis_source);
+
+CREATE TABLE IF NOT EXISTS ucr_card_mpr_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now(),
+  matched_at        TIMESTAMP,
+  file_hash         VARCHAR(64)
+);
+
+CREATE INDEX IF NOT EXISTS ucr_card_mpr_upload_batches_file_hash_idx ON ucr_card_mpr_upload_batches(file_hash);
+
+-- Merchant Payout Report for card transactions (Visa/Mastercard/RuPay etc, via
+-- the bank's own processing system — confirmed distinct from Pine Labs below).
+-- app_code is the join key to ucr_ip_records.reference_id (Card rows).
+-- pymt_chgamnt is the GROSS charged amount — confirmed equal to the MIS amount
+-- on a real matched pair; pymt_netamnt is net of commission+GST and is NOT
+-- the amount to compare against MIS.
+CREATE TABLE IF NOT EXISTS ucr_card_mpr_records (
+  id                  SERIAL PRIMARY KEY,
+  batch_id            INTEGER NOT NULL REFERENCES ucr_card_mpr_upload_batches(id) ON DELETE CASCADE,
+  mecode              VARCHAR(64),
+  me_name             VARCHAR(255),
+  cardnbr             VARCHAR(64),
+  legal_name          VARCHAR(255),
+  chg_date            DATE,
+  process_date        DATE,
+  terminal_no         VARCHAR(64),
+  stall_no            VARCHAR(64),
+  grp_desc            VARCHAR(255),
+  app_code            VARCHAR(64),
+  pymt_chgamnt        NUMERIC(14,2),
+  pymt_comm           NUMERIC(14,2),
+  pymt_servtax        NUMERIC(14,2),
+  pymt_cgst           NUMERIC(14,2),
+  pymt_sgst           NUMERIC(14,2),
+  pymt_igst           NUMERIC(14,2),
+  pymt_utgst          NUMERIC(14,2),
+  pymt_netamnt        NUMERIC(14,2),
+  debitcredit_type    VARCHAR(8),
+  arn                 VARCHAR(64),
+  invoice_number      VARCHAR(64),
+  transaction_id      VARCHAR(64),
+  created_at          TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ucr_card_mpr_records_batch_id_idx ON ucr_card_mpr_records(batch_id);
+CREATE INDEX IF NOT EXISTS ucr_card_mpr_records_app_code_idx ON ucr_card_mpr_records(app_code);
+
+CREATE TABLE IF NOT EXISTS ucr_card_pinelabs_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now(),
+  matched_at        TIMESTAMP,
+  file_hash         VARCHAR(64)
+);
+
+CREATE INDEX IF NOT EXISTS ucr_card_pinelabs_upload_batches_file_hash_idx ON ucr_card_pinelabs_upload_batches(file_hash);
+
+-- Pine Labs POS terminal export. Despite files typically being named "AMEX...",
+-- confirmed this covers MULTIPLE acquirers/networks in one file (AMEX and
+-- RBL_DCC both seen for real) — `acquirer` records which. approval_code is the
+-- join key, same semantics as ucr_card_mpr_records.app_code. RBL_DCC rows are a
+-- Dynamic Currency Conversion product (currency = 'DCC_INR') — gross-to-gross
+-- amount parity for those specifically is unverified, not confirmed; flagged,
+-- not assumed.
+CREATE TABLE IF NOT EXISTS ucr_card_pinelabs_records (
+  id                  SERIAL PRIMARY KEY,
+  batch_id            INTEGER NOT NULL REFERENCES ucr_card_pinelabs_upload_batches(id) ON DELETE CASCADE,
+  zone                VARCHAR(64),
+  store_name          VARCHAR(255),
+  city                VARCHAR(128),
+  acquirer            VARCHAR(32),
+  tid                 VARCHAR(64),
+  mid                 VARCHAR(64),
+  batch_no            VARCHAR(64),
+  payment_mode        VARCHAR(64),
+  cardholder_name     VARCHAR(255),
+  card_issuer         VARCHAR(255),
+  card_type           VARCHAR(64),
+  card_network        VARCHAR(64),
+  transaction_id      VARCHAR(64),
+  invoice             VARCHAR(64),
+  approval_code       VARCHAR(64),
+  amount              NUMERIC(14,2),
+  currency            VARCHAR(16),
+  txn_date            TIMESTAMP,
+  txn_status          VARCHAR(32),
+  settlement_date     DATE,
+  rrn                 VARCHAR(64),
+  created_at          TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ucr_card_pinelabs_records_batch_id_idx ON ucr_card_pinelabs_records(batch_id);
+CREATE INDEX IF NOT EXISTS ucr_card_pinelabs_records_approval_code_idx ON ucr_card_pinelabs_records(approval_code);
+
+CREATE TABLE IF NOT EXISTS ucr_upi_mpr_upload_batches (
+  id                SERIAL PRIMARY KEY,
+  file_name         VARCHAR(255) NOT NULL,
+  file_size_bytes   INTEGER NOT NULL,
+  row_count         INTEGER NOT NULL DEFAULT 0,
+  uploaded_by       VARCHAR(255),
+  uploaded_at       TIMESTAMP NOT NULL DEFAULT now(),
+  matched_at        TIMESTAMP,
+  file_hash         VARCHAR(64)
+);
+
+CREATE INDEX IF NOT EXISTS ucr_upi_mpr_upload_batches_file_hash_idx ON ucr_upi_mpr_upload_batches(file_hash);
+
+-- UPI Merchant Payout Report. rrn ("Txn ref no. (RRN)") is the join key to
+-- ucr_ip_records.reference_id (UPI rows). transaction_amount is GROSS and
+-- confirmed equal to the MIS amount on a real matched pair; net_amount is net
+-- of MSF/GST. trans_type/cr_dr carry CREDIT/PAY refund pairs (same order_id,
+-- equal amount) that the matcher must exclude, not treat as unmatched.
+CREATE TABLE IF NOT EXISTS ucr_upi_mpr_records (
+  id                      SERIAL PRIMARY KEY,
+  batch_id                INTEGER NOT NULL REFERENCES ucr_upi_mpr_upload_batches(id) ON DELETE CASCADE,
+  external_mid            VARCHAR(64),
+  external_tid            VARCHAR(64),
+  merchant_vpa            VARCHAR(255),
+  payer_vpa               VARCHAR(255),
+  upi_trxn_id             VARCHAR(64),
+  order_id                VARCHAR(64),
+  rrn                     VARCHAR(64),
+  transaction_req_date    TIMESTAMP,
+  settlement_date         DATE,
+  transaction_amount      NUMERIC(14,2),
+  msf_amount              NUMERIC(14,2),
+  net_amount              NUMERIC(14,2),
+  trans_type              VARCHAR(32),
+  pay_type                VARCHAR(32),
+  cr_dr                   VARCHAR(8),
+  created_at              TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ucr_upi_mpr_records_batch_id_idx ON ucr_upi_mpr_records(batch_id);
+CREATE INDEX IF NOT EXISTS ucr_upi_mpr_records_rrn_idx ON ucr_upi_mpr_records(rrn);
+CREATE INDEX IF NOT EXISTS ucr_upi_mpr_records_order_id_idx ON ucr_upi_mpr_records(order_id);
+
+-- ---------------------------------------------------------------------------
+-- GATEWAY / SETTLEMENT MATCHING POLICY
+--
+-- The four gateway matchers -- card, upi, payu, easebuzz -- were the only
+-- reconciliation code in FRS that was not configurable: tolerance was a
+-- hardcoded `= 1`, the narration-token floor a bare `>= 8`, a policy could not
+-- be switched off, and an ambiguous multi-candidate case always silently picked
+-- the nearest amount. This table holds their policy.
+--
+-- DELIBERATELY SEPARATE from ip/diag/upi/cheque_matching_rules. Those four are
+-- driven by computeMatchResults (CNF + unit + contra passes); these four
+-- matchers never run through it -- they are standalone functions called from
+-- their own routes. Keeping their policy here means the shared rule machinery
+-- (mountRuleCrud, matchingRuleRowToApi, RULE_KIND_SPECS, the kind CHECK above)
+-- is not touched at all, so nothing that works today can be disturbed. It also
+-- needs no `kind` column and none of the three unused payload columns.
+--
+-- gateway_config carries POLICY ONLY, never field wiring -- which processor
+-- column joins to which MIS column is a fact about the file format, verified
+-- against real client files, not a preference. See
+-- src/reconciliation/gateway-policy.js for the key vocabulary and the
+-- per-target defaults, which reproduce the previous hardcoded behaviour exactly.
+--
+-- Semantics: the FIRST ACTIVE rule for a target wins (sort_order, then id). No
+-- rows, or all inactive, falls back to those built-in defaults -- never
+-- "refuse to run", because a disabled rule must not silently zero out a
+-- month's reconciliation.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS gateway_matching_rules (
+  id              SERIAL PRIMARY KEY,
+  name            VARCHAR(255) NOT NULL,
+  target          VARCHAR(16)  NOT NULL,   -- CARD | UPI | PAYU | EASEBUZZ
+  active          BOOLEAN      NOT NULL DEFAULT true,
+  sort_order      INTEGER,
+  gateway_config  JSONB        NOT NULL,
+  created_at      TIMESTAMP    NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMP    NOT NULL DEFAULT now()
+);
+
+-- Dropped and re-added rather than guarded, like every other constraint in this
+-- file, so re-running converges from any state.
+ALTER TABLE gateway_matching_rules DROP CONSTRAINT IF EXISTS gateway_matching_rules_target_chk;
+ALTER TABLE gateway_matching_rules ADD CONSTRAINT gateway_matching_rules_target_chk
+  CHECK (target IN ('CARD', 'UPI', 'PAYU', 'EASEBUZZ'));
+
+CREATE INDEX IF NOT EXISTS gateway_matching_rules_target_idx
+  ON gateway_matching_rules(target, sort_order);
+
+-- One seeded policy per target, each reproducing today's hardcoded behaviour to
+-- the paise. Guarded on TARGET rather than name: a fresh or upgraded DB always
+-- ends with exactly one working policy per target. The trade-off is that
+-- deleting a target's only rule and restarting restores this default -- which is
+-- the safe direction, since the alternative is a target with no policy at all.
+INSERT INTO gateway_matching_rules (name, target, active, sort_order, gateway_config)
+SELECT 'Default card policy', 'CARD', true, 1,
+       '{"tolerance":1,"onAmbiguous":"NEAREST_AMOUNT"}'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM gateway_matching_rules WHERE target = 'CARD');
+
+INSERT INTO gateway_matching_rules (name, target, active, sort_order, gateway_config)
+SELECT 'Default UPI policy', 'UPI', true, 1,
+       '{"tolerance":1,"onAmbiguous":"NEAREST_AMOUNT","excludeRefundPairs":true}'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM gateway_matching_rules WHERE target = 'UPI');
+
+INSERT INTO gateway_matching_rules (name, target, active, sort_order, gateway_config)
+SELECT 'Default PayU settlement policy', 'PAYU', true, 1,
+       '{"tolerance":1,"onAmbiguous":"NEAREST_AMOUNT","useNarrationTokens":true,"minTokenLength":8,"compareAmount":"NET"}'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM gateway_matching_rules WHERE target = 'PAYU');
+
+INSERT INTO gateway_matching_rules (name, target, active, sort_order, gateway_config)
+SELECT 'Default EaseBuzz settlement policy', 'EASEBUZZ', true, 1,
+       '{"tolerance":1,"onAmbiguous":"NEAREST_AMOUNT","useNarrationTokens":true,"minTokenLength":8}'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM gateway_matching_rules WHERE target = 'EASEBUZZ');

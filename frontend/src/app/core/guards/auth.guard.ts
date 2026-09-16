@@ -17,12 +17,19 @@ export const loginRedirectGuard: CanActivateFn = () => {
   const router = inject(Router);
 
   if (auth.isAuthenticated()) {
-    return router.parseUrl('/insurance-policy/dashboard');
+    return router.parseUrl('/reconciliation');
   }
   return true;
 };
 
-/** Restricts routes outside the Automation Insurance module to Super Admin. */
+/**
+ * Restricts routes outside the Automation Insurance module to Super Admin.
+ *
+ * The fallback stays '/insurance-policy/dashboard' and must NOT be changed to
+ * '/reconciliation' along with the other landing redirects: /reconciliation is
+ * itself behind this guard, so pointing the failure case at it would bounce a
+ * non-Super-Admin between the two forever.
+ */
 export const superAdminGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);

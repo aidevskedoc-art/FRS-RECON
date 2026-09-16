@@ -16,6 +16,10 @@ const matchedRulesRouter = require('./routes/matched-rules.routes');
 const matchingRulesRouter = require('./routes/matching-rules.routes');
 const chequeCollectionsRouter = require('./routes/cheque-collections.routes');
 const refundsRouter = require('./routes/refunds.routes');
+const ucrUploadRouter = require('./routes/ucr-upload.routes');
+const ucrMatchedRouter = require('./routes/ucr-matched.routes');
+const gatewayRulesRouter = require('./routes/gateway-rules.routes');
+const uploadsDetectRouter = require('./routes/uploads-detect.routes');
 
 const app = express();
 
@@ -56,6 +60,12 @@ app.use('/api/matched-rules', matchedRulesRouter);
 app.use('/api/matching-rules', matchingRulesRouter);
 app.use('/api/cheque-collections', chequeCollectionsRouter);
 app.use('/api/refunds', refundsRouter);
+app.use('/api/ucr-upload', ucrUploadRouter);
+app.use('/api/ucr-matched', ucrMatchedRouter);
+// Matching policy for the four gateway/settlement matchers. Deliberately its own
+// router rather than a fifth mountRuleCrud — see gateway-rules.routes.js.
+app.use('/api/gateway-rules', gatewayRulesRouter);
+app.use('/api/uploads', uploadsDetectRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });

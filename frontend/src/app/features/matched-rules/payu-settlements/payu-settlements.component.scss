@@ -121,3 +121,12 @@
   color: var(--status-danger-fg);
   border: 1px solid var(--status-danger-border);
 }
+
+/* Manage Rules + Generate sit together at the head, so they stay paired
+   instead of being scattered by the header's space-between. */
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}

@@ -1,0 +1,150 @@
+@use 'styles/mixins';
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.panel__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.summary-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  min-width: 0;
+  @include mixins.glass-card;
+  @include mixins.elevate-on-hover;
+}
+
+/* Money runs longer than a count, so those cards get room rather than wrapping. */
+.summary-card--wide {
+  grid-column: span 2;
+
+  @media (max-width: 620px) {
+    grid-column: span 1;
+  }
+}
+
+.summary-card__icon {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  font-size: 1.1rem;
+}
+
+.summary-card__body {
+  min-width: 0;
+}
+
+.summary-card__value {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  @include mixins.truncate;
+}
+
+.summary-card__label {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.summary-card--blue .summary-card__icon {
+  background: var(--ai-blue-soft);
+  color: var(--ai-blue);
+}
+.summary-card--success .summary-card__icon {
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+.summary-card--warning .summary-card__icon {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+}
+.summary-card--danger .summary-card__icon {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+.summary-card--purple .summary-card__icon {
+  background: var(--ai-purple-soft);
+  color: var(--ai-purple);
+}
+.summary-card--cyan .summary-card__icon {
+  background: var(--ai-cyan-soft);
+  color: var(--ai-cyan);
+}
+
+.panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  h4 {
+    margin: 0;
+    font-size: var(--text-md);
+    color: var(--text-primary);
+  }
+}
+
+.table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  overflow: auto;
+}
+
+.breakdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+
+  th,
+  td {
+    padding: var(--space-3) var(--space-4);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th {
+    background: var(--surface-sunken);
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  td {
+    border-top: 1px solid var(--border-default);
+    color: var(--text-primary);
+  }
+
+  tfoot td {
+    border-top: 2px solid var(--border-default);
+    font-weight: 700;
+    background: var(--surface-sunken);
+  }
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.amount {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+/* A non-zero Balance Amount is the thing a reviewer is looking for. */
+.amount--flag {
+  color: var(--status-warning-fg);
+  font-weight: 600;
+}

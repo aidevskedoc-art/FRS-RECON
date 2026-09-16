@@ -5,7 +5,7 @@
  * (`receipt_date < ($n::date + interval '1 day')`).
  */
 
-const PERIOD_TYPES = ['DAILY', 'MONTHLY', 'YEARLY'];
+const PERIOD_TYPES = ['DAILY', 'MONTHLY', 'YEARLY', 'RANGE'];
 const DATE_BASES = ['RECEIPT', 'REALIZATION'];
 
 const MONTHS_SHORT = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -19,21 +19,61 @@ function isoMinusOneDay(isoDate) {
   return fmt(d);
 }
 
+/** 'YYYY-MM-DD' -> the audit sheets' day tag, e.g. '01-JUL-26'. */
+function dayLabel(isoDate) {
+  const [y, mo, d] = isoDate.split('-').map(Number);
+  return `${String(d).padStart(2, '0')}-${MONTHS_SHORT[mo - 1]}-${String(y).slice(2)}`;
+}
+
 /**
- * @param {'DAILY'|'MONTHLY'|'YEARLY'} periodType
+ * @param {'DAILY'|'MONTHLY'|'YEARLY'|'RANGE'} periodType
  * @param {string} period  DAILY: 'YYYY-MM-DD' · MONTHLY: 'YYYY-MM' · YEARLY: 'YYYY'
- * @returns {{ dateFrom: string, dateTo: string, dateToInclusive: string, label: string }}
+ *   RANGE: 'YYYY-MM-DD:YYYY-MM-DD' (inclusive both ends)
+ * @returns {{ dateFrom, dateTo, dateToInclusive, label, titlePhrase, titlePhraseBare }}
  *   `dateTo` is exclusive (use it with `inRange`); `dateToInclusive` is the last
  *   day IN the period, which is what `computeMatchResults` wants — it builds its
  *   own `receipt_date < ($n::date + interval '1 day')`. label is the human tag
  *   the audit sheet titles use, e.g. "JUL-26", "15-JUL-26", "2026".
+ *
+ *   `titlePhrase` / `titlePhraseBare` are what the sheet headings interpolate.
+ *   A single period keeps the client's original wording exactly ("FOR THE MONTH
+ *   OF - JUL-26"); a RANGE spans months, so "FOR THE MONTH OF" would be a lie
+ *   and it reads "FOR THE PERIOD 01-JUL-26 TO 30-SEP-26" instead. The two
+ *   variants exist because the cheque sheet uses the phrase with and without a
+ *   dash on two different rows.
  */
 function resolvePeriod(periodType, period) {
   const type = String(periodType || '').toUpperCase();
   if (!PERIOD_TYPES.includes(type)) throw badRequest(`periodType must be one of ${PERIOD_TYPES.join(' / ')}`);
   const raw = String(period || '').trim();
 
-  const withInclusive = (out) => ({ ...out, dateToInclusive: isoMinusOneDay(out.dateTo) });
+  const withInclusive = (out) => ({
+    ...out,
+    dateToInclusive: isoMinusOneDay(out.dateTo),
+    titlePhrase: out.titlePhrase ?? `FOR THE MONTH OF - ${out.label}`,
+    titlePhraseBare: out.titlePhraseBare ?? `FOR THE MONTH OF ${out.label}`,
+  });
+
+  if (type === 'RANGE') {
+    const m = raw.match(/^(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/);
+    if (!m) throw badRequest('period for RANGE must be YYYY-MM-DD:YYYY-MM-DD');
+    const [, fromIso, toIso] = m;
+    if (Number.isNaN(Date.parse(`${fromIso}T00:00:00Z`)) || Number.isNaN(Date.parse(`${toIso}T00:00:00Z`))) {
+      throw badRequest('period for RANGE must be two real calendar dates');
+    }
+    if (fromIso > toIso) throw badRequest('period for RANGE must start on or before it ends');
+    // `to` is inclusive for the caller, so the exclusive bound is the next day.
+    const end = new Date(`${toIso}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() + 1);
+    const label = `${dayLabel(fromIso)} TO ${dayLabel(toIso)}`;
+    return withInclusive({
+      dateFrom: fromIso,
+      dateTo: fmt(end),
+      label,
+      titlePhrase: `FOR THE PERIOD ${label}`,
+      titlePhraseBare: `FOR THE PERIOD ${label}`,
+    });
+  }
 
   if (type === 'DAILY') {
     const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);

@@ -7,14 +7,25 @@
  * inward remittance ("INW <ref> USD… @ <rate>") that the hospital allocates
  * across dozens of receipts over weeks. The remittance carries the reference
  * every receipt cites, but its amount is the whole pool (a ₹20-crore credit
- * against a ₹16-lakh bill), so the standard amount-checked rules and the
- * unit-aggregation pass can only ever mark these AMBIGUOUS / PARTIAL.
+ * against a ₹16-lakh bill).
  *
- * The client's own working paper matches them on the REFERENCE alone and takes
- * the remittance date as the realization date (difference 0 — it is a drawdown,
- * not a payment). This rule does the same: gate on an INT* patient type, then
- * match if the MIS reference is on a bank line's Chq/Ref No or narration. No
- * amount leaf, no unit leaf.
+ * Gate on an INT* patient type, then match if the MIS reference is on a bank
+ * line's Chq/Ref No or narration — AND the receipt's own bill amount already
+ * accounts for the bank credit. That amount leaf is deliberate, not
+ * incidental: a receipt that is only one piece of a larger, multi-receipt
+ * remittance will never satisfy it on its own, so it falls through — on
+ * purpose — to the unit-aggregation pass ("Transaction Amount Match on Same
+ * Unit"), which groups it with its siblings by base reference, sums them, and
+ * reports a PARTIAL_MATCH with a Balance Amount when the group is short. A
+ * receipt whose amount already equals the bank credit still matches here
+ * directly, unchanged.
+ *
+ * (An earlier version of this rule had no amount leaf at all, matching every
+ * international receipt individually and always reporting MATCHED — which
+ * kept these rows out of the unit-aggregation pass entirely, on the reasoning
+ * that grouping "can only ever mark these AMBIGUOUS / PARTIAL". The client
+ * now explicitly wants that partial/shortfall outcome surfaced as a Balance
+ * Amount, so this supersedes that earlier choice.)
  *
  *   node scripts/seed-international-rule.js
  */
@@ -35,6 +46,14 @@ const CONDITION_GROUPS = [
     { kind: 'FIELD_PAIR', field: null, value: null, negate: false, operator: null, sourceField: 'transId', pairOperator: 'EQUALS', pairTolerance: null, destinationField: 'chqRefNo' },
     { kind: 'FIELD_PAIR', field: null, value: null, negate: false, operator: null, sourceField: 'transactionRef1', pairOperator: 'CONTAINS', pairTolerance: null, destinationField: 'narration' },
     { kind: 'FIELD_PAIR', field: null, value: null, negate: false, operator: null, sourceField: 'transactionRef1', pairOperator: 'EQUALS', pairTolerance: null, destinationField: 'chqRefNo' },
+  ],
+  // Require the receipt's own amount to already account for the bank credit —
+  // otherwise it's one piece of a larger, multi-receipt remittance and must
+  // fall through to the unit-aggregation pass (Transaction Amount Match on
+  // Same Unit), which groups it with its siblings and computes the Balance
+  // Amount shortfall. See the header comment above.
+  [
+    { kind: 'FIELD_PAIR', field: null, value: null, negate: false, operator: null, sourceField: 'billAmount', pairOperator: 'AMOUNT_WITHIN_TOLERANCE', pairTolerance: '1', destinationField: 'depositAmt' },
   ],
 ];
 

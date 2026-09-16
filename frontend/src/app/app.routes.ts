@@ -13,7 +13,11 @@ export const routes: Routes = [
     loadComponent: () => import('./layout/shell/shell.component').then((m) => m.ShellComponent),
     canActivate: [authGuard],
     children: [
-      { path: '', redirectTo: 'insurance-policy/dashboard', pathMatch: 'full' },
+      // The app opens on the consolidated Reconciliation screen — that is the
+      // day-to-day entry point. A non-Super-Admin bounces from there to the
+      // insurance dashboard via superAdminGuard, which is outside that guard,
+      // so there is no redirect loop.
+      { path: '', redirectTo: 'reconciliation', pathMatch: 'full' },
       {
         path: 'insurance-policy/dashboard',
         loadComponent: () =>
@@ -126,6 +130,27 @@ export const routes: Routes = [
                 (m) => m.ViewEasebuzzComponent,
               ),
             title: 'EaseBuzz Batches — Bank & PayU',
+          },
+          {
+            // One screen for every UPI & Card Reconciliation feed (instrument-
+            // level MIS + CARD MPR + Pine Labs + UPI MPR) — a wholly separate
+            // module from Upload Bank & Gateway Feeds above.
+            path: 'upload-online/ucr-feeds',
+            loadComponent: () =>
+              import('./features/upload-online/upload-ucr-feeds/upload-ucr-feeds.component').then(
+                (m) => m.UploadUcrFeedsComponent,
+              ),
+            title: 'Upload UPI & Card Feeds — UPI & Card Reconciliation',
+          },
+          {
+            // Upload history (file/rows/uploaded/matched/delete) for the 4 UCR
+            // sources — one screen with a tab picker, not 4 separate routes.
+            path: 'upload-online/ucr-batches',
+            loadComponent: () =>
+              import('./features/upload-online/view-ucr-batches/view-ucr-batches.component').then(
+                (m) => m.ViewUcrBatchesComponent,
+              ),
+            title: 'UPI & Card Uploads — UPI & Card Reconciliation',
           },
           // Legacy, off-nav: these two read online_upload_batches, the
           // pre-migration MIS table. POST /api/online-upload/mis now rejects
@@ -258,6 +283,40 @@ export const routes: Routes = [
             title: 'PayU Settlements — Reconciliation',
           },
           {
+            path: 'matched-rules/easebuzz-settlements',
+            loadComponent: () =>
+              import('./features/matched-rules/easebuzz-settlements/easebuzz-settlements.component').then(
+                (m) => m.EasebuzzSettlementsComponent,
+              ),
+            title: 'EaseBuzz Settlements — Reconciliation',
+          },
+          {
+            // The consolidated screen: drop every report in one place, run all
+            // reconciliations from one button, read the result below it.
+            // The individual upload hubs and per-batch Generate screens are
+            // deliberately left in place and keep working.
+            path: 'reconciliation',
+            loadComponent: () =>
+              import('./features/reconciliation/reconciliation.component').then((m) => m.ReconciliationComponent),
+            title: 'Reconciliation — FRS Recon',
+          },
+          {
+            path: 'matched-rules/card-reconciliation',
+            loadComponent: () =>
+              import('./features/matched-rules/card-reconciliation/card-reconciliation.component').then(
+                (m) => m.CardReconciliationComponent,
+              ),
+            title: 'Card Reconciliation — UPI & Card Reconciliation',
+          },
+          {
+            path: 'matched-rules/upi-reconciliation',
+            loadComponent: () =>
+              import('./features/matched-rules/upi-reconciliation/upi-reconciliation.component').then(
+                (m) => m.UpiReconciliationComponent,
+              ),
+            title: 'UPI Reconciliation — UPI & Card Reconciliation',
+          },
+          {
             path: 'matched-rules/audit-report',
             loadComponent: () =>
               import('./features/matched-rules/audit-report/audit-report.component').then((m) => m.AuditReportComponent),
@@ -307,6 +366,17 @@ export const routes: Routes = [
             title: 'Cheque Matching Rules — Reconciliation',
           },
           {
+            // Off-nav like the other rule editors. `?target=` picks which of the
+            // four gateway reconciliations it opens on, so the Manage Rules
+            // button on each results screen lands on the right one.
+            path: 'matched-rules/gateway-rules/manage',
+            loadComponent: () =>
+              import('./features/matched-rules/gateway-matching-rules/gateway-matching-rules.component').then(
+                (m) => m.GatewayMatchingRulesComponent,
+              ),
+            title: 'Gateway Matching Rules — Reconciliation',
+          },
+          {
             path: 'master-data/division-bank-accounts',
             loadComponent: () =>
               import('./features/master-data/division-bank-accounts/division-bank-accounts.component').then(
@@ -316,7 +386,7 @@ export const routes: Routes = [
           },
         ],
       },
-      { path: '**', redirectTo: 'insurance-policy/dashboard' },
+      { path: '**', redirectTo: 'reconciliation' },
     ],
   },
 ];

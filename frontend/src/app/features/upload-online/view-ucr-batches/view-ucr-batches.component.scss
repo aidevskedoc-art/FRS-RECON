@@ -1,0 +1,118 @@
+@use 'styles/mixins';
+
+.ucr-batches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.page-header {
+  h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+}
+
+.hub-picker {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.hub-option {
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+
+  &:hover {
+    border-color: var(--ai-blue);
+    color: var(--text-primary);
+  }
+}
+
+.hub-option--active {
+  border-color: var(--ai-blue);
+  background: var(--ai-blue-soft);
+  color: var(--ai-blue);
+  font-weight: 600;
+}
+
+.hub-option__title {
+  white-space: nowrap;
+}
+
+.ucr-batches__table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  overflow-x: auto;
+}
+
+:host ::ng-deep .ucr-batches__table-wrap {
+  .p-datatable-thead > tr > th {
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+
+  .p-datatable-tbody > tr {
+    background: var(--surface);
+  }
+
+  .p-datatable-tbody > tr:nth-child(even) {
+    background: var(--surface-sunken);
+  }
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.action-icon {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--ai-blue);
+  }
+}
+
+.action-icon--danger:hover {
+  color: var(--status-danger-fg);
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}
+
+.notice--danger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+}

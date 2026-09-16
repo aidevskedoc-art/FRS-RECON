@@ -1,0 +1,103 @@
+<div class="card-reconciliation">
+  <header class="card-reconciliation__head">
+    <div>
+      <h1>Card Reconciliation</h1>
+      <p class="card-reconciliation__sub">
+        Every uploaded Card MIS row tied to the CARD MPR or Pine Labs row carrying the same approval code.
+        Run Generate after uploading or re-uploading the MIS (IP), CARD MPR or Pine Labs feeds.
+      </p>
+    </div>
+    <div class="head-actions">
+      <p-button
+        label="Manage Rules"
+        icon="pi pi-cog"
+        size="small"
+        [outlined]="true"
+        routerLink="/matched-rules/gateway-rules/manage"
+        [queryParams]="{ target: 'CARD' }"
+      />
+      <p-button
+        label="Generate"
+        icon="pi pi-refresh"
+        size="small"
+        [loading]="generating()"
+        (onClick)="generate()"
+      />
+    </div>
+  </header>
+
+  @if (error()) {
+    <div class="notice notice--danger">{{ error() }}</div>
+  }
+
+  <div class="card-reconciliation__filters">
+    <p-select
+      [options]="statusOptions"
+      optionLabel="label"
+      optionValue="value"
+      [ngModel]="statusFilter()"
+      (ngModelChange)="setStatus($event)"
+    />
+    <p-button label="Refresh" icon="pi pi-refresh" size="small" [outlined]="true" [loading]="loading()" (onClick)="load()" />
+  </div>
+
+  @if (!loading() && rows().length > 0) {
+    <div class="card-reconciliation__tally">
+      <span>{{ total() }} Card rows</span>
+      <span class="tally--matched">{{ matchedCount() }} matched</span>
+      <span class="tally--mismatch">{{ mismatchCount() }} amount mismatch</span>
+      <span class="tally--unmatched">{{ unmatchedCount() }} no gateway row</span>
+      <span class="tally--sep">·</span>
+      <span>MIS {{ amount(misTotal()) }}</span>
+      <span>gateway {{ amount(gatewayTotal()) }}</span>
+      <span class="tally--gap" [class.tally--gap-zero]="gap() === 0">gap {{ amount(gap()) }}</span>
+    </div>
+  }
+
+  <div class="card-reconciliation__table-wrap">
+    <p-table [value]="rows()" dataKey="id" [loading]="loading()" styleClass="p-datatable-sm">
+      <ng-template #header>
+        <tr>
+          <th>Status</th>
+          <th>Receipt No</th>
+          <th>Patient</th>
+          <th>Reference Id</th>
+          <th class="num">MIS Amount</th>
+          <th>Matched Via</th>
+          <th class="num">Gateway Amount</th>
+          <th class="num">Difference</th>
+          <th>Gateway Date</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-row>
+        <tr>
+          <td>
+            <span
+              class="status-pill"
+              [class.status-pill--matched]="row.matchStatus === 'MATCHED'"
+              [class.status-pill--mismatch]="row.matchStatus === 'AMOUNT_MISMATCH'"
+              [class.status-pill--unmatched]="row.matchStatus === 'UNMATCHED' || !row.matchStatus"
+            >{{ statusLabel(row.matchStatus) }}</span>
+          </td>
+          <td class="mono">{{ row.receiptNo || '—' }}</td>
+          <td>{{ row.patientName || '—' }}</td>
+          <td class="mono">{{ row.referenceId || '—' }}</td>
+          <td class="num strong">{{ amount(row.amount) }}</td>
+          <td>{{ sourceLabel(row) }}</td>
+          <td class="num">{{ amount(row.matchedSource?.amount) }}</td>
+          <td class="num" [class.diff]="difference(row)">{{ amount(difference(row)) }}</td>
+          <td>{{ row.matchedSource?.date || '—' }}</td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="9" class="empty">
+            No Card MIS rows yet. Upload the MIS (IP) feed, then click Generate.
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

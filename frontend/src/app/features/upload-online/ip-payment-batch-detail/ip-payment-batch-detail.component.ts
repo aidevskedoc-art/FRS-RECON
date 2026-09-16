@@ -57,6 +57,14 @@ const COLUMNS: ColumnDef[] = [
   { key: 'matchUnitTotal', header: 'Unit Total', kind: 'amount' },
   { key: 'matchUnitCount', header: 'Unit Size' },
   { key: 'matchUnitDifference', header: 'Difference', kind: 'amount' },
+  // Positive only when the group came up short of the expected amount — same
+  // shortfall-only figure shown as "Balance Amount" on the Unit Matches screen.
+  {
+    key: 'balanceAmount',
+    header: 'Balance Amount',
+    kind: 'amount',
+    get: (r) => (r.matchUnitDifference != null && r.matchUnitDifference < 0 ? -r.matchUnitDifference : null),
+  },
   { key: 'onlineUpiAmount', header: 'Online Amount', kind: 'amount' },
   { key: 'userId', header: 'User ID' },
   { key: 'userName', header: 'User Name' },

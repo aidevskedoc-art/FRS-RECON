@@ -7,13 +7,23 @@
         one bank credit carrying that UTR. Run Generate after uploading or regenerating a PayU MPR.
       </p>
     </div>
-    <p-button
-      label="Generate"
-      icon="pi pi-refresh"
-      size="small"
-      [loading]="generating()"
-      (onClick)="generate()"
-    />
+    <div class="head-actions">
+      <p-button
+        label="Manage Rules"
+        icon="pi pi-cog"
+        size="small"
+        [outlined]="true"
+        routerLink="/matched-rules/gateway-rules/manage"
+        [queryParams]="{ target: 'PAYU' }"
+      />
+      <p-button
+        label="Generate"
+        icon="pi pi-refresh"
+        size="small"
+        [loading]="generating()"
+        (onClick)="generate()"
+      />
+    </div>
   </header>
 
   @if (error()) {

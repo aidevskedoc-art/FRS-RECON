@@ -31,10 +31,14 @@ export class AuditReportComponent {
 
   protected readonly periodType = signal<AuditPeriodType>('MONTHLY');
   protected readonly dateBasis = signal<AuditDateBasis>('RECEIPT');
-  /** Held as the three raw input shapes; `period()` normalises to what the API wants. */
+  /** Held as the raw input shapes; `period()` normalises to what the API wants. */
   protected readonly dayValue = signal(todayIso());
   protected readonly monthValue = signal(todayIso().slice(0, 7));
   protected readonly yearValue = signal(Number(todayIso().slice(0, 4)));
+  // Range defaults to the last three months, which is the case this was added
+  // for — a quarter that does not line up with one calendar month.
+  protected readonly rangeFrom = signal(threeMonthsAgoIso());
+  protected readonly rangeTo = signal(todayIso());
 
   protected readonly loading = signal(false);
   protected readonly downloading = signal(false);
@@ -45,6 +49,7 @@ export class AuditReportComponent {
     { label: 'Daily', value: 'DAILY' as const },
     { label: 'Monthly', value: 'MONTHLY' as const },
     { label: 'Yearly', value: 'YEARLY' as const },
+    { label: 'Date range', value: 'RANGE' as const },
   ];
   protected readonly dateBasisOptions = [
     { label: 'Receipt Date', value: 'RECEIPT' as const },
@@ -57,10 +62,18 @@ export class AuditReportComponent {
         return this.dayValue();
       case 'YEARLY':
         return String(this.yearValue() || '');
+      case 'RANGE':
+        // The API takes both ends in one `period` value, colon-separated.
+        return `${this.rangeFrom()}:${this.rangeTo()}`;
       default:
         return this.monthValue();
     }
   });
+
+  /** Caught here so the range is not sent to the server just to be rejected. */
+  protected readonly rangeInvalid = computed(
+    () => this.periodType() === 'RANGE' && (!this.rangeFrom() || !this.rangeTo() || this.rangeFrom() > this.rangeTo()),
+  );
 
   protected readonly query = computed<AuditReportQuery>(() => ({
     periodType: this.periodType(),
@@ -135,4 +148,11 @@ export class AuditReportComponent {
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Default start for a range — the common ask is "the last quarter". */
+function threeMonthsAgoIso(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 3);
+  return d.toISOString().slice(0, 10);
 }

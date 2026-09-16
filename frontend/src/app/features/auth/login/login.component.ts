@@ -103,7 +103,9 @@ export class LoginComponent {
         return;
       }
 
-      this.router.navigateByUrl('/insurance-policy/dashboard');
+      // Lands on the consolidated Reconciliation screen. A non-Super-Admin is
+      // moved on to the insurance dashboard by superAdminGuard.
+      this.router.navigateByUrl('/reconciliation');
     }, 450);
   }
 

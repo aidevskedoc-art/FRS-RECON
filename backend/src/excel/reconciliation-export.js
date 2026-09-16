@@ -88,6 +88,9 @@ function buildUnitMatchRows(records) {
       'Bank Date': bank ? bank.txnDate : null,
       'Bank Account': bank ? bank.accountNo : null,
       Difference: first.matchUnitDifference ?? null,
+      // Positive only when the group came up short of the expected amount —
+      // same shortfall-only figure shown as "Balance Amount" elsewhere in the app.
+      'Balance Amount': first.matchUnitDifference != null && first.matchUnitDifference < 0 ? -first.matchUnitDifference : null,
       Division: bank ? bank.divisionName : null,
     });
   }

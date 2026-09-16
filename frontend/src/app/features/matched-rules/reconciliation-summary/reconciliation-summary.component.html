@@ -29,82 +29,80 @@
     <p-button label="Clear" size="small" severity="secondary" [text]="true" (onClick)="clearFilters()" />
   </div>
 
-  <div class="recon-summary__cards">
-    @for (card of summaryCards(); track card.label) {
-      <div class="summary-card" [class]="'summary-card--' + card.accent">
-        <div class="summary-card__icon">
-          <i [class]="card.icon"></i>
-        </div>
-        <div>
-          <p class="summary-card__value">{{ card.value }}</p>
-          <p class="summary-card__label">{{ card.label }}</p>
-        </div>
-      </div>
-    }
-  </div>
-
   @if (summary(); as s) {
+    <!-- Shared with the consolidated Upload & Run screen so the two can never
+         show different numbers for the same thing. -->
+    <app-summary-panel [summary]="s" />
+
     <div class="recon-summary__section">
-      <h3>By Payment Type</h3>
+      <h3>Card Reconciliation</h3>
+      <p class="section-note">
+        UPI &amp; Card Reconciliation module — Card MIS rows matched against CARD MPR / Pine Labs by approval code.
+        <a routerLink="/matched-rules/card-reconciliation">Open Card Reconciliation</a> to run Generate and see each row.
+      </p>
+      @if (s.cardPayments.notGenerated > 0) {
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          {{ s.cardPayments.notGenerated }} Card row{{ s.cardPayments.notGenerated === 1 ? '' : 's' }} in this range
+          {{ s.cardPayments.notGenerated === 1 ? 'has' : 'have' }} never been through Generate — open Card Reconciliation and click Generate.
+        </div>
+      }
       <div class="table-wrap">
         <table class="breakdown-table">
           <thead>
             <tr>
-              <th>Statement</th>
               <th>Total</th>
               <th>Matched</th>
-              <th>Easebuzz</th>
-              <th>Contra Entry</th>
-              <th>Partially Matched</th>
               <th>Amount Mismatch</th>
               <th>Unmatched</th>
-              <th>Excluded</th>
+              <th>Not Yet Generated</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>IP Payments</td>
-              <td>{{ s.ipPayments.total }}</td>
-              <td>{{ s.ipPayments.matched }}</td>
-              <td>{{ s.ipPayments.easebuzzMatched }}</td>
-              <td>{{ s.ipPayments.contra }}</td>
-              <td>{{ s.ipPayments.partialMatch }}</td>
-              <td>{{ s.ipPayments.mismatched }}</td>
-              <td>{{ s.ipPayments.unmatched }}</td>
-              <td>{{ s.ipPayments.excluded }}</td>
+              <td>{{ s.cardPayments.total }}</td>
+              <td>{{ s.cardPayments.matched }}</td>
+              <td>{{ s.cardPayments.mismatched }}</td>
+              <td>{{ s.cardPayments.unmatched }}</td>
+              <td>{{ s.cardPayments.notGenerated }}</td>
             </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="recon-summary__section">
+      <h3>UPI Reconciliation (Gateway)</h3>
+      <p class="section-note">
+        UPI &amp; Card Reconciliation module — UPI MIS rows matched against the UPI MPR by RRN. A separate, gateway-verified
+        figure from the "UPI Payments" row above (which reconciles against the bank statement instead).
+        <a routerLink="/matched-rules/upi-reconciliation">Open UPI Reconciliation</a> to run Generate and see each row.
+      </p>
+      @if (s.upiGatewayPayments.notGenerated > 0) {
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          {{ s.upiGatewayPayments.notGenerated }} UPI row{{ s.upiGatewayPayments.notGenerated === 1 ? '' : 's' }} in this range
+          {{ s.upiGatewayPayments.notGenerated === 1 ? 'has' : 'have' }} never been through Generate — open UPI Reconciliation and click Generate.
+        </div>
+      }
+      <div class="table-wrap">
+        <table class="breakdown-table">
+          <thead>
             <tr>
-              <td>Diag OP Payments</td>
-              <td>{{ s.diagPayments.total }}</td>
-              <td>{{ s.diagPayments.matched }}</td>
-              <td>{{ s.diagPayments.easebuzzMatched }}</td>
-              <td>{{ s.diagPayments.contra }}</td>
-              <td>{{ s.diagPayments.partialMatch }}</td>
-              <td>{{ s.diagPayments.mismatched }}</td>
-              <td>{{ s.diagPayments.unmatched }}</td>
-              <td>{{ s.diagPayments.excluded }}</td>
+              <th>Total</th>
+              <th>Matched</th>
+              <th>Amount Mismatch</th>
+              <th>Unmatched</th>
+              <th>Not Yet Generated</th>
             </tr>
+          </thead>
+          <tbody>
             <tr>
-              <td>Cheque Collections</td>
-              <td>{{ s.chequePayments.total }}</td>
-              <td>{{ s.chequePayments.matched }}</td>
-              <td>{{ s.chequePayments.easebuzzMatched }}</td>
-              <td>{{ s.chequePayments.contra }}</td>
-              <td>{{ s.chequePayments.partialMatch }}</td>
-              <td>{{ s.chequePayments.mismatched }}</td>
-              <td>{{ s.chequePayments.unmatched }}</td>
-              <td>{{ s.chequePayments.excluded }}</td>
-            </tr>
-            <tr>
-              <td>UPI Payments</td>
-              <td>{{ s.upiPayments.total }}</td>
-              <td>{{ s.upiPayments.matched }}</td>
-              <td>{{ s.upiPayments.easebuzzMatched }}</td>
-              <td>{{ s.upiPayments.contra }}</td>
-              <td>{{ s.upiPayments.partialMatch }}</td>
-              <td>{{ s.upiPayments.mismatched }}</td>
-              <td>{{ s.upiPayments.unmatched }}</td>
-              <td>{{ s.upiPayments.excluded }}</td>
+              <td>{{ s.upiGatewayPayments.total }}</td>
+              <td>{{ s.upiGatewayPayments.matched }}</td>
+              <td>{{ s.upiGatewayPayments.mismatched }}</td>
+              <td>{{ s.upiGatewayPayments.unmatched }}</td>
+              <td>{{ s.upiGatewayPayments.notGenerated }}</td>
             </tr>
           </tbody>
         </table>

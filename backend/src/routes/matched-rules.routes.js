@@ -8,15 +8,20 @@ const {
   matchingRuleRowToApi,
   chequeCollectionRecordRowToApi,
   refundRecordRowToApi,
+  easebuzzSettlementRecordRowToApi,
 } = require('../mappers');
 const { groupRecords, buildFieldIndex, candidateBankRows, keysWithPrefix, resolveDivision, normalizeRef } = require('../reconciliation/matcher');
 const { runUnitPass } = require('../reconciliation/unit-pass');
 const { ACTION_STATUS, TERMINAL_STATUSES, joinLeaves, groupsMatch, isIndexable, leafMatches } = require('../reconciliation/rules');
 const { UNIT_STATUSES } = require('../reconciliation/unit-groups');
 const { reconcilePayuSettlements } = require('../reconciliation/payu-settlement');
+const { reconcileEasebuzzSettlements, settlementDateFor } = require('../reconciliation/easebuzz-settlement');
 const { runContraPass, CONTRA_ENTRY } = require('../reconciliation/contra-pass');
 const { resolvePeriod, DATE_BASES, inRange } = require('../reconciliation/period');
 const { buildAuditWorkbook, summariseSheet } = require('../excel/audit-report');
+const { ucrRecordSelect } = require('../reconciliation/upi-card-recon/ucr-record-query');
+const { ucrIpRecordRowToApi } = require('../ucr-mappers');
+const { loadGatewayPolicy } = require('../gateway-policy-store');
 
 const router = express.Router();
 
@@ -43,7 +48,18 @@ async function loadBankRecords(dateFrom, dateTo) {
   // gateway rows (what the seeded "EaseBuzz — Transaction Id matches Easebuzz
   // ID" rule joins on via chq_ref_no). A source added here without a matching
   // rule is simply never joined; one omitted here silently defeats its rule.
-  const clauses = [`r.source IN ('BANK', 'PAYU_MPR', 'EASEBUZZ')`];
+  //
+  // deposit_amt IS NOT NULL excludes debit/withdrawal-only lines — a receipt is
+  // money coming IN, so its counterpart can only ever be a credit. Without this,
+  // a debit line that happens to share a reference in its narration (e.g. the
+  // SGST/CGST charge debited alongside a bulk inward remittance, both carrying
+  // the remittance's own reference) is just as eligible a "candidate" as the
+  // real credit — which is how three international receipts ended up matched
+  // to a ₹5,400 GST debit line instead of the ₹20+ crore remittance credit
+  // itself. Verified against live data before adding this: zero existing
+  // matches, anywhere (IP, Diag, cheque), relied on a withdrawal-only
+  // counterpart — only those three erroneous rows did.
+  const clauses = [`r.source IN ('BANK', 'PAYU_MPR', 'EASEBUZZ')`, `r.deposit_amt IS NOT NULL`];
   const params = [];
   if (dateFrom) {
     params.push(dateFrom);
@@ -374,6 +390,11 @@ function buildGroupResult(group, indexes, rules, paymentModeField) {
           accountNo: bank.accountNo,
           bankName: bank.bankName,
           divisionName: bank.divisionName,
+          // 'BANK' | 'PAYU_MPR' | 'EASEBUZZ'. The pool mixes all three (see
+          // loadBankRecords), and an EaseBuzz row is a gateway TRANSACTION, not
+          // a bank credit — the audit report has to be able to tell them apart
+          // rather than infer it from a rule-driven status.
+          source: bank.source,
         }
       : null,
   };
@@ -1198,10 +1219,33 @@ router.get('/summary', async (req, res, next) => {
     // a different business state from "nothing found". The previous bare `else`
     // absorbed any status it did not know about.
     const summarize = (results) => {
-      const counts = { total: 0, matched: 0, easebuzzMatched: 0, contra: 0, partialMatch: 0, mismatched: 0, unmatched: 0, ambiguous: 0, excluded: 0 };
+      const counts = {
+        total: 0, matched: 0, easebuzzMatched: 0, contra: 0, partialMatch: 0, mismatched: 0, unmatched: 0, ambiguous: 0, excluded: 0,
+        // The client asked for rupee figures alongside the counts. Both come
+        // from the groups already in hand, so this costs no extra query.
+        // `totalAmount` is the receipts' own value; `balanceAmount` is the
+        // shortfall where a grouped match came up short of its bank credit —
+        // the same figure the Unit Matches screen calls Balance Amount, i.e.
+        // only the negative side of the group difference, never a surplus.
+        totalAmount: 0,
+        balanceAmount: 0,
+      };
+      // A unit group's shortfall is stamped onto EVERY member row, so adding it
+      // per row multiplies it by the group size. Count each unit once.
+      const countedUnits = new Set();
       for (const group of results) {
         const n = group.sourceRecordIds.length;
         counts.total += n;
+        if (!group.excluded) {
+          counts.totalAmount += Number(group.paymentAmount) || 0;
+          if (group.unitDifference != null && group.unitDifference < 0) {
+            const unitKey = group.unitKey || group.groupId;
+            if (!countedUnits.has(unitKey)) {
+              countedUnits.add(unitKey);
+              counts.balanceAmount += -Number(group.unitDifference);
+            }
+          }
+        }
         if (group.excluded) counts.excluded += n;
         else if (group.status === 'MATCHED') counts.matched += n;
         // Its own bucket: an EaseBuzz-gateway receipt is reconciled against the
@@ -1215,6 +1259,9 @@ router.get('/summary', async (req, res, next) => {
         else if (group.status === 'AMBIGUOUS_MATCH') counts.ambiguous += n;
         else counts.unmatched += n;
       }
+      // Float addition over tens of thousands of rows drifts; settle to paise.
+      counts.totalAmount = Math.round(counts.totalAmount * 100) / 100;
+      counts.balanceAmount = Math.round(counts.balanceAmount * 100) / 100;
       return counts;
     };
 
@@ -1279,6 +1326,62 @@ router.get('/summary', async (req, res, next) => {
       else bucket.notGenerated += row.n;
     }
 
+    // UPI & Card Reconciliation (UCR) — a wholly separate module (see
+    // schema.sql's UCR section), folded in here the same way IP/Diag/Cheque
+    // already are: ucr_ip_records is the PAYMENT side (like ip_payment_records),
+    // not the bank/gateway side, so its matched/mismatched/unmatched counts
+    // contribute to combined.* exactly like ip/diag/cheque do — CARD MPR/Pine
+    // Labs/UPI MPR themselves (the gateway side) are not summed here, same
+    // reasoning as why bankStatement/payuMpr/easebuzz aren't in combined.*.
+    const ucrDateClauses = [];
+    const ucrDateParams = [];
+    if (dateFrom) {
+      ucrDateParams.push(dateFrom);
+      ucrDateClauses.push(`receipt_date >= $${ucrDateParams.length}`);
+    }
+    if (dateTo) {
+      ucrDateParams.push(dateTo);
+      ucrDateClauses.push(`receipt_date < ($${ucrDateParams.length}::date + interval '1 day')`);
+    }
+    const ucrDateWhere = ucrDateClauses.length ? `AND ${ucrDateClauses.join(' AND ')}` : '';
+    const { rows: ucrCountRows } = await db.query(
+      `SELECT instrument_type, match_status, COUNT(*)::int AS n,
+              COALESCE(SUM(amount), 0) AS amount_total
+         FROM ucr_ip_records
+        WHERE instrument_type IN ('CARD', 'UPI') ${ucrDateWhere}
+        GROUP BY instrument_type, match_status`,
+      ucrDateParams,
+    );
+    // Same full shape as ip/diag/upi/cheque (summarize()'s counts object) so
+    // it plugs into combined.* with no special-casing — easebuzzMatched/
+    // contra/partialMatch/ambiguous/excluded simply never apply to this
+    // module and stay 0. notGenerated (match_status IS NULL — no Generate run
+    // yet) is tracked separately, same as bankStatement/payuMpr/easebuzz,
+    // rather than folded into unmatched, so it doesn't misreport "genuinely
+    // no gateway match" for rows that were simply never checked.
+    const emptyUcrCounts = () => ({
+      total: 0, matched: 0, easebuzzMatched: 0, contra: 0, partialMatch: 0,
+      mismatched: 0, unmatched: 0, ambiguous: 0, excluded: 0, notGenerated: 0,
+      // Same two rupee figures the payment types carry. This module matches a
+      // receipt against a gateway row one-for-one, so there is no grouped
+      // shortfall to report — balanceAmount is structurally always 0 here.
+      totalAmount: 0,
+      balanceAmount: 0,
+    });
+    const card = emptyUcrCounts();
+    const upiGateway = emptyUcrCounts();
+    for (const row of ucrCountRows) {
+      const bucket = row.instrument_type === 'CARD' ? card : upiGateway;
+      bucket.total += row.n;
+      bucket.totalAmount += Number(row.amount_total) || 0;
+      if (row.match_status === 'MATCHED') bucket.matched += row.n;
+      else if (row.match_status === 'AMOUNT_MISMATCH') bucket.mismatched += row.n;
+      else if (row.match_status === 'UNMATCHED') bucket.unmatched += row.n;
+      else bucket.notGenerated += row.n; // NULL — never run through Generate
+    }
+    card.totalAmount = Math.round(card.totalAmount * 100) / 100;
+    upiGateway.totalAmount = Math.round(upiGateway.totalAmount * 100) / 100;
+
     // Stage 2 rollup: one row per PayU settlement batch (POST
     // .../payu-settlements/generate). Read straight from the persisted table.
     const { rows: settleRows } = await db.query(
@@ -1320,22 +1423,30 @@ router.get('/summary', async (req, res, next) => {
       diagPayments: diag,
       upiPayments: upi,
       chequePayments: cheque,
+      cardPayments: card,
+      upiGatewayPayments: upiGateway,
       bankStatement: bank,
       payuMpr,
       easebuzz,
       payuSettlement,
       combined: {
-        totalTransactions: ip.total + diag.total + upi.total + cheque.total,
-        totalMatched: ip.matched + diag.matched + upi.matched + cheque.matched,
+        totalTransactions: ip.total + diag.total + upi.total + cheque.total + card.total + upiGateway.total,
+        totalMatched: ip.matched + diag.matched + upi.matched + cheque.matched + card.matched + upiGateway.matched,
         totalEasebuzzMatched: ip.easebuzzMatched + diag.easebuzzMatched + upi.easebuzzMatched + cheque.easebuzzMatched,
         totalContra: ip.contra + diag.contra + upi.contra + cheque.contra,
         totalPartialMatch: ip.partialMatch + diag.partialMatch + upi.partialMatch + cheque.partialMatch,
-        totalMismatched: ip.mismatched + diag.mismatched + upi.mismatched + cheque.mismatched,
-        totalUnmatched: ip.unmatched + diag.unmatched + upi.unmatched + cheque.unmatched,
+        totalMismatched: ip.mismatched + diag.mismatched + upi.mismatched + cheque.mismatched + card.mismatched + upiGateway.mismatched,
+        totalUnmatched: ip.unmatched + diag.unmatched + upi.unmatched + cheque.unmatched + card.unmatched + upiGateway.unmatched,
         totalAmbiguous: ip.ambiguous + diag.ambiguous + upi.ambiguous + cheque.ambiguous,
         totalExcluded: ip.excluded + diag.excluded + upi.excluded + cheque.excluded,
         onlyInBankStatement: bank.unmatched,
-        onlyInPaymentStatements: ip.unmatched + diag.unmatched + upi.unmatched + cheque.unmatched,
+        onlyInPaymentStatements: ip.unmatched + diag.unmatched + upi.unmatched + cheque.unmatched + card.unmatched + upiGateway.unmatched,
+        // The two rupee figures the client asked for on the dashboard, summed
+        // over the same six disjoint payment-side buckets as the counts above.
+        totalAmount:
+          Math.round((ip.totalAmount + diag.totalAmount + upi.totalAmount + cheque.totalAmount + card.totalAmount + upiGateway.totalAmount) * 100) / 100,
+        balanceAmount:
+          Math.round((ip.balanceAmount + diag.balanceAmount + upi.balanceAmount + cheque.balanceAmount) * 100) / 100,
       },
       amountDifferences,
       generatedAt: new Date().toISOString(),
@@ -1364,9 +1475,12 @@ async function loadRowsForSettlement() {
 // POST /api/matched-rules/payu-settlements/generate — recompute the whole rollup.
 router.post('/payu-settlements/generate', async (req, res, next) => {
   try {
-    const tolerance = req.body && req.body.tolerance != null ? Number(req.body.tolerance) : 1;
+    // The configured PAYU policy replaces the old per-request tolerance. That
+    // request field is deliberately gone: no screen ever sent it, and leaving it
+    // would let a caller bypass the rule the policy screen shows.
+    const policy = await loadGatewayPolicy('PAYU');
     const { mprRows, bankRows } = await loadRowsForSettlement();
-    const results = reconcilePayuSettlements({ mprRows, bankRows, tolerance });
+    const results = reconcilePayuSettlements({ mprRows, bankRows, policy });
 
     await db.withTransaction(async (client) => {
       await client.query('DELETE FROM payu_settlements');
@@ -1455,6 +1569,155 @@ router.get('/payu-settlements', async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// EaseBuzz Settlement <-> Bank credit — see reconciliation/easebuzz-settlement.js
+// for why this is simpler than the PayU pass above (the uploaded report is
+// already one row per settlement; there is no line-level grouping step).
+// Unlike payu_settlements (a pure rollup, wiped and rebuilt every generate),
+// easebuzz_settlement_records are the uploaded rows themselves, so generate
+// UPDATEs each row's verdict in place rather than replacing the table.
+// ---------------------------------------------------------------------------
+
+/** Every uploaded settlement row (all batches) and every real bank row, mapped. Not date-scoped — settlement can lag weeks behind the underlying transactions. */
+async function loadRowsForEasebuzzSettlement() {
+  const { rows: settlementRows } = await db.query(`SELECT * FROM easebuzz_settlement_records`);
+  const { rows: bankRows } = await db.query(`SELECT * FROM bank_statement_records WHERE source = 'BANK'`);
+  return {
+    settlementRows: settlementRows.map(easebuzzSettlementRecordRowToApi),
+    bankRows: bankRows.map(bankStatementRecordRowToApi),
+  };
+}
+
+// POST /api/matched-rules/easebuzz-settlements/generate — re-verdict every uploaded settlement row.
+router.post('/easebuzz-settlements/generate', async (req, res, next) => {
+  try {
+    const policy = await loadGatewayPolicy('EASEBUZZ');
+    const { settlementRows, bankRows } = await loadRowsForEasebuzzSettlement();
+    if (settlementRows.length === 0) {
+      return res.json({ generatedAt: new Date().toISOString(), counts: { total: 0, matched: 0, mismatched: 0, unmatched: 0 } });
+    }
+    const results = reconcileEasebuzzSettlements({ settlementRows, bankRows, policy });
+
+    // Results are keyed by settlementId+bankId, but the UPDATE has to land on
+    // the specific uploaded ROW (settlementId is not guaranteed unique across
+    // re-uploads) — build that lookup from the same settlementRows array,
+    // in the same order reconcileEasebuzzSettlements consumed it.
+    await db.withTransaction(async (client) => {
+      for (let i = 0; i < settlementRows.length; i++) {
+        const row = settlementRows[i];
+        const result = results.find((r) => r.settlementId === row.settlementId && r.bankId === normalizeRef(row.bankId));
+        if (!result) continue;
+        await client.query(
+          `UPDATE easebuzz_settlement_records
+              SET match_status = $2, match_bank_record_id = $3, match_reason = $4
+            WHERE id = $1`,
+          [
+            Number(row.id),
+            result.status,
+            result.bankRecordId != null ? Number(result.bankRecordId) : null,
+            result.status === 'MATCHED'
+              ? `Matched bank credit ${result.bankId} dated ${result.settlementDate}`
+              : result.status === 'AMOUNT_MISMATCH'
+                ? `Bank credit ${result.bankId} found but differs by ${result.difference}`
+                // Declining to choose is a different fact from finding nothing.
+                : result.bankCandidateCount > 1
+                  ? `${result.bankCandidateCount} bank credits carry reference ${row.bankId} — the rule is set not to guess between them`
+                  : `No bank credit found carrying reference ${row.bankId}`,
+          ],
+        );
+      }
+      await client.query(
+        `UPDATE easebuzz_settlement_upload_batches SET matched_at = now()
+          WHERE id IN (SELECT DISTINCT batch_id FROM easebuzz_settlement_records)`,
+      );
+    });
+
+    const counts = { total: results.length, matched: 0, mismatched: 0, unmatched: 0 };
+    for (const r of results) {
+      if (r.status === 'MATCHED') counts.matched += 1;
+      else if (r.status === 'AMOUNT_MISMATCH') counts.mismatched += 1;
+      else counts.unmatched += 1;
+    }
+    res.json({ generatedAt: new Date().toISOString(), counts });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/matched-rules/easebuzz-settlements?status=&page=&pageSize=
+router.get('/easebuzz-settlements', async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
+    const clauses = [];
+    const params = [];
+    if (req.query.status) {
+      params.push(req.query.status);
+      clauses.push(`r.match_status = $${params.length}`);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    const { rows: countRows } = await db.query(`SELECT COUNT(*)::int AS total FROM easebuzz_settlement_records r ${where}`, params);
+    // The transaction window behind each settlement.
+    //
+    // THE RULE (verified 78/78 on live data — scripts/verify-easebuzz-windows.js):
+    // a settlement day covers every EaseBuzz transaction since the PREVIOUS
+    // settlement day. `prev_settlement_day` is that lower bound; the window runs
+    // from it up to the day before this settlement.
+    //
+    // Only the DAY is attributable. Where a day carries several settlements the
+    // split between them is NOT determinable — measured on this data, just 18%
+    // of such days have a unique subset, so `window_settlements` is carried and
+    // the UI must decline to split when it is > 1.
+    //
+    // Dates are compared as DATE throughout and emitted with to_char: txn_date is
+    // a DATE column the driver materialises at local midnight, and letting it
+    // round-trip through JS shifts every window a day earlier in IST.
+    const { rows } = await db.query(
+      `WITH settlement_days AS (
+         SELECT settlement_date::date AS day,
+                count(DISTINCT settlement_id)::int AS settlements,
+                LAG(settlement_date::date) OVER (ORDER BY settlement_date::date) AS prev_settlement_day
+           FROM easebuzz_settlement_records
+          GROUP BY settlement_date::date
+       )
+       SELECT r.*, b.txn_date AS bank_txn_date, b.narration AS bank_narration, b.chq_ref_no AS bank_chq_ref_no,
+              b.deposit_amt AS bank_deposit_amt, bu.account_no AS bank_account_no,
+              to_char(r.settlement_date, 'YYYY-MM-DD') AS settlement_date_ymd,
+              to_char(d.prev_settlement_day, 'YYYY-MM-DD') AS window_from,
+              to_char(r.settlement_date::date - 1, 'YYYY-MM-DD') AS window_to,
+              d.settlements AS window_settlements,
+              w.txn_count AS window_txn_count,
+              w.txn_total AS window_txn_total,
+              w.day_settled AS window_day_settled
+         FROM easebuzz_settlement_records r
+         LEFT JOIN bank_statement_records b ON b.id = r.match_bank_record_id
+         LEFT JOIN bank_statement_uploads bu ON bu.id = b.batch_id
+         LEFT JOIN settlement_days d ON d.day = r.settlement_date::date
+         LEFT JOIN LATERAL (
+           SELECT count(*)::int AS txn_count,
+                  COALESCE(sum(t.deposit_amt), 0) AS txn_total,
+                  (SELECT COALESCE(sum(x.settled_amount), 0)
+                     FROM (SELECT DISTINCT ON (settlement_id) settlement_id, settled_amount, settlement_date
+                             FROM easebuzz_settlement_records
+                            ORDER BY settlement_id, id) x
+                    WHERE x.settlement_date::date = r.settlement_date::date) AS day_settled
+             FROM bank_statement_records t
+            WHERE t.source = 'EASEBUZZ'
+              AND d.prev_settlement_day IS NOT NULL
+              AND t.txn_date >= d.prev_settlement_day
+              AND t.txn_date <= r.settlement_date::date - 1
+         ) w ON true
+         ${where}
+        ORDER BY abs(COALESCE(b.deposit_amt, 0) - COALESCE(r.settled_amount, 0)) DESC, r.settlement_date DESC NULLS LAST
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, pageSize, (page - 1) * pageSize],
+    );
+    res.json({ total: countRows[0].total, page, pageSize, results: rows.map(easebuzzSettlementRecordRowToApi) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // AUDIT WORKING REPORT — the client's deliverable. One workbook per reporting
 // period (Daily / Monthly / Yearly), filterable on Receipt Date or Realization
 // (bank) Date. Each sheet is a MIS stream joined to the live reconciliation
@@ -1491,6 +1754,179 @@ async function loadAuditRecordMap({ recordTable, batchTable, rowToApi }, period)
 }
 
 /**
+ * For every EaseBuzz gateway transaction, the day its money actually landed.
+ *
+ * WHY: an EaseBuzz receipt matches the gateway TRANSACTION row, so the audit
+ * report's DATE OF REALIZATION showed the customer's payment date — the client's
+ * bug #4 ("Bank Date column showing as Receipt Date only instead of
+ * Realisation"). EaseBuzz pays out in a lump on a later day; this resolves which.
+ *
+ * The rule — a settlement day covers every transaction since the previous
+ * settlement day — is verified 78/78 against live data
+ * (scripts/verify-easebuzz-windows.js) and lives in reconciliation/, so it is
+ * reused here rather than re-expressed in SQL where the tests could not see it.
+ *
+ * `payoutAmount` is the whole day's payout, deduped by settlement_id: the
+ * uploaded data currently holds 269 rows for 135 real settlements, so summing
+ * raw rows would double every figure.
+ *
+ * @returns Map<String(bank_statement_records.id), { date, expected, payoutAmount }>
+ */
+/**
+ * Loads everything buildAuditSheets needs to resolve EaseBuzz payout dates,
+ * amounts and receipted figures -- all of it division-scoped, and deliberately
+ * NONE of it scoped to the report's own period.
+ *
+ * DIVISION-SCOPED: two units pay out through EaseBuzz -- verified live,
+ * Secunderabad and Hitech City settle on the same calendar days -- so a
+ * day-only grouping sums two units' money together. Fixed by resolving every
+ * figure per division: settlements via the account that paid them out,
+ * receipts via the batch of the MIS row that matched them (a transaction row
+ * carries no reliable unit signal of its own -- only 401 of 1,556 carry a
+ * merchant code, and it uses a different abbreviation, HIT, than the
+ * HTC/SBD/SMJ/MLK convention used elsewhere).
+ *
+ * NOT period-scoped: a payout whose window straddles a report's period
+ * boundary must still see every receipt behind it, or the "balance" it shows
+ * would just be receipts sitting in the next report, not a genuine HIS gap.
+ * The receipted side is computed LIVE, never from bank_statement_records'
+ * persisted match_payment_record_id -- see the note on that query below.
+ *
+ * Returns:
+ *   daysByDivision          Map<division, string[]>                 settlement days
+ *   payoutByDivisionDay     Map<division, Map<day, number>>          that day's payout
+ *   txDayById               Map<bank_statement_records.id, 'YYYY-MM-DD'>
+ *                              when a given EaseBuzz transaction happened --
+ *                              the caller resolves ITS OWN report row's date
+ *                              against ITS OWN row's division
+ *   receiptedByDivisionDay  Map<division, Map<day, { count, total }>>
+ *                              live-matched receipts behind that division's
+ *                              payout on that day
+ *
+ * `division` is `null` when it cannot be resolved (an unmapped settlement
+ * account, or a receipt whose batch unit_name doesn't recognizably name one of
+ * the four units) -- grouped under its own key rather than folded into a real
+ * division, so an unresolvable row can never leak into another unit's figures.
+ */
+async function loadEasebuzzDivisionData() {
+  // to_char throughout: txn_date is a DATE and settlement_date a bare
+  // TIMESTAMP, and letting either become a JS Date shifts it a day earlier in
+  // IST. This has been a recurring defect in this codebase.
+  //
+  // Settlement side. Division comes from the settlement's own matched bank credit
+  // (bank_statement_uploads.account_no) in preference to
+  // easebuzz_settlement_records.account_number — the latter is sometimes
+  // Excel-scientific-notation-corrupted ("5.02E+13", unrecoverable by any
+  // amount of digit cleanup) and is only a fallback for a settlement that
+  // hasn't been matched to a bank credit yet. Digits-only comparison against
+  // master_division_bank_accounts is the existing convention (see
+  // digitsOnly() above, and the identical join at :1141-1142).
+  const [{ rows: dayRows }, { rows: txRows }, { rows: matchedRows }] = await Promise.all([
+    db.query(`
+      WITH s AS (
+        SELECT DISTINCT ON (settlement_id) settlement_id, settlement_date, settled_amount,
+               account_number, match_bank_record_id
+          FROM easebuzz_settlement_records
+         ORDER BY settlement_id, id
+      )
+      SELECT mda.division_name AS division,
+             to_char(s.settlement_date, 'YYYY-MM-DD') AS day,
+             sum(s.settled_amount) AS payout
+        FROM s
+        LEFT JOIN bank_statement_records b ON b.id = s.match_bank_record_id
+        LEFT JOIN bank_statement_uploads bu ON bu.id = b.batch_id
+        LEFT JOIN master_division_bank_accounts mda
+          ON regexp_replace(mda.account_number, '\\D', '', 'g')
+           = regexp_replace(COALESCE(bu.account_no, s.account_number), '\\D', '', 'g')
+       GROUP BY 1, 2`),
+    db.query(`
+      SELECT id, to_char(txn_date, 'YYYY-MM-DD') AS txn_day
+        FROM bank_statement_records
+       WHERE source = 'EASEBUZZ'`),
+    db.query(`
+      SELECT DISTINCT ON (b.id) b.id, to_char(b.txn_date, 'YYYY-MM-DD') AS txn_day,
+             b.deposit_amt, bat.unit_name
+        FROM bank_statement_records b
+        JOIN ip_payment_records i ON i.transaction_id_1 = b.chq_ref_no OR i.trans_id = b.chq_ref_no
+        JOIN ip_payment_upload_batches bat ON bat.id = i.batch_id
+       WHERE b.source = 'EASEBUZZ'
+       ORDER BY b.id, i.id`),
+  ]);
+
+  const daysByDivision = new Map();
+  const payoutByDivisionDay = new Map();
+  for (const r of dayRows) {
+    if (!daysByDivision.has(r.division)) {
+      daysByDivision.set(r.division, []);
+      payoutByDivisionDay.set(r.division, new Map());
+    }
+    daysByDivision.get(r.division).push(r.day);
+    payoutByDivisionDay.get(r.division).set(r.day, Number(r.payout));
+  }
+
+  const txDayById = new Map(txRows.map((r) => [String(r.id), r.txn_day]));
+
+  // Resolve each matched receipt's date the same way a report row will (its
+  // OWN division's day-list), then roll up by (division, date). This is the
+  // receipted side, computed LIVE from the current ip_payment_records — never
+  // from bank_statement_records' persisted match_payment_record_id. That
+  // column is written only when the Bank Statement Generate route runs
+  // (bulkUpdateBankMatchStatus, :991) and goes stale the moment the underlying
+  // MIS data is reloaded without a re-Generate: verified 2026-09-15, ALL 344
+  // EASEBUZZ_MATCHED rows' stored references pointed at ip_payment_records ids
+  // deleted in a since-superseded upload. Re-deriving the same equality the
+  // seeded rule already uses (transactionRef1/transId = chqRefNo,
+  // scripts/seed-easebuzz-rule.js:29-32) means this can never go stale again —
+  // there is no snapshot left to rot.
+  const receiptedByDivisionDay = new Map();
+  for (const row of matchedRows) {
+    const division = resolveDivision(row.unit_name);
+    const resolved = settlementDateFor(row.txn_day, daysByDivision.get(division) || []);
+    if (!resolved || resolved.expected) continue;
+    if (!receiptedByDivisionDay.has(division)) receiptedByDivisionDay.set(division, new Map());
+    const byDay = receiptedByDivisionDay.get(division);
+    const agg = byDay.get(resolved.date) || { count: 0, total: 0 };
+    agg.count += 1;
+    agg.total += Number(row.deposit_amt) || 0;
+    byDay.set(resolved.date, agg);
+  }
+
+  return { daysByDivision, payoutByDivisionDay, txDayById, receiptedByDivisionDay };
+}
+
+/**
+ * Rows for the CARD AND UPI sheet.
+ *
+ * Unlike the three Phase-1 streams this does NOT run the CNF engine: the card
+ * and UPI matchers already persisted their verdict onto each row, so the report
+ * reads it rather than re-deriving it. `ucrRecordSelect` hydrates the gateway
+ * row behind the polymorphic match_source_type/match_source_id pointer.
+ *
+ * On REALIZATION basis the period applies to the gateway settlement date, which
+ * is the analogue of the bank txn date used by the other sheets — an unmatched
+ * row has no settlement date and so drops out, exactly as an unmatched MIS row
+ * does there.
+ */
+async function loadUcrAuditRows(period, scopeByReceipt) {
+  const where = scopeByReceipt
+    ? `WHERE r.receipt_date >= $1 AND r.receipt_date < ($2::date + interval '1 day')`
+    : `WHERE COALESCE(cm.process_date, cp.settlement_date, um.settlement_date) >= $1
+         AND COALESCE(cm.process_date, cp.settlement_date, um.settlement_date) < ($2::date + interval '1 day')`;
+  const { rows } = await db.query(
+    ucrRecordSelect(where, 'ORDER BY r.receipt_date, r.id'),
+    [period.dateFrom, period.dateToInclusive],
+  );
+  return rows.map((row, i) => {
+    const rec = ucrIpRecordRowToApi(row);
+    // Same guard as loadAuditRecordMap: take the calendar date from Postgres so
+    // a just-after-midnight receipt does not fall back into the previous month.
+    if (row.receipt_date_ymd) rec.receiptDate = row.receipt_date_ymd;
+    rec.__seq = i + 1;
+    return rec;
+  });
+}
+
+/**
  * Resolves the period, runs the engine per Phase-1 stream and joins each
  * verdict back to its MIS row. `dateBasis`:
  *   RECEIPT       — the engine is scoped to the period by receipt_date.
@@ -1522,6 +1958,11 @@ async function buildAuditSheets(query) {
     { key: 'DIAG', opts: DIAG_OPTS, batchTable: DIAG_OPTS.batchTable, recordTable: DIAG_OPTS.recordTable, rowToApi: DIAG_OPTS.rowToApi, rowFilter: (rec) => !isGatewayUpiRow(rec) },
   ];
 
+  // Loaded once, outside the loop — it is stream-independent, and the EaseBuzz
+  // rule is seeded for IP only, so running it per stream would be three times
+  // the work for one stream's benefit.
+  const { daysByDivision, payoutByDivisionDay, txDayById, receiptedByDivisionDay } = await loadEasebuzzDivisionData();
+
   const sheets = [];
   for (const s of streams) {
     const [byId, results] = await Promise.all([
@@ -1533,14 +1974,58 @@ async function buildAuditSheets(query) {
       .filter((res) => !res.excluded)
       .map((res) => {
         const rec = byId.get(String(res.sourceRecordIds[0]));
-        return rec ? { ...rec, __result: res } : null;
+        if (!rec) return null;
+        // An EaseBuzz-matched receipt's counterpart is a gateway TRANSACTION,
+        // so its txnDate is when the customer paid, not when the money landed.
+        // Attach the real payout date as a separate field — never by rewriting
+        // bank.txnDate, which remarksCell and the filter below both read.
+        //
+        // Membership of the EaseBuzz map IS the source test: the status comes
+        // from a user-editable rule, so someone could point
+        // FORCE_EASEBUZZ_MATCHED at a genuine bank row and we must not rewrite
+        // that row's date.
+        const bank = res.bank;
+        if (bank && bank.source === 'EASEBUZZ') {
+          // Resolved against THIS RECEIPT's own division's settlement days —
+          // not a global list. Two units can both pay out through EaseBuzz on
+          // the same calendar day (verified live: Secunderabad and Hitech
+          // City), and a global day-list would let one unit's settlement
+          // resolve a transaction that belongs to a different unit's window,
+          // or worse, sum the two units' payouts into one figure.
+          const txnDay = txDayById.get(String(bank.recordId));
+          const resolved = settlementDateFor(txnDay, daysByDivision.get(rec.division) || []);
+          if (resolved) {
+            // Everything else — payoutAmount, the client's "Total No. of
+            // Receipts Raised"/receiptedTotal, and the Balance — was already
+            // computed once, division-and-period-independent, in
+            // loadEasebuzzDivisionData; this is a lookup, not a computation.
+            const payout = resolved.expected ? null : (payoutByDivisionDay.get(rec.division) || new Map()).get(resolved.date) ?? null;
+            const agg = resolved.expected ? null : (receiptedByDivisionDay.get(rec.division) || new Map()).get(resolved.date);
+            const receiptedCount = agg ? agg.count : (resolved.expected ? null : 0);
+            const receiptedTotal = agg ? Math.round(agg.total * 100) / 100 : (resolved.expected ? null : 0);
+            const balance = payout == null ? null : Math.max(0, Math.round((payout - receiptedTotal) * 100) / 100);
+            res.settlementDate = { ...resolved, payoutAmount: payout, receiptedCount, receiptedTotal, balance };
+          }
+        }
+        return { ...rec, __result: res };
       })
       .filter(Boolean);
 
     if (s.rowFilter) rows = rows.filter(s.rowFilter);
 
     if (!scopeByReceipt) {
-      rows = rows.filter((row) => inRange(row.__result.bank && row.__result.bank.txnDate, period.dateFrom, period.dateTo));
+      // Filter on the SAME date the report prints, or the workbook contradicts
+      // itself: a 31-Jul transaction settling 01-Aug would be selected into the
+      // July report while showing an August realization date, and be absent
+      // from August. A merely *expected* date is not a realization, so those
+      // rows drop out of a realization-basis report entirely.
+      rows = rows.filter((row) => {
+        const r = row.__result;
+        const realized = r.settlementDate
+          ? (r.settlementDate.expected ? null : r.settlementDate.date)
+          : (r.bank && r.bank.txnDate);
+        return inRange(realized, period.dateFrom, period.dateTo);
+      });
     }
 
     rows.sort((a, b) => String(a.receiptDate || '').localeCompare(String(b.receiptDate || '')) || Number(a.id) - Number(b.id));
@@ -1550,7 +2035,15 @@ async function buildAuditSheets(query) {
     sheets.push({ key: s.key, rows });
   }
 
-  return { periodLabel: period.label, dateBasis: basis, sheets };
+  sheets.push({ key: 'UCR', rows: await loadUcrAuditRows(period, scopeByReceipt) });
+
+  return {
+    periodLabel: period.label,
+    periodTitlePhrase: period.titlePhrase,
+    periodTitlePhraseBare: period.titlePhraseBare,
+    dateBasis: basis,
+    sheets,
+  };
 }
 
 // GET /api/matched-rules/audit-report/preview?periodType=&period=&dateBasis= — per-sheet rollup for the screen's pre-download summary.
@@ -1573,8 +2066,8 @@ router.get('/audit-report/preview', async (req, res, next) => {
 router.get('/audit-report', async (req, res, next) => {
   try {
     const variant = String(req.query.variant || '').toLowerCase() === 'internal' ? 'internal' : 'client';
-    const { periodLabel, sheets } = await buildAuditSheets(req.query);
-    const workbook = buildAuditWorkbook({ periodLabel, sheets, variant });
+    const { periodLabel, periodTitlePhrase, periodTitlePhraseBare, sheets } = await buildAuditSheets(req.query);
+    const workbook = buildAuditWorkbook({ periodLabel, periodTitlePhrase, periodTitlePhraseBare, sheets, variant });
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     const suffix = variant === 'internal' ? ' (internal)' : '';
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

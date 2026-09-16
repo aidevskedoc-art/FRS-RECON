@@ -512,6 +512,88 @@ function refundRecordRowToApi(row) {
   };
 }
 
+function easebuzzSettlementBatchRowToApi(row) {
+  return {
+    id: String(row.id),
+    fileName: row.file_name,
+    fileSizeBytes: row.file_size_bytes,
+    rowCount: row.row_count,
+    uploadedBy: row.uploaded_by,
+    uploadedAt: toIso(row.uploaded_at),
+    matchedAt: toIso(row.matched_at),
+  };
+}
+
+function easebuzzSettlementRecordRowToApi(row) {
+  return {
+    id: String(row.id),
+    batchId: String(row.batch_id),
+    settlementId: row.settlement_id,
+    bankId: row.bank_id,
+    accountNumber: row.account_number,
+    bankName: row.bank_name,
+    totalAmount: toNumber(row.total_amount),
+    serviceCharge: toNumber(row.service_charge),
+    gst: toNumber(row.gst),
+    refundAmount: toNumber(row.refund_amount),
+    settledAmount: toNumber(row.settled_amount),
+    paid: row.paid,
+    // Prefer the calendar date straight from Postgres when the route supplies
+    // it. `settlement_date` is a bare TIMESTAMP holding an IST wall-clock time,
+    // and toDateOnly's toISOString() reports it a day early — the settlement
+    // stored as 2026-06-15 comes back as 2026-06-14. That matters here because
+    // the transaction window beside it IS taken from SQL, so the two would
+    // disagree by a day. Same guard loadAuditRecordMap uses for receipt_date.
+    settlementDate: row.settlement_date_ymd ?? toDateOnly(row.settlement_date),
+    expressServiceCharge: toNumber(row.express_service_charge),
+    expressServiceTax: toNumber(row.express_service_tax),
+    matchStatus: row.match_status ?? null,
+    matchBankRecordId: row.match_bank_record_id === null || row.match_bank_record_id === undefined ? null : String(row.match_bank_record_id),
+    matchReason: row.match_reason ?? null,
+    // Hydrated only when the route joins bank_statement_records (see
+    // matched-rules.routes.js's easebuzz-settlements list) — the bank line's
+    // own date/narration/account, so a reviewer sees the counterpart inline.
+    matchedBank:
+      row.bank_txn_date !== undefined
+        ? row.match_bank_record_id
+          ? {
+              txnDate: toDateOnly(row.bank_txn_date),
+              narration: row.bank_narration ?? null,
+              chqRefNo: row.bank_chq_ref_no ?? null,
+              accountNo: row.bank_account_no ?? null,
+              depositAmt: toNumber(row.bank_deposit_amt),
+            }
+          : null
+        : undefined,
+    // The EaseBuzz transactions this settlement's DAY paid out. Hydrated only
+    // when the route computes the window (same convention as matchedBank above).
+    //
+    // `exact` is the honest part: a settlement day always ties to its window to
+    // the rupee, but where the day carries several settlements the split between
+    // them cannot be determined (only 18% of such days have a unique subset), so
+    // the window describes the whole day, not this one row.
+    //
+    // Dates arrive as 'YYYY-MM-DD' TEXT from the query and are passed straight
+    // through — deliberately not via toDateOnly, which would put them back
+    // through a Date and shift them a day in IST.
+    window:
+      row.window_from !== undefined
+        ? row.window_from
+          ? {
+              from: row.window_from,
+              to: row.window_to,
+              txnCount: row.window_txn_count === null || row.window_txn_count === undefined ? 0 : Number(row.window_txn_count),
+              txnTotal: toNumber(row.window_txn_total),
+              daySettled: toNumber(row.window_day_settled),
+              settlementsThatDay: Number(row.window_settlements ?? 1),
+              exact: Number(row.window_settlements ?? 1) === 1,
+            }
+          : null // earliest settlement day — no previous day to bound the window
+        : undefined,
+    createdAt: toIso(row.created_at),
+  };
+}
+
 function divisionBankAccountRowToApi(row) {
   return {
     id: String(row.id),
@@ -593,5 +675,7 @@ module.exports = {
   chequeCollectionRecordRowToApi,
   refundBatchRowToApi,
   refundRecordRowToApi,
+  easebuzzSettlementBatchRowToApi,
+  easebuzzSettlementRecordRowToApi,
   matchingRuleRowToApi,
 };

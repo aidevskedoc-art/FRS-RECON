@@ -1,0 +1,131 @@
+@use 'styles/mixins';
+
+.card-reconciliation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.card-reconciliation__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+
+  h1 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+}
+
+.card-reconciliation__sub {
+  margin: var(--space-1) 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  max-width: 72ch;
+}
+
+.card-reconciliation__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.card-reconciliation__tally {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+}
+
+.tally--matched { color: var(--status-success-fg); }
+.tally--mismatch { color: var(--status-warning-fg); }
+.tally--unmatched { color: var(--status-danger-fg); }
+.tally--sep { color: var(--border); }
+.tally--gap { color: var(--status-warning-fg); font-weight: 600; }
+.tally--gap-zero { color: var(--status-success-fg); }
+
+.card-reconciliation__table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  overflow-x: auto;
+}
+
+:host ::ng-deep .card-reconciliation__table-wrap {
+  .p-datatable-thead > tr > th {
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+
+  .p-datatable-tbody > tr {
+    background: var(--surface);
+  }
+
+  .p-datatable-tbody > tr:nth-child(even) {
+    background: var(--surface-sunken);
+  }
+
+  .p-datatable-tbody > tr:hover {
+    background: var(--surface-soft, var(--surface-sunken));
+  }
+}
+
+.mono {
+  font-family: var(--font-mono, monospace);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.strong {
+  font-weight: 600;
+}
+
+.diff:not(:empty) {
+  color: var(--status-warning-fg);
+}
+
+.status-pill {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+}
+
+.status-pill--matched {
+  @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+
+.status-pill--mismatch {
+  @include mixins.status-chip(var(--status-warning-fg), var(--status-warning-bg), var(--status-warning-border));
+}
+
+.status-pill--unmatched {
+  @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}
+
+.notice--danger {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md, 6px);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+  border: 1px solid var(--status-danger-border);
+}
+
+/* Manage Rules + Generate sit together at the head, so they stay paired
+   instead of being scattered by the header's space-between. */
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}

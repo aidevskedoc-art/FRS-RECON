@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -7,18 +7,12 @@ import { TableModule } from 'primeng/table';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import { ReconciliationSummary } from '../../../core/models';
-
-interface SummaryCard {
-  label: string;
-  value: number;
-  icon: string;
-  accent: 'blue' | 'success' | 'warning' | 'danger' | 'purple' | 'cyan';
-}
+import { SummaryPanelComponent } from '../../reconciliation/summary-panel/summary-panel.component';
 
 @Component({
   selector: 'app-reconciliation-summary',
   standalone: true,
-  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule],
+  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, SummaryPanelComponent],
   templateUrl: './reconciliation-summary.component.html',
   styleUrl: './reconciliation-summary.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -33,21 +27,10 @@ export class ReconciliationSummaryComponent {
   protected readonly dateFrom = signal('');
   protected readonly dateTo = signal('');
 
-  protected readonly summaryCards = computed<SummaryCard[]>(() => {
-    const s = this.summary();
-    if (!s) return [];
-    return [
-      { label: 'Total Transactions', value: s.combined.totalTransactions, icon: 'pi pi-list', accent: 'blue' },
-      { label: 'Matched', value: s.combined.totalMatched, icon: 'pi pi-check-circle', accent: 'success' },
-      { label: 'Easebuzz Matched', value: s.combined.totalEasebuzzMatched, icon: 'pi pi-bolt', accent: 'purple' },
-      { label: 'Partially Matched', value: s.combined.totalPartialMatch, icon: 'pi pi-check', accent: 'blue' },
-      { label: 'Amount Mismatched', value: s.combined.totalMismatched, icon: 'pi pi-exclamation-triangle', accent: 'warning' },
-      { label: 'Unmatched', value: s.combined.totalUnmatched, icon: 'pi pi-times-circle', accent: 'danger' },
-      { label: 'Only in Bank Statement', value: s.combined.onlyInBankStatement, icon: 'pi pi-building-columns', accent: 'purple' },
-      { label: 'Only in Payment Statements', value: s.combined.onlyInPaymentStatements, icon: 'pi pi-wallet', accent: 'cyan' },
-      { label: 'Excluded by Rules', value: s.combined.totalExcluded, icon: 'pi pi-filter-slash', accent: 'blue' },
-    ];
-  });
+  // The headline cards and the per-payment-type table now come from
+  // <app-summary-panel>, shared with the consolidated Upload & Run screen.
+  // The deeper sections below them (bank statement, PayU MPR, EaseBuzz,
+  // settlements, amount differences) remain this screen's own.
 
   constructor() {
     this.load();

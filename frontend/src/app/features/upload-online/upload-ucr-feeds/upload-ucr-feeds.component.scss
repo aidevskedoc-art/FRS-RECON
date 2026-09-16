@@ -1,0 +1,62 @@
+@use 'styles/mixins';
+
+.upload-hub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 1100px;
+}
+
+.page-header {
+  h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+}
+
+.hub-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.hub-option {
+  @include mixins.card;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: left;
+  padding: var(--space-4);
+  border: 2px solid var(--border-default);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  font: inherit;
+}
+
+.hub-option--active {
+  border-color: var(--ai-blue);
+  background: var(--ai-blue-soft);
+}
+
+.hub-option__title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hub-option__hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+// The embedded child keeps its own inner spacing; the hub only frames it.
+.hub-panel {
+  display: flex;
+  flex-direction: column;
+}

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { SelectModule } from 'primeng/select';
@@ -28,7 +29,7 @@ const STATUS_LABELS: Record<SettlementStatus, string> = {
 @Component({
   selector: 'app-payu-settlements',
   standalone: true,
-  imports: [FormsModule, ButtonModule, TableModule, SelectModule, TooltipModule],
+  imports: [RouterLink, FormsModule, ButtonModule, TableModule, SelectModule, TooltipModule],
   templateUrl: './payu-settlements.component.html',
   styleUrl: './payu-settlements.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

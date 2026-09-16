@@ -1,0 +1,224 @@
+<div class="matching-rules">
+  <div class="matching-rules__header">
+    <div>
+      <h2>Gateway &amp; Settlement Matching Rules</h2>
+      <p>
+        {{ rules().length }} rule{{ rules().length === 1 ? '' : 's' }} for {{ targetLabel(target()) }} —
+        the first <strong>active</strong> rule is the one in effect
+      </p>
+    </div>
+    <p-button label="Add Rule" icon="pi pi-plus" (onClick)="openCreate()" />
+  </div>
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="toolbar">
+    <label class="toolbar__field">
+      <span>Reconciliation</span>
+      <p-select
+        [options]="targetOptions"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="target()"
+        (ngModelChange)="setTarget($event)"
+        appendTo="body"
+        styleClass="target-select"
+      />
+    </label>
+
+    <span class="search">
+      <i class="pi pi-search"></i>
+      <input pInputText type="text" placeholder="Search rule name…" (input)="onSearchInput($event, dt)" />
+    </span>
+  </div>
+
+  <div class="matching-rules__table-wrap">
+    <p-table
+      #dt
+      [value]="rules()"
+      dataKey="id"
+      [globalFilterFields]="['name']"
+      styleClass="p-datatable-sm rules-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th class="priority-col" pTooltip="Order matters: the first active rule is the policy that runs">Priority</th>
+          <th>Name</th>
+          <th>Settings</th>
+          <th>Status</th>
+          <th>Active</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-rule let-i="rowIndex">
+        <tr [class.rule-row--inert]="rule.id !== effectiveId()">
+          <td class="priority-col">
+            <div class="priority">
+              <span class="priority__num">{{ i + 1 }}</span>
+              <span class="priority__moves">
+                <button type="button" [disabled]="i === 0 || reordering()" (click)="move(rule, -1)" pTooltip="Move up">
+                  <i class="pi pi-chevron-up"></i>
+                </button>
+                <button type="button" [disabled]="i === rules().length - 1 || reordering()" (click)="move(rule, 1)" pTooltip="Move down">
+                  <i class="pi pi-chevron-down"></i>
+                </button>
+              </span>
+            </div>
+          </td>
+          <td>{{ rule.name }}</td>
+          <td class="settings-col">{{ summary(rule.gatewayConfig) }}</td>
+          <td>
+            <!-- Storing several policies is allowed; only the first active one
+                 runs. Saying so on the row keeps the list from implying
+                 otherwise. -->
+            @if (rule.id === effectiveId()) {
+              <span class="badge badge--on">In effect</span>
+            } @else {
+              <span class="badge badge--off">{{ rule.active ? 'Not in effect' : 'Inactive' }}</span>
+            }
+          </td>
+          <td>
+            <p-toggleSwitch [ngModel]="rule.active" (ngModelChange)="toggleActive(rule)" />
+          </td>
+          <td class="actions-col">
+            <button type="button" class="icon-btn" (click)="openEdit(rule)" pTooltip="Edit"><i class="pi pi-pencil"></i></button>
+            <button type="button" class="icon-btn icon-btn--danger" (click)="remove(rule)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="6" class="empty">
+            No rule for {{ targetLabel(target()) }} — the built-in defaults are in effect.
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>
+
+<p-dialog
+  [visible]="dialogVisible()"
+  (visibleChange)="dialogVisible.set($event)"
+  [modal]="true"
+  [style]="{ width: '540px' }"
+  [header]="editingId() ? 'Edit Rule' : 'Add Rule'"
+>
+  <div class="form">
+    @if (formError(); as err) {
+      <div class="notice notice--danger"><i class="pi pi-times-circle"></i> {{ err }}</div>
+    }
+
+    <label class="form__field">
+      <span>Name</span>
+      <input
+        pInputText
+        type="text"
+        [ngModel]="draft().name"
+        (ngModelChange)="draft.set({ ...draft(), name: $event })"
+        placeholder="e.g. Strict card policy"
+      />
+    </label>
+
+    <label class="form__field form__field--inline">
+      <p-toggleSwitch [ngModel]="draft().active" (ngModelChange)="draft.set({ ...draft(), active: $event })" />
+      <span>Active</span>
+    </label>
+
+    <label class="form__field">
+      <span>Tolerance (₹)</span>
+      <input
+        pInputText
+        type="number"
+        min="0"
+        step="0.01"
+        [ngModel]="draft().gatewayConfig.tolerance"
+        (ngModelChange)="patchConfig({ tolerance: $event })"
+      />
+      <small>How far the amounts may differ and still count as matched.</small>
+    </label>
+
+    <label class="form__field">
+      <span>When several rows share a reference</span>
+      <p-select
+        [options]="ambiguityOptions"
+        optionLabel="label"
+        optionValue="value"
+        appendTo="body"
+        [ngModel]="draft().gatewayConfig.onAmbiguous"
+        (ngModelChange)="patchConfig({ onAmbiguous: $event })"
+      />
+      <small>Leaving it unmatched is the defensible choice when two credits carry the same reference.</small>
+    </label>
+
+    @if (uses('compareAmount')) {
+      <label class="form__field">
+        <span>Compare the bank credit against</span>
+        <p-select
+          [options]="payuAmountOptions"
+          optionLabel="label"
+          optionValue="value"
+          appendTo="body"
+          [ngModel]="draft().gatewayConfig.compareAmount"
+          (ngModelChange)="patchConfig({ compareAmount: $event })"
+        />
+        <small>PayU deducts its fee before paying out, so the net total is what actually lands.</small>
+      </label>
+    }
+
+    @if (uses('useNarrationTokens')) {
+      <label class="form__field form__field--inline">
+        <p-toggleSwitch
+          [ngModel]="draft().gatewayConfig.useNarrationTokens"
+          (ngModelChange)="patchConfig({ useNarrationTokens: $event })"
+        />
+        <span>Also match on words inside the bank narration</span>
+      </label>
+    }
+
+    @if (uses('minTokenLength')) {
+      <label class="form__field">
+        <span>Shortest narration word usable as a reference</span>
+        <input
+          pInputText
+          type="number"
+          [min]="minTokenFloor"
+          [max]="minTokenCeiling"
+          step="1"
+          [ngModel]="draft().gatewayConfig.minTokenLength"
+          (ngModelChange)="patchConfig({ minTokenLength: $event })"
+        />
+        <small class="warn">
+          Keep this high. Below 8, ordinary words like PAYMENT or SETTLED start counting as references and can be
+          matched to the wrong credit without warning. {{ minTokenFloor }} is the lowest allowed.
+        </small>
+      </label>
+    }
+
+    @if (uses('excludeRefundPairs')) {
+      <label class="form__field form__field--inline">
+        <p-toggleSwitch
+          [ngModel]="draft().gatewayConfig.excludeRefundPairs"
+          (ngModelChange)="patchConfig({ excludeRefundPairs: $event })"
+        />
+        <span>Ignore refunded UPI transactions</span>
+      </label>
+      <small class="form__hint">
+        A refunded payment appears twice — once paid, once credited back. Both are ignored, since the hospital never
+        kept the money.
+      </small>
+    }
+  </div>
+
+  <ng-template #footer>
+    <p-button label="Cancel" severity="secondary" [text]="true" (onClick)="dialogVisible.set(false)" />
+    <p-button label="Save" icon="pi pi-check" [loading]="saving()" (onClick)="save()" />
+  </ng-template>
+</p-dialog>

@@ -126,3 +126,14 @@
   color: var(--status-danger-fg);
   border: 1px solid var(--status-danger-border);
 }
+
+/* Range validation message — sits with the period controls rather than in the
+   page-level error banner, which is reserved for server failures. */
+.field__error {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-end;
+  font-size: var(--text-xs);
+  color: var(--status-danger-fg);
+}

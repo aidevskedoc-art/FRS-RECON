@@ -16,6 +16,8 @@ export interface RouteTitle {
 }
 
 const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
+  ['/reconciliation', { title: 'Reconciliation', subtitle: 'Upload & run' }],
+
   ['/insurance-policy/dashboard', { title: 'Dashboard', subtitle: 'Overview' }],
   ['/insurance-policy/upload', { title: 'Upload', subtitle: 'Policy documents' }],
   ['/insurance-policy/processing', { title: 'Processing', subtitle: 'AI extraction' }],
@@ -32,6 +34,9 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/upload-online/payu-mpr', { title: 'PayU MPR', subtitle: 'Batches' }],
   ['/upload-online/easebuzz', { title: 'EaseBuzz', subtitle: 'Batches' }],
 
+  ['/upload-online/ucr-feeds', { title: 'Upload UPI & Card Feeds', subtitle: 'UPI & Card Reconciliation' }],
+  ['/upload-online/ucr-batches', { title: 'UPI & Card Uploads', subtitle: 'Batches' }],
+
   // Off-nav archive: the pre-migration online_upload_batches rows. Nothing
   // writes to that table any more, so this is reachable by URL only.
   ['/upload-online/payments', { title: 'Legacy MIS Batches', subtitle: 'Archive' }],
@@ -44,6 +49,9 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/matched-rules/audit-report', { title: 'Audit Working Report', subtitle: 'Reconciliation' }],
   ['/matched-rules/unit-matches', { title: 'Unit Matches', subtitle: 'Matched' }],
   ['/matched-rules/payu-settlements', { title: 'PayU Settlements', subtitle: 'Matched' }],
+  ['/matched-rules/easebuzz-settlements', { title: 'EaseBuzz Settlements', subtitle: 'Matched' }],
+  ['/matched-rules/card-reconciliation', { title: 'Card Reconciliation', subtitle: 'UPI & Card' }],
+  ['/matched-rules/upi-reconciliation', { title: 'UPI Reconciliation', subtitle: 'UPI & Card' }],
   ['/matched-rules/ip-payment-rules/manage', { title: 'Matching Rules', subtitle: 'IP payments' }],
   ['/matched-rules/ip-payment-rules', { title: 'IP Payment Rules', subtitle: 'Matched' }],
   [
@@ -53,6 +61,8 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/matched-rules/diagnostics-payment-rules', { title: 'Diagnostics Payment Rules', subtitle: 'Matched' }],
 
   ['/matched-rules/cheque-collection-rules/manage', { title: 'Matching Rules', subtitle: 'Cheque collection' }],
+
+  ['/matched-rules/gateway-rules/manage', { title: 'Matching Rules', subtitle: 'Gateway & settlements' }],
 
   ['/master-data/division-bank-accounts', { title: 'Division & Bank A/C', subtitle: 'Master data' }],
 

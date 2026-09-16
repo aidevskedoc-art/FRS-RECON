@@ -1,0 +1,67 @@
+<div class="panel">
+  <div class="panel__cards">
+    @for (card of cards(); track card.label) {
+      <div class="summary-card" [class]="'summary-card--' + card.accent" [class.summary-card--wide]="card.wide">
+        <div class="summary-card__icon">
+          <i [class]="card.icon"></i>
+        </div>
+        <div class="summary-card__body">
+          <p class="summary-card__value">{{ card.value }}</p>
+          <p class="summary-card__label">{{ card.label }}</p>
+        </div>
+      </div>
+    }
+  </div>
+
+  <div class="panel__section">
+    <h4>By Payment Type</h4>
+    <div class="table-wrap">
+      <table class="breakdown-table">
+        <thead>
+          <tr>
+            <th>Statement</th>
+            <th class="num">Total</th>
+            <th class="num">Amount</th>
+            <th class="num">Matched</th>
+            <th class="num">Gateway</th>
+            <th class="num">Contra</th>
+            <th class="num">Partial</th>
+            <th class="num">Mismatch</th>
+            <th class="num">Unmatched</th>
+            <th class="num">Balance Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.name) {
+            <tr>
+              <td>{{ row.name }}</td>
+              <td class="num">{{ count(row.d.total) }}</td>
+              <td class="num amount">{{ money(row.d.totalAmount) }}</td>
+              <td class="num">{{ count(row.d.matched) }}</td>
+              <td class="num">{{ count(row.d.easebuzzMatched) }}</td>
+              <td class="num">{{ count(row.d.contra) }}</td>
+              <td class="num">{{ count(row.d.partialMatch) }}</td>
+              <td class="num">{{ count(row.d.mismatched) }}</td>
+              <td class="num">{{ count(row.d.unmatched) }}</td>
+              <td class="num amount" [class.amount--flag]="row.d.balanceAmount > 0">{{ money(row.d.balanceAmount) }}</td>
+            </tr>
+          }
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Combined</td>
+            <td class="num">{{ count(summary().combined.totalTransactions) }}</td>
+            <td class="num amount">{{ money(summary().combined.totalAmount) }}</td>
+            <td class="num">{{ count(summary().combined.totalMatched) }}</td>
+            <td class="num">{{ count(summary().combined.totalEasebuzzMatched) }}</td>
+            <td class="num">{{ count(summary().combined.totalContra) }}</td>
+            <td class="num">{{ count(summary().combined.totalPartialMatch) }}</td>
+            <td class="num">{{ count(summary().combined.totalMismatched) }}</td>
+            <td class="num">{{ count(summary().combined.totalUnmatched) }}</td>
+            <td class="num amount" [class.amount--flag]="summary().combined.balanceAmount > 0">{{ money(summary().combined.balanceAmount) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>

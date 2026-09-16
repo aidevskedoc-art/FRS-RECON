@@ -3,8 +3,9 @@ import { ActivatedRoute } from '@angular/router';
 import { UploadBankStatementComponent } from '../upload-bank-statement/upload-bank-statement.component';
 import { UploadPayuMprComponent } from '../upload-payu-mpr/upload-payu-mpr.component';
 import { UploadEasebuzzComponent } from '../upload-easebuzz/upload-easebuzz.component';
+import { UploadEasebuzzSettlementComponent } from '../upload-easebuzz-settlement/upload-easebuzz-settlement.component';
 
-type BankFeedTabId = 'bank' | 'payu' | 'easebuzz';
+type BankFeedTabId = 'bank' | 'payu' | 'easebuzz' | 'easebuzz-settlement';
 
 interface BankFeedTab {
   readonly id: BankFeedTabId;
@@ -22,12 +23,13 @@ const TABS: readonly BankFeedTab[] = [
   { id: 'bank', label: 'Bank Statement', hint: 'HDFC-style statement export — account and transaction table read automatically' },
   { id: 'payu', label: 'PayU MPR', hint: 'PayU Merchant Payment Report — the gateway-UPI settlement counterpart' },
   { id: 'easebuzz', label: 'EaseBuzz', hint: 'EaseBuzz gateway transaction report — one workbook, a sheet per unit' },
+  { id: 'easebuzz-settlement', label: 'EaseBuzz Settlement', hint: 'EaseBuzz’s own settlement export — one row per payout, ties to the real bank credit' },
 ];
 
 @Component({
   selector: 'app-upload-bank-feeds',
   standalone: true,
-  imports: [UploadBankStatementComponent, UploadPayuMprComponent, UploadEasebuzzComponent],
+  imports: [UploadBankStatementComponent, UploadPayuMprComponent, UploadEasebuzzComponent, UploadEasebuzzSettlementComponent],
   templateUrl: './upload-bank-feeds.component.html',
   styleUrl: './upload-bank-feeds.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

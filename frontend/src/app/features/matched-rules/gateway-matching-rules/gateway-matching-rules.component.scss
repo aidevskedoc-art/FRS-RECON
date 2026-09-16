@@ -1,0 +1,378 @@
+@use 'styles/mixins';
+
+.matching-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.matching-rules__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+}
+
+.search {
+  position: relative;
+  max-width: 380px;
+
+  i {
+    position: absolute;
+    left: var(--space-3);
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+    font-size: var(--text-sm);
+  }
+
+  input {
+    width: 100%;
+    padding-left: var(--space-7);
+  }
+}
+
+.matching-rules__table-wrap {
+  @include mixins.card;
+  @include mixins.scrollbar-thin;
+  // Flex-column child: without this it keeps the table's full intrinsic width
+  // and pushes the page past the content column instead of scrolling here.
+  min-width: 0;
+  overflow: auto;
+}
+
+:host ::ng-deep .rules-table {
+  .p-datatable-thead > tr > th {
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+
+  // Blanket nowrap keeps the scannable columns tidy — but the Conditions cell
+  // opts out with .wrap. Without :not() it inherits nowrap and its one-line
+  // width blows the whole table past the content area.
+  .p-datatable-tbody > tr > td:not(.wrap) {
+    white-space: nowrap;
+    vertical-align: top;
+  }
+
+  .p-datatable-tbody > tr > td.wrap {
+    vertical-align: top;
+  }
+}
+
+.condition-cell__line {
+  display: block;
+  max-width: 340px;
+  white-space: normal;
+  // Break long dotted paths (payment.transactionRef) rather than widen the col.
+  overflow-wrap: anywhere;
+
+  & + & {
+    margin-top: var(--space-1);
+  }
+}
+
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: var(--text-sm);
+}
+
+.wrap {
+  white-space: normal;
+  max-width: 260px;
+}
+
+.status-pill {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
+  border: 1px solid var(--status-neutral-border);
+  cursor: pointer;
+  font: inherit;
+  transition: opacity var(--transition-fast);
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+.status-pill--active {
+  color: var(--status-success-fg);
+  background: var(--status-success-bg);
+  border-color: var(--status-success-border);
+}
+
+.actions-col {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.priority-col {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.action-icon {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--ai-blue);
+  }
+}
+
+.action-icon--danger:hover {
+  color: var(--status-danger-fg);
+}
+
+.empty {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--text-tertiary);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  input,
+  .full-width {
+    width: 100%;
+  }
+}
+
+.form__switch {
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.form-section__title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.form-section__hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.cond-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+}
+
+.cond-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cond-group__num {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.leaf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-default);
+
+  &:first-of-type {
+    padding-top: 0;
+    border-top: none;
+  }
+}
+
+.leaf__or {
+  align-self: flex-start;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+
+.leaf__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.leaf__not {
+  flex-direction: row !important;
+  align-items: center;
+  gap: var(--space-1) !important;
+  font-size: var(--text-xs);
+}
+
+.leaf-kind-toggle {
+  display: flex;
+  gap: var(--space-1);
+  flex: 1;
+
+  button {
+    flex: 1;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunken);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+
+    &:hover {
+      background: var(--surface-hover);
+    }
+
+    &.active {
+      background: var(--ai-blue);
+      border-color: var(--ai-blue);
+      color: var(--text-on-accent, #fff);
+    }
+  }
+}
+
+/* --- gateway-specific additions ------------------------------------------ */
+
+.toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.toolbar__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+
+  > span {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+}
+
+:host ::ng-deep .target-select {
+  min-width: 240px;
+}
+
+.settings-col {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Several policies can be stored; only the first active one runs. The rest are
+   dimmed so the list does not imply they all apply. */
+.rule-row--inert {
+  opacity: 0.62;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs, var(--text-xs));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge--on {
+  color: var(--status-success-fg);
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+}
+
+.badge--off {
+  color: var(--text-tertiary);
+  background: var(--surface-muted, transparent);
+  border: 1px solid var(--border-default);
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.form__field small {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.form__field small.warn {
+  color: var(--status-warning-fg);
+}
+
+.form__hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: calc(var(--space-2) * -1);
+}

@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, map, tap } from 'rxjs';
-import { BankStatementRecordsPage, BankStatementUpload, MatchStatus } from '../models';
+import { BankStatementRecordsPage, BankStatementUpload, EasebuzzSettlementBatch, MatchStatus } from '../models';
 import { API_BASE_URL } from '../config/api.config';
 
 @Injectable({ providedIn: 'root' })
@@ -16,6 +16,9 @@ export class BankStatementService {
 
   private readonly _easebuzzBatches = signal<BankStatementUpload[]>([]);
   readonly easebuzzBatches = this._easebuzzBatches.asReadonly();
+
+  private readonly _easebuzzSettlementBatches = signal<EasebuzzSettlementBatch[]>([]);
+  readonly easebuzzSettlementBatches = this._easebuzzSettlementBatches.asReadonly();
 
   private readonly _loading = signal(false);
   readonly loading = this._loading.asReadonly();
@@ -165,6 +168,32 @@ export class BankStatementService {
   deleteEasebuzzBatch(id: string): Observable<void> {
     return this.http.delete<void>(`${API_BASE_URL}/online-upload/easebuzz/batches/${id}`).pipe(
       tap(() => this._easebuzzBatches.update((b) => b.filter((x) => x.id !== id))),
+    );
+  }
+
+  // --- EaseBuzz Settlement Report (Stage 2 — settlement <-> bank credit) --
+
+  /** POST /api/online-upload/easebuzz-settlement (multipart) */
+  uploadEasebuzzSettlement(file: File, uploadedBy: string | null): Observable<EasebuzzSettlementBatch> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    if (uploadedBy) form.append('uploadedBy', uploadedBy);
+    return this.http
+      .post<EasebuzzSettlementBatch>(`${API_BASE_URL}/online-upload/easebuzz-settlement`, form)
+      .pipe(tap((batch) => this._easebuzzSettlementBatches.update((b) => [batch, ...b])));
+  }
+
+  /** GET /api/online-upload/easebuzz-settlement/batches */
+  refreshEasebuzzSettlementBatches(): Observable<EasebuzzSettlementBatch[]> {
+    return this.http.get<EasebuzzSettlementBatch[]>(`${API_BASE_URL}/online-upload/easebuzz-settlement/batches`).pipe(
+      tap((batches) => this._easebuzzSettlementBatches.set(batches)),
+    );
+  }
+
+  /** DELETE /api/online-upload/easebuzz-settlement/batches/:id */
+  deleteEasebuzzSettlementBatch(id: string): Observable<void> {
+    return this.http.delete<void>(`${API_BASE_URL}/online-upload/easebuzz-settlement/batches/${id}`).pipe(
+      tap(() => this._easebuzzSettlementBatches.update((b) => b.filter((x) => x.id !== id))),
     );
   }
 
