@@ -4,8 +4,17 @@ const XLSX = require('xlsx');
 const { exportColumnsFor, resolveColumns } = require('../excel/payment-export-columns');
 const db = require('../db');
 const { parseChequeCollectionWorkbook } = require('../online-upload/cheque-collection-parser');
-const { assertNewFile } = require('../online-upload/dedupe');
+const { parseIpChequeWorkbook } = require('../online-upload/ip-cheque-parser');
+const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
 const { chequeCollectionBatchRowToApi, chequeCollectionRecordRowToApi } = require('../mappers');
+
+// A cheque row's identity across uploads: receipt number + its cheque number.
+// Lets a cheque already captured through the primary cheque-collections file
+// be recognised here even though this route reads a completely different
+// file shape (the consolidated MIS workbook) — same rationale as IP/Diag's
+// IP_IDENTITY_SQL/DIAG_IDENTITY_SQL in ip-payments.routes.js.
+const CHEQUE_IDENTITY_SQL = `trim(COALESCE(receipt_number,'')) || '§' || trim(COALESCE(cheque_no,''))`;
+const chequeIdentityOf = (r) => `${String(r.receiptNumber ?? '').trim()}§${String(r.chequeNo ?? '').trim()}`;
 
 const router = express.Router();
 
@@ -84,6 +93,49 @@ router.post('/', upload.single('file'), async (req, res, next) => {
     const meta = { rowsInFile: totalRows, skippedSheets };
     if (batches.length === 1) return res.status(201).json({ ...chequeCollectionBatchRowToApi(batches[0]), ...meta });
     res.status(201).json({ batches: batches.map(chequeCollectionBatchRowToApi), ...meta });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/cheque-collections/from-consolidated — Cheque rows pulled out of
+// the "All Collection Types" consolidated MIS workbook's IP sheet
+// (ip-cheque-parser.js). A different physical source feeding this same
+// table, reusing the exact column mapping above so a consolidated-file batch
+// looks identical to one from the primary upload — including `unit_name`
+// (resolved from the sheet's banner) and per-row identity dedup, so a cheque
+// already captured through the old separate-file workflow isn't double-
+// counted here even though the two files are shaped completely differently.
+router.post('/from-consolidated', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
+
+    const { rows, unitName } = parseIpChequeWorkbook(req.file.buffer);
+    const { newRows, skipped } = await filterNewRows({
+      table: 'cheque_collection_records',
+      identitySql: CHEQUE_IDENTITY_SQL,
+      identityOf: chequeIdentityOf,
+      rows,
+    });
+    if (newRows.length === 0) {
+      const err = new Error(`All ${rows.length} rows in this file are already present from an earlier upload.`);
+      err.status = 409;
+      throw err;
+    }
+
+    const uploadedBy = req.body.uploadedBy || null;
+    const batch = await db.withTransaction(async (client) => {
+      const { rows: batchRows } = await client.query(
+        `INSERT INTO cheque_collection_upload_batches (file_name, file_size_bytes, row_count, uploaded_by, unit_name)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [req.file.originalname, req.file.size, newRows.length, uploadedBy, unitName],
+      );
+      const created = batchRows[0];
+      await insertRecordsChunked(client, newRows.map((r) => recordToRow(created.id, r)));
+      return created;
+    });
+
+    res.status(201).json({ ...chequeCollectionBatchRowToApi(batch), rowsInFile: rows.length, rowsStored: newRows.length, rowsSkipped: skipped });
   } catch (err) {
     next(err);
   }

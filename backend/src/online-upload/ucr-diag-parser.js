@@ -69,6 +69,22 @@ function parseLooseDate(value) {
   return null;
 }
 
+/**
+ * A row starting "SNO" isn't enough to identify this sheet — the OP/Doctor
+ * Fee sheet in the same workbook also starts its header with "SNO", and its
+ * "Bill No"/"Net Amt"/"Reference ID" columns land at different positions
+ * than this file's POS map assumes, producing rows that pass every
+ * downstream check while every field is wrong (confirmed: applying this
+ * parser to that sheet silently produced 18,287 rows with dates in the
+ * userId slot). "Doctor Name" plus "UPIAmt"/"OnlAmt" are the two labels
+ * unique to this sheet's header (the same markers detect-file-type.js's
+ * UCR_DIAG signature keys on) — require them before trusting the position map.
+ */
+function looksLikeThisSheet(headerRow) {
+  const cells = headerRow.map((c) => toText(c)?.toLowerCase() ?? '');
+  return cells.includes('doctor name') && (cells.includes('upiamt') || cells.includes('onlamt'));
+}
+
 /** Finds the real header row: the first row whose cell 0 reads "SNO" (case-insensitive) — row 0 here is banner text only. */
 function findHeaderRowIndex(grid) {
   for (let i = 0; i < Math.min(grid.length, 10); i++) {
@@ -80,6 +96,7 @@ function findHeaderRowIndex(grid) {
 function parseUcrDiagGrid(grid) {
   const headerIndex = findHeaderRowIndex(grid);
   if (headerIndex === -1) return null;
+  if (!looksLikeThisSheet(grid[headerIndex])) return null;
 
   const rows = [];
   for (const cells of grid.slice(headerIndex + 1)) {

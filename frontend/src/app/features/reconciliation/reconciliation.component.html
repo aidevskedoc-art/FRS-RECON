@@ -40,10 +40,8 @@
     <div class="zones">
       @for (zone of zones; track zone.id) {
         <div class="zone">
-          <div class="zone__label">
-            {{ zone.title }}
-            @if (zone.qualifier) { <span class="zone__qualifier">{{ zone.qualifier }}</span> }
-          </div>
+          <!-- Single zone now — its own label would just repeat the card's
+               "Upload Reports" heading above, so only the hint text is shown. -->
 
           <!-- The whole box is the click target, not just the text line. -->
           <div
@@ -135,7 +133,7 @@
                           [ngModel]="entry.chosenTypes"
                           (ngModelChange)="setTypes(entry.id, $event)"
                         />
-                        @if (misplaced(entry)) {
+                        @if (zones.length > 1 && misplaced(entry)) {
                           <span class="staged__moved" pTooltip="Detected as belonging to another zone — it will still be filed correctly">
                             → {{ zoneTitle(entry.detected?.zone || zone.id) }}
                           </span>

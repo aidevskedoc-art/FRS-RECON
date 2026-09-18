@@ -9,8 +9,16 @@ const express = require('express');
 const multer = require('multer');
 const db = require('../db');
 const { parseRefundWorkbook } = require('../online-upload/refund-parser');
-const { assertNewFile } = require('../online-upload/dedupe');
+const { parseIpRefundWorkbook } = require('../online-upload/ip-refund-parser');
+const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
 const { refundBatchRowToApi, refundRecordRowToApi } = require('../mappers');
+
+// A refund's identity across uploads: its own refund number, which is unique
+// per line in the source report. Lets a refund already captured through the
+// primary refund workbook be recognised here even though this route reads a
+// completely different file shape (the consolidated MIS workbook).
+const REFUND_IDENTITY_SQL = `trim(COALESCE(refund_no,''))`;
+const refundIdentityOf = (r) => String(r.refundNo ?? '').trim();
 
 const router = express.Router();
 
@@ -87,6 +95,49 @@ router.post('/', upload.single('file'), async (req, res, next) => {
     // `sheets` goes back with the response so an unrecognised sheet is visible
     // at upload time rather than silently contributing nothing.
     res.status(201).json({ ...refundBatchRowToApi(batch), sheets });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/refunds/from-consolidated — Cheque-refund rows pulled out of the
+// "All Collection Types" consolidated MIS workbook's IP sheet Refunds
+// section (ip-refund-parser.js). Uses per-row identity dedup on refund_no,
+// not a whole-file hash, so a refund already uploaded via the primary
+// separate refund workbook is skipped here even though the two files are
+// shaped completely differently.
+router.post('/from-consolidated', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
+
+    const { rows } = parseIpRefundWorkbook(req.file.buffer);
+    const { newRows, skipped } = await filterNewRows({
+      table: 'refund_records',
+      identitySql: REFUND_IDENTITY_SQL,
+      identityOf: refundIdentityOf,
+      rows,
+    });
+    if (newRows.length === 0) {
+      const err = new Error(`All ${rows.length} rows in this file are already present from an earlier upload.`);
+      err.status = 409;
+      throw err;
+    }
+
+    const dates = newRows.map((r) => r.chequeDate).filter(Boolean).sort();
+    const uploadedBy = req.body.uploadedBy || null;
+
+    const batch = await db.withTransaction(async (client) => {
+      const { rows: batchRows } = await client.query(
+        `INSERT INTO refund_upload_batches (file_name, file_size_bytes, row_count, sheet_count, document_from, document_to, uploaded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [req.file.originalname, req.file.size, newRows.length, 1, dates[0] || null, dates[dates.length - 1] || null, uploadedBy],
+      );
+      const created = batchRows[0];
+      await insertRecordsChunked(client, newRows.map((r) => recordToRow(created.id, r)));
+      return created;
+    });
+
+    res.status(201).json({ ...refundBatchRowToApi(batch), rowsInFile: rows.length, rowsStored: newRows.length, rowsSkipped: skipped });
   } catch (err) {
     next(err);
   }

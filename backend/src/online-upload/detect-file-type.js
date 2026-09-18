@@ -120,6 +120,52 @@ const SIGNATURES = [
     },
   },
   {
+    // Same sheet as UCR_IP above — this file bundles Card/UPI, Cheque and
+    // Online (bank-transfer) rows together, each with its own reconciliation
+    // pipeline. One workbook legitimately matching several types is the same
+    // situation the combined bank+EaseBuzz file already established.
+    type: 'IP_CHEQUE_CONSOLIDATED',
+    label: 'Cheque rows (from consolidated IP MIS)',
+    zone: 'MIS',
+    endpoint: '/api/cheque-collections/from-consolidated',
+    match(ctx) {
+      const bySheet = sheetNamed(ctx, 'ADVANCES_YH.RPT');
+      const byHeader = rowWithAll(ctx, ['sno', 'receipt no', 'billno', 'type', 'reference id']);
+      if (bySheet && byHeader) return { confidence: 100, reason: 'sheet ADVANCES_YH.RPT + Type/Reference ID headers (Cheque-type rows)' };
+      if (bySheet) return { confidence: 85, reason: 'sheet named ADVANCES_YH.RPT' };
+      return null;
+    },
+  },
+  {
+    type: 'IP_ONLINE_CONSOLIDATED',
+    label: 'Online rows (from consolidated IP MIS)',
+    zone: 'MIS',
+    endpoint: '/api/ip-payments/from-consolidated',
+    match(ctx) {
+      const bySheet = sheetNamed(ctx, 'ADVANCES_YH.RPT');
+      const byHeader = rowWithAll(ctx, ['sno', 'receipt no', 'billno', 'type', 'reference id']);
+      if (bySheet && byHeader) return { confidence: 100, reason: 'sheet ADVANCES_YH.RPT + Type/Reference ID headers (Online-type rows)' };
+      if (bySheet) return { confidence: 85, reason: 'sheet named ADVANCES_YH.RPT' };
+      return null;
+    },
+  },
+  {
+    // Same sheet again — this file's IP sheet also carries a Refunds section
+    // partway down (see ip-refund-parser.js), which the other three IP
+    // signatures above deliberately stop before.
+    type: 'IP_REFUND_CONSOLIDATED',
+    label: 'Cheque refund rows (from consolidated IP MIS)',
+    zone: 'MIS',
+    endpoint: '/api/refunds/from-consolidated',
+    match(ctx) {
+      const bySheet = sheetNamed(ctx, 'ADVANCES_YH.RPT');
+      const byHeader = rowWithAll(ctx, ['sno', 'receipt no', 'billno', 'type', 'reference id']);
+      if (bySheet && byHeader) return { confidence: 100, reason: 'sheet ADVANCES_YH.RPT + Type/Reference ID headers (Refund section)' };
+      if (bySheet) return { confidence: 85, reason: 'sheet named ADVANCES_YH.RPT' };
+      return null;
+    },
+  },
+  {
     type: 'UCR_OP',
     label: 'UPI & Card MIS — OP (doctor consultations)',
     zone: 'MIS',
@@ -133,6 +179,25 @@ const SIGNATURES = [
       if (bySheet && byHeader) return { confidence: 100, reason: 'sheet DOCTOR_FEE_REG_YH.RPT + Consultant/Speciality/Net Amt headers' };
       if (bySheet) return { confidence: 85, reason: 'sheet named DOCTOR_FEE_REG_YH.RPT' };
       if (byHeader) return { confidence: 80, reason: 'Consultant + Speciality + PmtType + Net Amt headers' };
+      return null;
+    },
+  },
+  {
+    // Same sheet as UCR_OP above — Online (bank-transfer) rows share it with
+    // Card/UPI. Only wired for branches whose Online reference column
+    // position is verified (currently SECUNDERABAD/SBD) — see
+    // doctor-fee-reg-grid.js — so this still matches on sheet/header alone;
+    // the endpoint itself finds nothing to import if a different branch's
+    // file has no Online rows it can place.
+    type: 'OP_ONLINE_CONSOLIDATED',
+    label: 'Online rows (from consolidated OP/Doctor Fee MIS)',
+    zone: 'MIS',
+    endpoint: '/api/diag-op-payments/from-consolidated',
+    match(ctx) {
+      const bySheet = sheetNamed(ctx, 'DOCTOR_FEE_REG_YH.RPT');
+      const byHeader = rowWithAll(ctx, ['consultant', 'speciality', 'pmttype', 'net amt']);
+      if (bySheet && byHeader) return { confidence: 100, reason: 'sheet DOCTOR_FEE_REG_YH.RPT + Consultant/Speciality/Net Amt headers (Online-type rows)' };
+      if (bySheet) return { confidence: 85, reason: 'sheet named DOCTOR_FEE_REG_YH.RPT' };
       return null;
     },
   },

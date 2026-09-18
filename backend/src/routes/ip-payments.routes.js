@@ -5,6 +5,7 @@ const { buildReconciliationWorkbook } = require('../excel/reconciliation-export'
 const { exportColumnsFor, resolveColumns } = require('../excel/payment-export-columns');
 const db = require('../db');
 const { parseMisWorkbook } = require('../online-upload/mis-parser');
+const { parseIpOnlineWorkbook } = require('../online-upload/ip-online-parser');
 const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
 const { ipPaymentBatchRowToApi, ipPaymentRecordRowToApi } = require('../mappers');
 
@@ -122,6 +123,48 @@ router.post('/', upload.single('file'), async (req, res, next) => {
     const counts = { rowsInFile: tagged.length, rowsStored: newRows.length, rowsSkipped: skipped };
     if (batches.length === 1) return res.status(201).json({ ...ipPaymentBatchRowToApi(batches[0]), ...counts });
     res.status(201).json({ batches: batches.map(ipPaymentBatchRowToApi), ...counts });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/ip-payments/from-consolidated — Online (bank-transfer) rows pulled
+// out of the "All Collection Types" consolidated MIS workbook's IP sheet
+// (ip-online-parser.js). Uses the same per-row identity dedup as the primary
+// route above (receipt number + transaction id), not a whole-file hash, so a
+// receipt already uploaded via the old separate-file workflow is skipped here
+// even though the two files are shaped completely differently — the risk a
+// client sending both formats during a transition would otherwise double-count.
+router.post('/from-consolidated', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
+
+    const { rows, unitName } = parseIpOnlineWorkbook(req.file.buffer);
+    const { newRows, skipped } = await filterNewRows({
+      table: 'ip_payment_records',
+      identitySql: IP_IDENTITY_SQL,
+      identityOf: ipIdentityOf,
+      rows,
+    });
+    if (newRows.length === 0) {
+      const err = new Error(`All ${rows.length} rows in this file are already present from an earlier upload.`);
+      err.status = 409;
+      throw err;
+    }
+
+    const uploadedBy = req.body.uploadedBy || null;
+    const batch = await db.withTransaction(async (client) => {
+      const { rows: batchRows } = await client.query(
+        `INSERT INTO ip_payment_upload_batches (file_name, file_size_bytes, row_count, uploaded_by, unit_name)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [req.file.originalname, req.file.size, newRows.length, uploadedBy, unitName],
+      );
+      const created = batchRows[0];
+      await insertRecordsChunked(client, newRows.map((r) => recordToRow(created.id, r)));
+      return created;
+    });
+
+    res.status(201).json({ ...ipPaymentBatchRowToApi(batch), rowsInFile: rows.length, rowsStored: newRows.length, rowsSkipped: skipped });
   } catch (err) {
     next(err);
   }

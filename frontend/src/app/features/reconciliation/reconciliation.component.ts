@@ -29,29 +29,20 @@ interface RunStep {
 }
 
 /**
- * The three zones, worded as the client's reference screen words them. They are
- * a hint rather than a constraint: a file dropped in the wrong zone is still
- * identified correctly and simply flagged, because the zone the user picked is
- * not what decides where the data goes — detection is.
+ * A single drop zone for every file type this app ingests. Zone was always a
+ * hint rather than a constraint — a file dropped in the "wrong" zone was
+ * already identified correctly and simply flagged, because the zone the user
+ * picked never decided where the data goes; detection does. Collapsed from
+ * three zones to one at the client's request: one box, drop everything,
+ * detection sorts it out. `id: 'MIS'` is just the nominal bucket every file
+ * lands in now — it has no effect on routing.
  */
 const ZONES: readonly ZoneDef[] = [
   {
     id: 'MIS',
-    title: 'MIS Reports',
+    title: 'Upload Reports',
     qualifier: '',
-    hint: 'IP, OP and Diagnostics collection reports. Both the online/UPI collection format and the newer instrument-level exports are recognised.',
-  },
-  {
-    id: 'BANK',
-    title: 'Bank Reports',
-    qualifier: '(MPR + Pinelabs + Online)',
-    hint: 'Bank statements, CARD/UPI MPR, Pine Labs and the online provider files (EaseBuzz / PayU) are auto-detected.',
-  },
-  {
-    id: 'CHEQUE',
-    title: 'Cheque Files',
-    qualifier: '(Collection Ledger)',
-    hint: 'Cheque collection ledger, one file per unit — plus the refund document its contra entries are matched against.',
+    hint: 'MIS collection reports (IP/OP/Diagnostics), bank statements, CARD/UPI MPR, Pine Labs, EaseBuzz/PayU, and cheque collection/refund documents are all auto-detected from what you drop here.',
   },
 ];
 

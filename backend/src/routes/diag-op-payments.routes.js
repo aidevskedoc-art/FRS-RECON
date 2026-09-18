@@ -5,6 +5,7 @@ const { buildReconciliationWorkbook } = require('../excel/reconciliation-export'
 const { exportColumnsFor, resolveColumns } = require('../excel/payment-export-columns');
 const db = require('../db');
 const { parseMisWorkbook } = require('../online-upload/mis-parser');
+const { parseOpOnlineWorkbook } = require('../online-upload/op-online-parser');
 const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
 const { diagOpBatchRowToApi, diagOpRecordRowToApi } = require('../mappers');
 
@@ -114,6 +115,47 @@ router.post('/', upload.single('file'), async (req, res, next) => {
     const counts = { rowsInFile: tagged.length, rowsStored: newRows.length, rowsSkipped: skipped };
     if (batches.length === 1) return res.status(201).json({ ...diagOpBatchRowToApi(batches[0]), ...counts });
     res.status(201).json({ batches: batches.map(diagOpBatchRowToApi), ...counts });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/diag-op-payments/from-consolidated — Online (bank-transfer) rows
+// pulled out of the "All Collection Types" consolidated MIS workbook's
+// Doctor Fee sheet (op-online-parser.js). Uses the same per-row identity
+// dedup as the primary route above, not a whole-file hash, so a receipt
+// already uploaded via the old separate-file workflow is skipped here even
+// though the two files are shaped completely differently.
+router.post('/from-consolidated', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
+
+    const { rows, unitName } = parseOpOnlineWorkbook(req.file.buffer);
+    const { newRows, skipped } = await filterNewRows({
+      table: 'diag_op_payment_records',
+      identitySql: DIAG_IDENTITY_SQL,
+      identityOf: diagIdentityOf,
+      rows,
+    });
+    if (newRows.length === 0) {
+      const err = new Error(`All ${rows.length} rows in this file are already present from an earlier upload.`);
+      err.status = 409;
+      throw err;
+    }
+
+    const uploadedBy = req.body.uploadedBy || null;
+    const batch = await db.withTransaction(async (client) => {
+      const { rows: batchRows } = await client.query(
+        `INSERT INTO diag_op_upload_batches (file_name, file_size_bytes, row_count, uploaded_by, unit_name)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [req.file.originalname, req.file.size, newRows.length, uploadedBy, unitName],
+      );
+      const created = batchRows[0];
+      await insertRecordsChunked(client, newRows.map((r) => recordToRow(created.id, r)));
+      return created;
+    });
+
+    res.status(201).json({ ...diagOpBatchRowToApi(batch), rowsInFile: rows.length, rowsStored: newRows.length, rowsSkipped: skipped });
   } catch (err) {
     next(err);
   }
