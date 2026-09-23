@@ -54,9 +54,11 @@
   // bleed an opaque ground out through this padding without restating the
   // values (see the opaque-page-surface mixin). Custom properties inherit, so
   // the routed component's own :host can read them and the two cannot drift.
-  --shell-content-pad-x: 32px;
-  --shell-content-pad-top: 28px;
-  --shell-content-pad-bottom: 40px;
+  // Tightened 2026-09-21 (was 32 / 28 / 40) — sriram: "reduce the
+  // unnecessary spaces". One place, so every page tightens uniformly.
+  --shell-content-pad-x: 24px;
+  --shell-content-pad-top: 20px;
+  --shell-content-pad-bottom: 28px;
   padding: var(--shell-content-pad-top) var(--shell-content-pad-x) var(--shell-content-pad-bottom);
   @include mixins.scrollbar-thin;
 }

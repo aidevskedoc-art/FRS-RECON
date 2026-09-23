@@ -1,15 +1,26 @@
 <div class="manage-rules">
-  <div class="hub-picker" role="tablist">
-    @for (tab of tabs; track tab.id) {
-      <button
-        type="button"
-        role="tab"
-        class="hub-option"
-        [class.hub-option--active]="active() === tab.id"
-        [attr.aria-selected]="active() === tab.id"
-        (click)="select(tab.id)"
-      >
-        <span class="hub-option__title">{{ tab.label }}</span>
+  <div class="manage-rules__toolbar">
+    <div class="hub-picker" role="tablist">
+      @for (tab of tabs; track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="hub-option"
+          [class.hub-option--active]="active() === tab.id"
+          [attr.aria-selected]="active() === tab.id"
+          (click)="select(tab.id)"
+        >
+          <span class="hub-option__title">{{ tab.label }}</span>
+        </button>
+      }
+    </div>
+
+    <!-- Client ask, 2026-09-23: a global "recon it again" option, so a rule
+         edit doesn't leave every batch waiting on its own Regenerate click. -->
+    @if (isAdmin()) {
+      <button type="button" class="btn btn-primary btn-sm" (click)="openRegenerateConfirm()">
+        <i class="pi pi-refresh"></i>
+        <span>Regenerate All</span>
       </button>
     }
   </div>
@@ -30,4 +41,67 @@
       }
     }
   </div>
+
+  <!-- Regenerate All — confirm, then a step-by-step result once it's done. -->
+  @if (regenerateConfirmOpen()) {
+    <p-dialog
+      header="Regenerate All"
+      [visible]="true"
+      (visibleChange)="closeRegenerate()"
+      [modal]="true"
+      [dismissableMask]="!regenerating()"
+      [closable]="!regenerating()"
+      [style]="{ width: '32rem' }"
+    >
+      @if (regenerateSteps(); as steps) {
+        <div class="regenerate-results">
+          @for (step of steps; track step.step + (step.batchId || '')) {
+            <div class="regenerate-step" [class.regenerate-step--error]="stepFailed(step)">
+              <span class="regenerate-step__name">
+                {{ step.step }}
+                @if (step.batchId) {
+                  <span class="regenerate-step__batch">(batch {{ step.batchId }})</span>
+                }
+              </span>
+              @if (stepFailed(step)) {
+                <span class="regenerate-step__error"><i class="pi pi-times-circle"></i> {{ step.error }}</span>
+              } @else {
+                <span class="regenerate-step__counts">
+                  @for (entry of stepCountEntries(step); track entry[0]) {
+                    <span class="regenerate-step__count">{{ entry[0] }}: {{ entry[1] }}</span>
+                  }
+                </span>
+              }
+            </div>
+          }
+        </div>
+        <button type="button" class="btn btn-primary" (click)="closeRegenerate()">
+          <span>Close</span>
+        </button>
+      } @else {
+        <p>
+          Re-runs Generate over <strong>every existing batch</strong> — IP, Diagnostics, Cheque Collection,
+          Bank Statements, PayU, EaseBuzz, Card and UPI — so any matching-rule change applies everywhere at once,
+          not just to batches you regenerate one at a time. On a large dataset this can take a while.
+        </p>
+        @if (regenerateError(); as err) {
+          <div class="modal-error">{{ err }}</div>
+        }
+        <div class="regenerate-actions">
+          <button type="button" class="btn btn-ghost" [disabled]="regenerating()" (click)="closeRegenerate()">
+            <span>Cancel</span>
+          </button>
+          <button type="button" class="btn btn-primary" [disabled]="regenerating()" (click)="confirmRegenerateAll()">
+            @if (regenerating()) {
+              <span class="btn-spinner"></span>
+              <span>Regenerating…</span>
+            } @else {
+              <i class="pi pi-refresh"></i>
+              <span>Regenerate All</span>
+            }
+          </button>
+        </div>
+      }
+    </p-dialog>
+  }
 </div>

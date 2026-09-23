@@ -10,6 +10,9 @@
  * easebuzzSettlementRecordRowToApi's `matchedBank`.
  */
 
+const { resolveDivision } = require('./reconciliation/matcher');
+const { isMatchedByAuditor } = require('./reconciliation/status-tone');
+
 function toIso(value) {
   if (!value) return null;
   return value instanceof Date ? value.toISOString() : String(value);
@@ -64,6 +67,10 @@ function ucrIpRecordRowToApi(row) {
     id: String(row.id),
     batchId: String(row.batch_id),
     misSource: row.mis_source ?? 'IP', // 'IP' | 'OP' | 'DIAG'
+    // The batch's HIS report header and the branch it names — present when the
+    // query joined the batch (ucrRecordSelect does), null otherwise.
+    unitName: row.batch_unit_name ?? null,
+    division: row.batch_unit_name ? resolveDivision(row.batch_unit_name) : null,
     receiptNo: row.receipt_no,
     receiptDate: toDateOnly(row.receipt_date),
     yhNo: row.yh_no,
@@ -80,6 +87,14 @@ function ucrIpRecordRowToApi(row) {
     matchSourceType: row.match_source_type ?? null,
     matchSourceId: row.match_source_id === null || row.match_source_id === undefined ? null : String(row.match_source_id),
     matchReason: row.match_reason ?? null,
+    // Maker-checker: an approved auditor change locks the record (orange in the result files / screens).
+    lockedAt: toIso(row.locked_at),
+    matchedByAuditor: isMatchedByAuditor(row),
+    // The open maker-checker request, when the query selected it (src/pending-change.js).
+    pendingChange: row.pending_change,
+    // The approved request behind a current auditor lock — who flagged it,
+    // who approved it, and when (src/pending-change.js's auditDetailColumn).
+    auditDetail: row.audit_detail ?? null,
     // Both are GROUP figures over the shared reference, not this row's own
     // amount — see the schema comment on ucr_ip_records.match_difference.
     matchDifference: toNumber(row.match_difference),

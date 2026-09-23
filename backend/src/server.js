@@ -20,6 +20,14 @@ const ucrUploadRouter = require('./routes/ucr-upload.routes');
 const ucrMatchedRouter = require('./routes/ucr-matched.routes');
 const gatewayRulesRouter = require('./routes/gateway-rules.routes');
 const uploadsDetectRouter = require('./routes/uploads-detect.routes');
+const authRouter = require('./routes/auth.routes');
+const { requireAuth, requireAuthExcept } = require('./middleware/auth');
+const usersRouter = require('./routes/users.routes');
+const auditLogsRouter = require('./routes/audit-logs.routes');
+const matchApprovalsRouter = require('./routes/match-approvals.routes');
+const folderWatchRouter = require('./routes/folder-watch.routes');
+const { arm: armFolderWatchScheduler } = require('./folder-watch/scheduler');
+const goLiveRouter = require('./routes/go-live.routes');
 
 const app = express();
 
@@ -45,9 +53,21 @@ const corsOptions = allowedOrigins
 
 app.use(cors(corsOptions));
 app.use(express.json());
-app.use('/uploads', express.static(uploadDir));
+// Uploaded insurance policy PDFs carry patient details — signed-in users only.
+// The preview fetches them through the token-carrying HTTP client (an <iframe>
+// can't send the Authorization header itself).
+app.use('/uploads', requireAuth, express.static(uploadDir));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
+// Every /api route needs a signed-in user — secure by default, so a router
+// added later is covered without remembering to. Only the health probe and
+// the login itself are public. This is authentication (who you are), not the
+// per-screen access (what you see), which stays at the URL level by design.
+// CORS preflight never reaches here: the cors middleware above answers OPTIONS.
+// The folder automation calls route handlers in-process, not over HTTP, so it
+// is unaffected.
+app.use('/api', requireAuthExcept(['/api/health', '/api/auth/login']));
 
 app.use('/api/documents', documentsRouter);
 app.use('/api/documents', extractionRouter);
@@ -66,6 +86,12 @@ app.use('/api/ucr-matched', ucrMatchedRouter);
 // router rather than a fifth mountRuleCrud — see gateway-rules.routes.js.
 app.use('/api/gateway-rules', gatewayRulesRouter);
 app.use('/api/uploads', uploadsDetectRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/users', usersRouter);
+app.use('/api/audit-logs', auditLogsRouter);
+app.use('/api/match-approvals', matchApprovalsRouter);
+app.use('/api/folder-watch', folderWatchRouter);
+app.use('/api/go-live', goLiveRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });
@@ -85,8 +111,10 @@ async function start() {
   await db.ensureSchema();
   console.log('Database schema ready.');
 
+  await armFolderWatchScheduler().catch((err) => console.error('[folder-watch] failed to arm scheduler:', err.message));
+
   app.listen(PORT, HOST, () => {
-    console.log(`FRS - Recon backend listening on http://${HOST}:${PORT}`);
+    console.log(`Collection and Bank Deposit Reconciliation backend listening on http://${HOST}:${PORT}`);
   });
 }
 

@@ -15,6 +15,7 @@
 const express = require('express');
 const multer = require('multer');
 const db = require('../db');
+const { uploaderOf } = require('../uploader');
 const { parseUcrIpWorkbook } = require('../online-upload/ucr-ip-parser');
 const { parseUcrOpWorkbook } = require('../online-upload/ucr-op-parser');
 const { parseUcrDiagWorkbook } = require('../online-upload/ucr-diag-parser');
@@ -22,6 +23,7 @@ const { parseCardMprWorkbook } = require('../online-upload/card-mpr-parser');
 const { parseCardPinelabsWorkbook } = require('../online-upload/card-pinelabs-parser');
 const { parseUpiMprWorkbook } = require('../online-upload/upi-mpr-parser');
 const { assertNewFile } = require('../online-upload/dedupe');
+const { findStoredOverlap, assertNoOverlap, OVERLAP_KEYS } = require('../online-upload/ucr-overlap');
 const {
   ucrIpBatchRowToApi,
   ucrIpRecordRowToApi,
@@ -32,6 +34,7 @@ const {
   ucrUpiMprBatchRowToApi,
   ucrUpiMprRecordRowToApi,
 } = require('../ucr-mappers');
+const { assertNotPastGoLive } = require('../go-live');
 
 const router = express.Router();
 
@@ -64,44 +67,59 @@ const upload = multer({
  * @param {string} [misSource] when set (e.g. 'OP', 'DIAG'), this source shares batchTable/recordTable with another
  *   registered path (both are 'ucr_ip_upload_batches'/'ucr_ip_records') — the batch row is tagged with this value
  *   and every list/detail/delete query is scoped to it, so 'ucr-op' and 'ucr-diag' never see each other's (or IP's) batches.
+ * @param {{ source: 'IP'|'OP'|'DIAG', keyOf: (r: any) => {receiptNo, instrumentType, amount, referenceId} }} [overlap]
+ *   the MIS sources only: refuse a file whose transactions are already stored (overlapping periods), and scope the
+ *   same-file hash check to this source. IP needs the explicit scope because its batches carry the column's
+ *   default 'IP' without `misSource` — unscoped, the combined workbook's IP upload would collide with its own
+ *   OP/DIAG uploads of the same bytes.
+ * @param {boolean} [storesUnitName] the three Card/UPI MIS sources: keep the parser's `unitName` (the HIS report
+ *   header) on the batch, which is where the Mismatch Review location filter (AC-10) reads a row's location from.
  */
-function registerUcrUploadQuintet({ path, batchTable, recordTable, parseWorkbook, batchRowToApi, recordRowToApi, insertRecord, recordIdentityLabel, misSource }) {
+function registerUcrUploadQuintet({ path, batchTable, recordTable, parseWorkbook, batchRowToApi, recordRowToApi, insertRecord, recordIdentityLabel, misSource, overlap, storesUnitName = false }) {
   const scopeClause = misSource ? ` WHERE mis_source = '${misSource}'` : '';
   const scopeAnd = misSource ? ` AND mis_source = '${misSource}'` : '';
+  const hashScopeValue = overlap ? overlap.source : misSource;
 
   // POST /api/ucr-upload/<path>
   router.post(`/${path}`, upload.single('file'), async (req, res, next) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
 
-      const fileHash = await assertNewFile(batchTable, req.file.buffer, misSource ? { column: 'mis_source', value: misSource } : undefined);
-      const { rows, mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped } = parseWorkbook(req.file.buffer);
+      const fileHash = await assertNewFile(batchTable, req.file.buffer, hashScopeValue ? { column: 'mis_source', value: hashScopeValue } : undefined);
+      const { rows, mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped, verification, unitName } = parseWorkbook(req.file.buffer);
       if (rows.length === 0) {
         return res.status(400).json({
           error: `No ${recordIdentityLabel} rows recognised in this file. Columns seen: ${fileHeaders.join(', ') || '(none)'}`,
         });
       }
+      if (overlap) {
+        assertNoOverlap(await findStoredOverlap(overlap.source, rows.map(overlap.keyOf)), recordIdentityLabel);
+      }
 
-      const uploadedBy = req.body.uploadedBy || null;
+      const uploadedBy = uploaderOf(req);
 
       const batch = await db.withTransaction(async (client) => {
-        const { rows: batchRows } = misSource
-          ? await client.query(
-              `INSERT INTO ${batchTable} (file_name, file_size_bytes, row_count, uploaded_by, file_hash, mis_source)
-               VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-              [req.file.originalname, req.file.size, rows.length, uploadedBy, fileHash, misSource],
-            )
-          : await client.query(
-              `INSERT INTO ${batchTable} (file_name, file_size_bytes, row_count, uploaded_by, file_hash)
-               VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-              [req.file.originalname, req.file.size, rows.length, uploadedBy, fileHash],
-            );
+        const cols = ['file_name', 'file_size_bytes', 'row_count', 'uploaded_by', 'file_hash'];
+        const vals = [req.file.originalname, req.file.size, rows.length, uploadedBy, fileHash];
+        if (misSource) {
+          cols.push('mis_source');
+          vals.push(misSource);
+        }
+        if (storesUnitName) {
+          cols.push('unit_name');
+          vals.push(unitName ?? null);
+        }
+        const { rows: batchRows } = await client.query(
+          `INSERT INTO ${batchTable} (${cols.join(', ')})
+           VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`,
+          vals,
+        );
         const created = batchRows[0];
         for (const r of rows) await insertRecord(created.id, r, client);
         return created;
       });
 
-      res.status(201).json({ ...batchRowToApi(batch), mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped });
+      res.status(201).json({ ...batchRowToApi(batch), mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped, ...(verification ? { verification } : {}) });
     } catch (err) {
       next(err);
     }
@@ -161,6 +179,7 @@ function registerUcrUploadQuintet({ path, batchTable, recordTable, parseWorkbook
   // DELETE /api/ucr-upload/<path>/batches/:id
   router.delete(`/${path}/batches/:id`, async (req, res, next) => {
     try {
+      if (!(await assertNotPastGoLive(req, res))) return;
       const { rowCount } = await db.query(`DELETE FROM ${batchTable} WHERE id = $1${scopeAnd}`, [req.params.id]);
       if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
       res.status(204).end();
@@ -178,6 +197,8 @@ registerUcrUploadQuintet({
   batchRowToApi: ucrIpBatchRowToApi,
   recordRowToApi: ucrIpRecordRowToApi,
   recordIdentityLabel: 'Card/UPI',
+  overlap: { source: 'IP', keyOf: OVERLAP_KEYS.IP },
+  storesUnitName: true,
   insertRecord: (batchId, r, client) =>
     client.query(
       `INSERT INTO ucr_ip_records
@@ -196,6 +217,8 @@ registerUcrUploadQuintet({
   batchRowToApi: ucrIpBatchRowToApi,
   recordRowToApi: ucrIpRecordRowToApi,
   recordIdentityLabel: 'Card/UPI',
+  overlap: { source: 'OP', keyOf: OVERLAP_KEYS.OP },
+  storesUnitName: true,
   insertRecord: (batchId, r, client) =>
     client.query(
       `INSERT INTO ucr_ip_records (batch_id, mis_source, receipt_no, receipt_date, yh_no, patient_name, instrument_type, amount, user_id, reference_id)
@@ -213,6 +236,8 @@ registerUcrUploadQuintet({
   batchRowToApi: ucrIpBatchRowToApi,
   recordRowToApi: ucrIpRecordRowToApi,
   recordIdentityLabel: 'Card',
+  overlap: { source: 'DIAG', keyOf: OVERLAP_KEYS.DIAG },
+  storesUnitName: true,
   insertRecord: (batchId, r, client) =>
     client.query(
       `INSERT INTO ucr_ip_records (batch_id, mis_source, receipt_no, receipt_date, patient_name, instrument_type, amount, user_id, user_name, reference_id)

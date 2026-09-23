@@ -4,6 +4,7 @@ import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
+import { MasterDataService } from '../../../core/services/master-data.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import { AuditDateBasis, AuditPeriodType, AuditReportPreview, AuditReportQuery } from '../../../core/models';
 
@@ -28,9 +29,12 @@ import { AuditDateBasis, AuditPeriodType, AuditReportPreview, AuditReportQuery }
 })
 export class AuditReportComponent {
   private readonly matchedRules = inject(MatchedRulesService);
+  private readonly masterData = inject(MasterDataService);
 
   protected readonly periodType = signal<AuditPeriodType>('MONTHLY');
   protected readonly dateBasis = signal<AuditDateBasis>('RECEIPT');
+  /** Client ask, 2026-09-23: "Unit wise report" — null = every branch. */
+  protected readonly unit = signal<string | null>(null);
   /** Held as the raw input shapes; `period()` normalises to what the API wants. */
   protected readonly dayValue = signal(todayIso());
   protected readonly monthValue = signal(todayIso().slice(0, 7));
@@ -56,6 +60,12 @@ export class AuditReportComponent {
     { label: 'Realization Date', value: 'REALIZATION' as const },
   ];
 
+  /** Same location master Mismatch Review's Location filter uses. */
+  protected readonly unitOptions = computed(() => [
+    { label: 'All Units', value: null as string | null },
+    ...this.masterData.activeLocationNames().map((name) => ({ label: name, value: name as string | null })),
+  ]);
+
   protected readonly period = computed<string>(() => {
     switch (this.periodType()) {
       case 'DAILY':
@@ -79,6 +89,7 @@ export class AuditReportComponent {
     periodType: this.periodType(),
     period: this.period(),
     dateBasis: this.dateBasis(),
+    unit: this.unit() ?? undefined,
   }));
 
   protected readonly grandTotals = computed(() => {
@@ -95,6 +106,7 @@ export class AuditReportComponent {
   });
 
   constructor() {
+    this.masterData.refreshLocations().subscribe({ error: () => undefined });
     this.loadPreview();
   }
 
@@ -105,6 +117,11 @@ export class AuditReportComponent {
 
   protected setDateBasis(value: AuditDateBasis): void {
     this.dateBasis.set(value);
+    this.loadPreview();
+  }
+
+  protected setUnit(value: string | null): void {
+    this.unit.set(value);
     this.loadPreview();
   }
 
@@ -129,7 +146,8 @@ export class AuditReportComponent {
     if (this.downloading() || !this.period()) return;
     this.downloading.set(true);
     this.error.set(null);
-    const label = this.preview()?.periodLabel ?? this.period();
+    const periodLabel = this.preview()?.periodLabel ?? this.period();
+    const label = this.unit() ? `${periodLabel} - ${this.unit()}` : periodLabel;
     this.matchedRules.downloadAuditReport({ ...this.query(), variant }, label).subscribe({
       next: () => this.downloading.set(false),
       error: (err) => {

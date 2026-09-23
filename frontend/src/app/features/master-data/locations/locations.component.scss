@@ -1,0 +1,118 @@
+@use 'styles/mixins';
+
+.locations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-xl);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--status-danger-border);
+}
+
+.filter-search {
+  max-width: 420px;
+}
+
+// The glass card owns the frame; table chrome comes from the PrimeNG bridge.
+.locations__table-wrap {
+  @include mixins.scrollbar-thin;
+  overflow: auto;
+}
+
+:host ::ng-deep .locations-table {
+  .p-datatable-thead > tr > th,
+  .p-datatable-tbody > tr > td {
+    white-space: nowrap;
+  }
+}
+
+// A plain status label — the trash/restore icons in Actions are what change it now.
+.status-pill {
+  @include mixins.status-chip(var(--text-muted), var(--surface-soft), var(--border));
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.status-pill--active {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: transparent;
+}
+
+.actions-col {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.action-icon {
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--brand);
+  }
+}
+
+.action-icon--danger:hover {
+  color: var(--danger);
+}
+
+// ---------------------------------------------------------------------
+// Create / edit form
+// ---------------------------------------------------------------------
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  input {
+    width: 100%;
+  }
+}
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+}
+
+// ---------------------------------------------------------------------
+// Delete confirmation — deliberately NOT the danger-red button the bank
+// account screen's own confirm-delete uses: that one is a real, unrecoverable
+// DELETE FROM; this stays the reversible deactivate, so it keeps the plain
+// brand-primary button rather than visually overstating the risk.
+// ---------------------------------------------------------------------
+.confirm-copy {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-muted);
+
+  strong {
+    color: var(--text);
+  }
+}

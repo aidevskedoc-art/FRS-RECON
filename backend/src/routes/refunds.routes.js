@@ -8,9 +8,14 @@
 const express = require('express');
 const multer = require('multer');
 const db = require('../db');
+const { uploaderOf } = require('../uploader');
 const { parseRefundWorkbook } = require('../online-upload/refund-parser');
-const { assertNewFile } = require('../online-upload/dedupe');
+const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
+const { isHisWorkbook, hisRefundUpload } = require('../online-upload/his-mis-rows');
+
+const { REFUND } = require('../online-upload/mis-identities');
 const { refundBatchRowToApi, refundRecordRowToApi } = require('../mappers');
+const { assertNotPastGoLive } = require('../go-live');
 
 const router = express.Router();
 
@@ -60,9 +65,30 @@ router.post('/', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
 
     const fileHash = await assertNewFile('refund_upload_batches', req.file.buffer);
-    const { rows, sheets } = parseRefundWorkbook(req.file.buffer);
+    const his = isHisWorkbook(req.file.buffer) ? hisRefundUpload(req.file.buffer) : null;
+    const parsed = his || parseRefundWorkbook(req.file.buffer);
+    const { sheets } = parsed;
+    let { rows } = parsed;
+
+    let rowsSkipped = 0;
+    if (his) {
+      if (rows.length === 0) return res.status(400).json({ error: 'No cheque refunds found in this workbook.' });
+      const { newRows, skipped } = await filterNewRows({
+        table: 'refund_records',
+        identitySql: REFUND.identitySql,
+        identityOf: REFUND.identityOf,
+        rows,
+      });
+      if (newRows.length === 0) {
+        const err = new Error(`All ${rows.length} refunds in this file are already present from an earlier upload.`);
+        err.status = 409;
+        throw err;
+      }
+      rowsSkipped = skipped;
+      rows = newRows;
+    }
     const dates = rows.map((r) => r.chequeDate).filter(Boolean).sort();
-    const uploadedBy = req.body.uploadedBy || null;
+    const uploadedBy = uploaderOf(req);
 
     const batch = await db.withTransaction(async (client) => {
       const { rows: batchRows } = await client.query(
@@ -86,7 +112,7 @@ router.post('/', upload.single('file'), async (req, res, next) => {
 
     // `sheets` goes back with the response so an unrecognised sheet is visible
     // at upload time rather than silently contributing nothing.
-    res.status(201).json({ ...refundBatchRowToApi(batch), sheets });
+    res.status(201).json({ ...refundBatchRowToApi(batch), sheets, ...(his ? { rowsSkipped, verification: his.verification } : {}) });
   } catch (err) {
     next(err);
   }
@@ -134,6 +160,7 @@ router.get('/batches/:id', async (req, res, next) => {
 // DELETE /api/refunds/batches/:id
 router.delete('/batches/:id', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     const { rowCount } = await db.query('DELETE FROM refund_upload_batches WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
     res.status(204).send();

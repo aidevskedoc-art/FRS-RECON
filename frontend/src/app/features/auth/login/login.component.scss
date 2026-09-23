@@ -183,12 +183,24 @@
   object-fit: contain;
 }
 
+// The short mark (CBDR) over the full application name in small type.
 .login__brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.login__brand-name {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: var(--text-md);
   letter-spacing: -0.01em;
   color: var(--text);
+}
+
+.login__brand-full {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
 .login__intro {

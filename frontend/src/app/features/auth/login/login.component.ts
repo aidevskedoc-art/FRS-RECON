@@ -5,6 +5,8 @@ import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
 import { AiStatusComponent } from '../../insurance-policy/shared/ai-status/ai-status.component';
 import { AuthService } from '../../../core/services/auth.service';
+import { LANDING_PATH } from '../../../core/guards/auth.guard';
+import { APP_NAME, APP_SHORT_NAME } from '../../../core/config/app-name';
 import { AuroraBackgroundComponent } from '../../../shared/ambient/aurora-background.component';
 import { CursorGlowComponent } from '../../../shared/ambient/cursor-glow.component';
 import { MagneticDirective } from '../../../shared/motion/magnetic.directive';
@@ -56,6 +58,8 @@ const MODULES = [
   host: { class: 'app-login-host' },
 })
 export class LoginComponent {
+  protected readonly appShortName = APP_SHORT_NAME;
+  protected readonly appName = APP_NAME;
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
   private readonly authService = inject(AuthService);
@@ -93,20 +97,26 @@ export class LoginComponent {
     this.loginError.set(null);
     const { userId, password } = this.form.getRawValue();
 
-    setTimeout(() => {
-      const success = this.authService.login(userId.trim(), password);
+    this.authService.login(userId.trim(), password).subscribe((result) => {
       this.submitting.set(false);
 
-      if (!success) {
-        this.loginError.set('Invalid User ID or Password.');
+      if (!result.ok) {
+        this.loginError.set(result.error ?? 'Invalid User ID or Password.');
         this.triggerShake();
         return;
       }
 
-      // Lands on the consolidated Reconciliation screen. A non-Super-Admin is
-      // moved on to the insurance dashboard by superAdminGuard.
-      this.router.navigateByUrl('/reconciliation');
-    }, 450);
+      // A fresh account (or one an Admin just reset) goes to /change-password
+      // first — mustChangePasswordGuard would bounce it there anyway, but
+      // routing directly skips a pointless extra redirect.
+      if (result.mustChangePassword) {
+        this.router.navigateByUrl('/change-password');
+        return;
+      }
+
+      // Every signed-in user lands on the overview dashboard first.
+      this.router.navigateByUrl(LANDING_PATH);
+    });
   }
 
   private triggerShake(): void {

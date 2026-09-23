@@ -3,9 +3,17 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const { exportColumnsFor, resolveColumns } = require('../excel/payment-export-columns');
 const db = require('../db');
+const { uploaderOf } = require('../uploader');
 const { parseChequeCollectionWorkbook } = require('../online-upload/cheque-collection-parser');
-const { assertNewFile } = require('../online-upload/dedupe');
+const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
+const { isHisWorkbook, hisChequeUpload } = require('../online-upload/his-mis-rows');
+
+const { CHEQUE_COLLECTION } = require('../online-upload/mis-identities');
 const { chequeCollectionBatchRowToApi, chequeCollectionRecordRowToApi } = require('../mappers');
+const { columnSheet, writeXlsx } = require('../excel/write-xlsx');
+const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, settlementCutoffs, cutoffClause } = require('../scope-filters');
+const { assertNotPastGoLive } = require('../go-live');
+const { pendingChangeColumn, auditDetailColumn } = require('../pending-change');
 
 const router = express.Router();
 
@@ -57,11 +65,32 @@ router.post('/', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
 
     const fileHash = await assertNewFile('cheque_collection_upload_batches', req.file.buffer);
-    const { sheets, skippedSheets } = parseChequeCollectionWorkbook(req.file.buffer);
+    const his = isHisWorkbook(req.file.buffer) ? hisChequeUpload(req.file.buffer) : null;
+    const parsed = his || parseChequeCollectionWorkbook(req.file.buffer);
+    const { skippedSheets } = parsed;
+    let { sheets } = parsed;
     const totalRows = sheets.reduce((n, s) => n + s.rows.length, 0);
     if (totalRows === 0) return res.status(400).json({ error: 'No data rows found in the uploaded file' });
 
-    const uploadedBy = req.body.uploadedBy || null;
+    let rowsSkipped = 0;
+    if (his) {
+      const tagged = sheets.flatMap((s) => s.rows.map((r) => ({ ...r, __sheet: s.sheetName })));
+      const { newRows, skipped } = await filterNewRows({
+        table: 'cheque_collection_records',
+        identitySql: CHEQUE_COLLECTION.identitySql,
+        identityOf: CHEQUE_COLLECTION.identityOf,
+        rows: tagged,
+      });
+      if (newRows.length === 0) {
+        const err = new Error(`All ${tagged.length} cheque collections in this file are already present from an earlier upload.`);
+        err.status = 409;
+        throw err;
+      }
+      rowsSkipped = skipped;
+      sheets = sheets.map((s) => ({ ...s, rows: newRows.filter((r) => r.__sheet === s.sheetName) })).filter((s) => s.rows.length);
+    }
+
+    const uploadedBy = uploaderOf(req);
     // One combined workbook -> one batch per unit tab; a single-unit export -> one batch.
     const multi = sheets.length > 1;
 
@@ -81,7 +110,7 @@ router.post('/', upload.single('file'), async (req, res, next) => {
       return out;
     });
 
-    const meta = { rowsInFile: totalRows, skippedSheets };
+    const meta = { rowsInFile: totalRows, skippedSheets, ...(his ? { rowsSkipped, verification: his.verification } : {}) };
     if (batches.length === 1) return res.status(201).json({ ...chequeCollectionBatchRowToApi(batches[0]), ...meta });
     res.status(201).json({ batches: batches.map(chequeCollectionBatchRowToApi), ...meta });
   } catch (err) {
@@ -130,6 +159,7 @@ router.get('/batches/:id', async (req, res, next) => {
 // DELETE /api/cheque-collections/batches/:id
 router.delete('/batches/:id', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     const { rowCount } = await db.query('DELETE FROM cheque_collection_upload_batches WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
     res.status(204).send();
@@ -142,8 +172,11 @@ router.delete('/batches/:id', async (req, res, next) => {
  * WHERE clause + params shared by the records list, counts and export.
  * Clauses are prefixed `r.` because the records query joins three other tables
  * that also have `batch_id` and `id` columns.
+ *
+ * `bankCutoffs` (AC-12 "till bank upload") is resolved by the caller — it needs
+ * a query of its own — and applied here, each row at its branch's bank date.
  */
-function buildRecordsFilter(query) {
+function buildRecordsFilter(query, { bankCutoffs = null } = {}) {
   const clauses = [];
   const params = [];
 
@@ -183,8 +216,24 @@ function buildRecordsFilter(query) {
     clauses.push(`r.collection_kind = $${params.length}`);
   }
   if (query.matchStatus) {
-    params.push(query.matchStatus);
-    clauses.push(`r.match_status = $${params.length}`);
+    // Comma-separated = "any of these" — the Mismatch Review screen passes
+    // every non-clean-match status at once rather than one call per status.
+    const statuses = String(query.matchStatus).split(',').map((s) => s.trim()).filter(Boolean);
+    if (statuses.length > 1) {
+      params.push(statuses);
+      clauses.push(`r.match_status = ANY($${params.length}::text[])`);
+    } else {
+      params.push(statuses[0]);
+      clauses.push(`r.match_status = $${params.length}`);
+    }
+  }
+  // 'Matched' vs 'Matched by Auditor' split the same clean-match set by who
+  // locked it — see status-tone.js's isMatchedByAuditor (both columns, not
+  // locked_at alone).
+  if (query.matchedByAuditor === 'true') {
+    clauses.push(`(r.locked_at IS NOT NULL AND r.locked_by IS NOT NULL)`);
+  } else if (query.matchedByAuditor === 'false') {
+    clauses.push(`(r.locked_at IS NULL OR r.locked_by IS NULL)`);
   }
   // '__NONE__' = rows no rule caught; any other value is an exact rule name.
   if (query.matchAppliedRule === '__NONE__') {
@@ -193,6 +242,20 @@ function buildRecordsFilter(query) {
     params.push(query.matchAppliedRule);
     clauses.push(`r.match_applied_rule = $${params.length}`);
   }
+  // AC-10 location + department (src/scope-filters.js). A cheque's
+  // collection_kind 'OP' is the diagnostics ledger (see schema.sql), and no
+  // doctor-fee (OPD) cheque ledger is ingested, so OPD matches nothing.
+  const locations = locationPatterns(query.location);
+  if (locations) {
+    params.push(locations);
+    clauses.push(batchLocationClause('cheque_collection_upload_batches', params.length));
+  }
+  const department = parseDepartment(query.department);
+  if (department === 'IP') clauses.push(`r.collection_kind = 'IP'`);
+  if (department === 'DIAG') clauses.push(`r.collection_kind = 'OP'`);
+  if (department === 'OPD') clauses.push('FALSE');
+  const cutoff = cutoffClause('cheque_collection_upload_batches', bankCutoffs, params);
+  if (cutoff) clauses.push(cutoff);
 
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
@@ -224,7 +287,8 @@ const RECORDS_WITH_MATCH_SQL = `
          rf.amount          AS match_refund_amount,
          rf.division        AS match_refund_division,
          rf.sheet_name      AS match_refund_sheet_name,
-         pb.unit_name       AS batch_unit_name
+         pb.unit_name       AS batch_unit_name,
+         ${pendingChangeColumn("'CHEQUE'")}, ${auditDetailColumn("'CHEQUE'")}
   FROM cheque_collection_records r
   LEFT JOIN cheque_collection_upload_batches pb ON pb.id = r.batch_id
   LEFT JOIN bank_statement_records mb ON mb.id = r.match_bank_record_id
@@ -289,10 +353,11 @@ router.get('/records/filter-options', async (req, res, next) => {
   }
 });
 
-// GET /api/cheque-collections/records?batchId=&search=&matchStatus=&page=&pageSize=
+// GET /api/cheque-collections/records?batchId=&search=&matchStatus=&location=&department=&upTo=BANK&page=&pageSize=
 router.get('/records', async (req, res, next) => {
   try {
-    const { where, params } = buildRecordsFilter(req.query);
+    const bankCutoffs = parseUpTo(req.query.upTo) === 'BANK' ? await settlementCutoffs('BANK') : null;
+    const { where, params } = buildRecordsFilter(req.query, { bankCutoffs });
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
 
@@ -311,6 +376,7 @@ router.get('/records', async (req, res, next) => {
 // DELETE /api/cheque-collections/records?batchId=  (clears rows, keeps the batch)
 router.delete('/records', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     if (!req.query.batchId) return res.status(400).json({ error: 'batchId is required' });
     await db.withTransaction(async (client) => {
       await client.query('DELETE FROM cheque_collection_records WHERE batch_id = $1', [req.query.batchId]);
@@ -334,13 +400,10 @@ router.get('/records/export.xlsx', async (req, res, next) => {
 
     const records = rows.map(chequeCollectionRecordRowToApi);
     const cols = resolveColumns('cheque', req.query.columns);
-    const sheet = XLSX.utils.json_to_sheet(
-      records.map((r) => Object.fromEntries(cols.map((c) => [c.label, c.get(r)]))),
-      { header: cols.map((c) => c.label) },
-    );
+    const sheet = columnSheet(records, cols);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, 'Cheque Collections');
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeXlsx(workbook);
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="cheque-collections-${new Date().toISOString().slice(0, 10)}.xlsx"`);

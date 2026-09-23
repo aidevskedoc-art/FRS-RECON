@@ -4,15 +4,18 @@ const XLSX = require('xlsx');
 const { buildReconciliationWorkbook } = require('../excel/reconciliation-export');
 const { exportColumnsFor, resolveColumns } = require('../excel/payment-export-columns');
 const db = require('../db');
+const { uploaderOf } = require('../uploader');
 const { parseMisWorkbook } = require('../online-upload/mis-parser');
+const { isHisWorkbook, hisIpMisUpload } = require('../online-upload/his-mis-rows');
 const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
 const { ipPaymentBatchRowToApi, ipPaymentRecordRowToApi } = require('../mappers');
+const { columnSheet, writeXlsx } = require('../excel/write-xlsx');
+const { assertNotPastGoLive } = require('../go-live');
 
-// A transaction's identity across uploads: receipt number + its transaction id.
-// The pair is unique in real data (a split-payment receipt has two rows but two
-// distinct ids). NULLIF folds a blank string into NULL so '' and NULL match.
-const IP_IDENTITY_SQL = `trim(COALESCE(receipt_number,'')) || '§' || trim(COALESCE(NULLIF(transaction_id_1,''), NULLIF(transaction_id_2,''), ''))`;
-const ipIdentityOf = (r) => `${String(r.receiptNumber ?? '').trim()}§${String(r.transactionRef1 || r.transactionRef2 || '').trim()}`;
+// A transaction's identity across uploads — shared with the upload preview.
+const { IP_PAYMENT } = require('../online-upload/mis-identities');
+const IP_IDENTITY_SQL = IP_PAYMENT.identitySql;
+const ipIdentityOf = IP_PAYMENT.identityOf;
 
 const router = express.Router();
 
@@ -75,7 +78,10 @@ router.post('/', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
 
     const fileHash = await assertNewFile('ip_payment_upload_batches', req.file.buffer);
-    const { sheets } = parseMisWorkbook(req.file.buffer, '1');
+    // The client's combined HIS workbook carries the same receipts as the
+    // Online Collection MIS export; his-mis-rows.js rebuilds them in its shape.
+    const his = isHisWorkbook(req.file.buffer) ? hisIpMisUpload(req.file.buffer) : null;
+    const { sheets } = his || parseMisWorkbook(req.file.buffer, '1');
     if (sheets.length === 0) return res.status(400).json({ error: 'No data rows found in the uploaded file' });
 
     // Every unit sheet is its own batch (division is resolved per batch), but
@@ -100,7 +106,7 @@ router.post('/', upload.single('file'), async (req, res, next) => {
       bySheet.get(r.__sheet).rows.push(r);
     }
 
-    const uploadedBy = req.body.uploadedBy || null;
+    const uploadedBy = uploaderOf(req);
     const multi = bySheet.size > 1;
 
     const batches = await db.withTransaction(async (client) => {
@@ -119,7 +125,12 @@ router.post('/', upload.single('file'), async (req, res, next) => {
       return out;
     });
 
-    const counts = { rowsInFile: tagged.length, rowsStored: newRows.length, rowsSkipped: skipped };
+    const counts = {
+      rowsInFile: tagged.length,
+      rowsStored: newRows.length,
+      rowsSkipped: skipped,
+      ...(his ? { heldBack: his.heldBack, verification: his.verification } : {}),
+    };
     if (batches.length === 1) return res.status(201).json({ ...ipPaymentBatchRowToApi(batches[0]), ...counts });
     res.status(201).json({ batches: batches.map(ipPaymentBatchRowToApi), ...counts });
   } catch (err) {
@@ -165,6 +176,7 @@ router.get('/batches/:id', async (req, res, next) => {
 // DELETE /api/ip-payments/batches/:id
 router.delete('/batches/:id', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     const { rowCount } = await db.query('DELETE FROM ip_payment_upload_batches WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
     res.status(204).send();
@@ -241,8 +253,16 @@ function buildRecordsFilter(query) {
     );
   }
   if (query.matchStatus) {
-    params.push(query.matchStatus);
-    clauses.push(`r.match_status = $${params.length}`);
+    // Comma-separated = "any of these" — the Mismatch Review screen passes
+    // every non-clean-match status at once rather than one call per status.
+    const statuses = String(query.matchStatus).split(',').map((s) => s.trim()).filter(Boolean);
+    if (statuses.length > 1) {
+      params.push(statuses);
+      clauses.push(`r.match_status = ANY($${params.length}::text[])`);
+    } else {
+      params.push(statuses[0]);
+      clauses.push(`r.match_status = $${params.length}`);
+    }
   }
   // '__NONE__' = rows no rule caught (every UNMATCHED row, plus excluded rows);
   // any other value is an exact winning-rule name from the filter-options list.
@@ -380,6 +400,7 @@ router.get('/records', async (req, res, next) => {
 // DELETE /api/ip-payments/records?batchId=  (clears all rows in a batch, keeps the batch itself)
 router.delete('/records', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     if (!req.query.batchId) return res.status(400).json({ error: 'batchId is required' });
     await db.withTransaction(async (client) => {
       await client.query('DELETE FROM ip_payment_records WHERE batch_id = $1', [req.query.batchId]);
@@ -405,10 +426,7 @@ router.get('/records/export.xlsx', async (req, res, next) => {
     let workbook;
     if (req.query.columns) {
       const cols = resolveColumns('ip', req.query.columns);
-      const sheet = XLSX.utils.json_to_sheet(
-        records.map((r) => Object.fromEntries(cols.map((c) => [c.label, c.get(r)]))),
-        { header: cols.map((c) => c.label) },
-      );
+      const sheet = columnSheet(records, cols);
       workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, sheet, 'IP Payments');
     } else {
@@ -416,7 +434,7 @@ router.get('/records/export.xlsx', async (req, res, next) => {
       // to scalars) plus the aggregated "Unit Matches" sheet.
       ({ workbook } = buildReconciliationWorkbook(records, 'IP Payments'));
     }
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeXlsx(workbook);
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="ip-payments-${new Date().toISOString().slice(0, 10)}.xlsx"`);

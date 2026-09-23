@@ -1,23 +1,24 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, concatMap, from, map, of, switchMap, tap, toArray } from 'rxjs';
-import { ReconciliationRunService } from '../../core/services/reconciliation-run.service';
+import { ReconciliationRunService, UploadedBatch } from '../../core/services/reconciliation-run.service';
 import { MatchedRulesService } from '../../core/services/matched-rules.service';
 import { AuthService } from '../../core/services/auth.service';
 import { errorMessage } from '../../core/services/policy-document.service';
-import { ReconciliationSummary, StagedFile, UploadTypeOption, UploadZone } from '../../core/models';
+import {
+  DetectedType,
+  ReconciliationSummary,
+  StagedFile,
+  UploadPreview,
+  UploadTypeOption,
+  UploadZone,
+} from '../../core/models';
 import { SummaryPanelComponent } from './summary-panel/summary-panel.component';
-
-interface ZoneDef {
-  readonly id: UploadZone;
-  readonly title: string;
-  readonly qualifier: string;
-  readonly hint: string;
-}
 
 /** One line in the live progress list shown while a Run is in flight. */
 interface RunStep {
@@ -28,52 +29,107 @@ interface RunStep {
   detail: string | null;
 }
 
+/** A reconciliation and the inputs it needs, for the "what this run covers" panel. */
+interface Pipeline {
+  name: string;
+  needs: { label: string; anyOf: string[] }[];
+}
+
 /**
- * The three zones, worded as the client's reference screen words them. They are
- * a hint rather than a constraint: a file dropped in the wrong zone is still
- * identified correctly and simply flagged, because the zone the user picked is
- * not what decides where the data goes — detection is.
+ * Every reconciliation has two sides; a file on one side is only useful with
+ * the other. Stated here so the screen can say what is missing before Run,
+ * rather than the run quietly reconciling against nothing.
  */
-const ZONES: readonly ZoneDef[] = [
+const PIPELINES: readonly Pipeline[] = [
   {
-    id: 'MIS',
-    title: 'MIS Reports',
-    qualifier: '',
-    hint: 'IP, OP and Diagnostics collection reports. Both the online/UPI collection format and the newer instrument-level exports are recognised.',
+    name: 'UPI & Card',
+    needs: [
+      { label: 'HIS collection reports — IP / OP / Diagnostics (the "All Collections" workbook)', anyOf: ['UCR_IP', 'UCR_OP', 'UCR_DIAG'] },
+      { label: 'Card settlements — CARD MPR or Pine Labs', anyOf: ['CARD_MPR', 'CARD_PINELABS'] },
+      { label: 'UPI MPR', anyOf: ['UPI_MPR'] },
+    ],
   },
   {
-    id: 'BANK',
-    title: 'Bank Reports',
-    qualifier: '(MPR + Pinelabs + Online)',
-    hint: 'Bank statements, CARD/UPI MPR, Pine Labs and the online provider files (EaseBuzz / PayU) are auto-detected.',
+    name: 'Online & UPI receipts against the bank',
+    needs: [
+      { label: 'Online Collection MIS — IP or Diagnostics (or the "All Collections" workbook)', anyOf: ['MIS_IP', 'MIS_DIAG'] },
+      { label: 'Bank statement', anyOf: ['BANK_STATEMENT'] },
+    ],
   },
   {
-    id: 'CHEQUE',
-    title: 'Cheque Files',
-    qualifier: '(Collection Ledger)',
-    hint: 'Cheque collection ledger, one file per unit — plus the refund document its contra entries are matched against.',
+    name: 'Cheques',
+    needs: [
+      { label: 'Cheque collection ledger (or the "All Collections" workbook)', anyOf: ['CHEQUE_COLLECTION'] },
+      { label: 'Bank statement', anyOf: ['BANK_STATEMENT'] },
+      { label: 'Refund document, for contra entries (or the "All Collections" workbook)', anyOf: ['REFUND'] },
+    ],
+  },
+  {
+    name: 'Gateway settlements',
+    needs: [
+      { label: 'PayU MPR or EaseBuzz report', anyOf: ['PAYU_MPR', 'EASEBUZZ', 'EASEBUZZ_SETTLEMENT'] },
+      { label: 'Bank statement', anyOf: ['BANK_STATEMENT'] },
+    ],
   },
 ];
 
+const GROUPS: readonly { id: UploadZone | 'UNKNOWN'; title: string }[] = [
+  { id: 'MIS', title: 'MIS & HIS collection reports' },
+  { id: 'BANK', title: 'Bank & gateway reports' },
+  { id: 'CHEQUE', title: 'Cheque ledgers & refunds' },
+  { id: 'UNKNOWN', title: 'Not recognised' },
+];
+
+const PREVIEW_STATUS_LABEL: Record<string, string> = {
+  VERIFIED: 'Verified against the report’s own totals',
+  UNVERIFIED: 'Could not be checked — review before running',
+  FAILED: 'Failed its check — will not be uploaded',
+};
+
 let nextId = 1;
+
+/** "2,242 rows saved · 12 already stored, skipped · 3 held back for review · verified against report totals" */
+function uploadSummary(batch: UploadedBatch | null): string {
+  if (!batch) return 'done';
+  const parts = [`${batch.rowCount.toLocaleString('en-IN')} rows saved`];
+  if (batch.rowsSkipped) parts.push(`${batch.rowsSkipped.toLocaleString('en-IN')} already stored, skipped`);
+  if (batch.heldBack) parts.push(`${batch.heldBack} held back for review`);
+  if (batch.verification === 'VERIFIED') parts.push('verified against report totals');
+  if (batch.verification === 'UNVERIFIED') parts.push('not checkable against report totals');
+  return parts.join(' · ');
+}
+
+/**
+ * SHA-256 of a file's bytes. `crypto.subtle` exists only in secure contexts
+ * (https, localhost); served over plain http on a LAN address it is missing,
+ * and name + size + modified time is the best identity left.
+ */
+async function fileHash(file: File): Promise<string> {
+  if (globalThis.crypto?.subtle) {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return `${file.name}|${file.size}|${file.lastModified}`;
+}
 
 /**
  * The consolidated upload + reconciliation screen.
  *
- * Replaces a journey that currently spans three upload hubs and seven separate
- * screens carrying Generate buttons. Everything underneath is unchanged: files
- * are saved through the same fourteen upload endpoints that exist today, chosen
- * by detection instead of by which tab the user clicked.
+ * ONE upload area: every file — MIS, the combined HIS "All Collections"
+ * workbook, bank statements, MPRs, cheque ledgers — is dropped in the same
+ * place and identified from its content. Everything underneath is unchanged:
+ * files are saved through the same upload endpoints that exist today, chosen by
+ * detection, and the same reconciliation passes run afterwards.
  *
- * Nothing is written until the user presses Run. Detection happens as soon as
- * files are chosen so the screen can show what it found, and Run stays disabled
- * while any file's type is still unresolved — that button state is what
- * replaces the safety the old per-screen navigation used to provide.
+ * Nothing is written until the user presses Run, and Run stays disabled while
+ * anything is unresolved: a file with no type, a report that failed its check
+ * against its own printed totals, transactions already stored from an earlier
+ * file, or warnings nobody has looked at yet.
  */
 @Component({
   selector: 'app-reconciliation',
   standalone: true,
-  imports: [RouterLink, FormsModule, ButtonModule, MultiSelectModule, TooltipModule, SummaryPanelComponent],
+  imports: [RouterLink, FormsModule, DecimalPipe, ButtonModule, MultiSelectModule, TooltipModule, SummaryPanelComponent],
   templateUrl: './reconciliation.component.html',
   styleUrl: './reconciliation.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -83,11 +139,14 @@ export class ReconciliationComponent {
   private readonly matchedRules = inject(MatchedRulesService);
   private readonly auth = inject(AuthService);
 
-  protected readonly zones = ZONES;
+  protected readonly groups = GROUPS;
+  protected readonly statusLabel = PREVIEW_STATUS_LABEL;
 
   protected readonly staged = signal<StagedFile[]>([]);
-  protected readonly draggingZone = signal<UploadZone | null>(null);
+  protected readonly dragging = signal(false);
   protected readonly rejected = signal(false);
+  /** Files not added because the same bytes are already in the list. */
+  protected readonly duplicates = signal<string[]>([]);
   protected readonly error = signal<string | null>(null);
   protected readonly running = signal(false);
 
@@ -113,17 +172,27 @@ export class ReconciliationComponent {
   protected readonly stepsDone = computed(() => this.steps().filter((s) => s.status === 'done' || s.status === 'failed').length);
   protected readonly stepsFailed = computed(() => this.steps().filter((s) => s.status === 'failed').length);
 
-  /** Every ingestible type, for the "change type" dropdown on unresolved rows. */
+  /** Every ingestible type, for the "change type" dropdown. */
   protected readonly typeOptions = signal<UploadTypeOption[]>([]);
 
   protected readonly hasFiles = computed(() => this.staged().length > 0);
-  protected readonly unresolved = computed(() => this.staged().filter((f) => f.chosenTypes.length === 0).length);
   protected readonly detecting = computed(() => this.staged().some((f) => f.status === 'detecting'));
 
-  /** Run is available only once every dropped file has a type the user has accepted. */
-  protected readonly canRun = computed(
-    () => this.hasFiles() && this.unresolved() === 0 && !this.detecting() && !this.running(),
-  );
+  /** Every reason Run cannot start yet, in words — shown beside the button. */
+  protected readonly blockers = computed(() => {
+    const pending = this.staged().filter((f) => f.status !== 'uploaded');
+    const noType = pending.filter((f) => f.status !== 'detecting' && f.chosenTypes.length === 0).length;
+    const blocked = pending.filter((f) => f.chosenTypes.some((t) => this.blockReason(f, t))).length;
+    const review = pending.filter((f) => this.needsReview(f) && !f.acknowledged).length;
+    const out: string[] = [];
+    if (noType) out.push(`${noType} file(s) have nothing selected to upload — pick a type or remove the file`);
+    if (blocked) out.push(`${blocked} file(s) include a report that cannot be uploaded — untick it or remove the file`);
+    if (review) out.push(`${review} file(s) have warnings to review`);
+    return out;
+  });
+
+  /** Run is available only once every dropped file is settled and nothing unsafe is selected. */
+  protected readonly canRun = computed(() => this.hasFiles() && !this.detecting() && !this.running() && this.blockers().length === 0);
 
   constructor() {
     this.runner.fetchTypes().subscribe({
@@ -132,86 +201,129 @@ export class ReconciliationComponent {
     });
   }
 
-  /** Staged files bucketed by zone, recomputed only when the staged list changes. */
-  private readonly filesByZone = computed(() => {
-    const buckets: Record<UploadZone, StagedFile[]> = { MIS: [], BANK: [], CHEQUE: [] };
-    for (const file of this.staged()) buckets[file.droppedZone].push(file);
-    return buckets;
+  /** Staged files grouped by what they are, not by where they were dropped. */
+  protected readonly filesByGroup = computed(() => {
+    const buckets = new Map<string, StagedFile[]>(GROUPS.map((g) => [g.id, []]));
+    for (const file of this.staged()) buckets.get(this.groupOf(file))!.push(file);
+    return GROUPS.map((g) => ({ ...g, files: buckets.get(g.id)! })).filter((g) => g.files.length);
   });
 
-  protected filesIn(zone: UploadZone): StagedFile[] {
-    return this.filesByZone()[zone];
-  }
-
   /**
-   * Dropdown options per zone, built ONCE per type-catalogue change.
+   * Dropdown options, built ONCE per type-catalogue change and ordered by group.
    *
    * This must be a computed, not a method called from the template: a method
    * returns a fresh array on every change-detection pass, and a PrimeNG select
    * whose `options` identity keeps changing loses the value the user just
    * picked. That is what made corrections refuse to stick.
    */
-  private readonly optionsByZone = computed(() => {
-    const all = this.typeOptions();
-    const build = (zone: UploadZone) => {
-      // The zone's own types first, then the rest — a file dropped in the wrong
-      // zone must still be correctable without starting over.
-      const here = all.filter((t) => t.zone === zone);
-      const rest = all.filter((t) => t.zone !== zone);
-      return [...here, ...rest].map((t) => ({ label: t.label, value: t.type }));
-    };
-    return { MIS: build('MIS'), BANK: build('BANK'), CHEQUE: build('CHEQUE') } as Record<
-      UploadZone,
-      { label: string; value: string }[]
-    >;
+  private readonly selectOptions = computed(() => {
+    const order: UploadZone[] = ['MIS', 'BANK', 'CHEQUE'];
+    return [...this.typeOptions()]
+      .sort((a, b) => order.indexOf(a.zone) - order.indexOf(b.zone))
+      .map((t) => ({ label: t.label, value: t.type }));
   });
 
-  protected typeOptionsFor(zone: UploadZone): { label: string; value: string }[] {
-    return this.optionsByZone()[zone];
+  private readonly optionsCache = new Map<string, { label: string; value: string; disabled: boolean }[]>();
+
+  /**
+   * Dropdown options for one file. Once detection has recognised a file, only
+   * the report types actually found in it can be ticked: sending a workbook to
+   * an endpoint for a report it does not contain can only fail — or, for the
+   * looser parsers, store rows that are not what they claim to be. An
+   * unrecognised file keeps every type available for a manual choice.
+   *
+   * Cached by what was found, so the array identity is stable across change
+   * detection (a PrimeNG select whose options keep changing drops the pick).
+   */
+  protected optionsFor(entry: StagedFile): { label: string; value: string; disabled: boolean }[] {
+    const found = new Set(this.matchesOf(entry).map((m) => m.type));
+    const all = this.selectOptions();
+    const cacheKey = `${all.length}|${[...found].sort().join(',')}`;
+    let options = this.optionsCache.get(cacheKey);
+    if (!options) {
+      options = all.map((o) => {
+        const notHere = found.size > 0 && !found.has(o.value);
+        return { value: o.value, label: notHere ? `${o.label} — not in this file` : o.label, disabled: notHere };
+      });
+      this.optionsCache.set(cacheKey, options);
+    }
+    return options;
   }
+
+  /**
+   * What this run can reconcile, from the types chosen across every file in
+   * the list: a reconciliation with at least one input present, and which of
+   * its other inputs are not in this upload.
+   */
+  protected readonly coverage = computed(() => {
+    const chosen = new Set(this.staged().flatMap((f) => f.chosenTypes));
+    return PIPELINES.filter((p) => p.needs.some((n) => n.anyOf.some((t) => chosen.has(t)))).map((p) => ({
+      name: p.name,
+      needs: p.needs.map((n) => ({ label: n.label, present: n.anyOf.some((t) => chosen.has(t)) })),
+    }));
+  });
 
   // ---- drag & drop ------------------------------------------------------
 
-  protected onDragOver(event: DragEvent, zone: UploadZone): void {
+  protected onDragOver(event: DragEvent): void {
     event.preventDefault();
-    this.draggingZone.set(zone);
+    this.dragging.set(true);
   }
 
   protected onDragLeave(): void {
-    this.draggingZone.set(null);
+    this.dragging.set(false);
   }
 
-  protected onDrop(event: DragEvent, zone: UploadZone): void {
+  protected onDrop(event: DragEvent): void {
     event.preventDefault();
-    this.draggingZone.set(null);
-    this.addFiles(event.dataTransfer?.files ?? null, zone);
+    this.dragging.set(false);
+    void this.addFiles(event.dataTransfer?.files ?? null);
   }
 
-  protected onFileInput(event: Event, zone: UploadZone): void {
+  protected onFileInput(event: Event): void {
     const input = event.target as HTMLInputElement;
-    this.addFiles(input.files, zone);
+    void this.addFiles(input.files);
     input.value = '';
   }
 
-  private addFiles(fileList: FileList | null, zone: UploadZone): void {
+  private async addFiles(fileList: FileList | null): Promise<void> {
     if (!fileList || fileList.length === 0) return;
     const incoming = Array.from(fileList);
     const valid = incoming.filter((f) => /\.(xlsx|xls)$/i.test(f.name));
     this.rejected.set(valid.length < incoming.length);
     if (!valid.length) return;
 
-    const added: StagedFile[] = valid.map((file) => ({
-      id: `f${nextId++}`,
-      file,
-      droppedZone: zone,
-      status: 'detecting',
-      detected: null,
-      alternatives: [],
-      certain: false,
-      chosenTypes: [],
-      rowCount: null,
-      error: null,
-    }));
+    // The same bytes twice would be refused by the server anyway (content-hash
+    // guard) — but only after Run, as a failed step. Caught here instead.
+    const hashes = await Promise.all(valid.map(fileHash));
+    const known = new Map(this.staged().map((s) => [s.hash, s.file.name]));
+    const dupes: string[] = [];
+    const added: StagedFile[] = [];
+    valid.forEach((file, i) => {
+      const hash = hashes[i];
+      const already = known.get(hash);
+      if (already) {
+        dupes.push(already === file.name ? `${file.name} (added twice)` : `${file.name} (same file as ${already})`);
+        return;
+      }
+      known.set(hash, file.name);
+      added.push({
+        id: `f${nextId++}`,
+        file,
+        hash,
+        status: 'detecting',
+        detected: null,
+        alternatives: [],
+        certain: false,
+        chosenTypes: [],
+        acknowledged: false,
+        rowCount: null,
+        error: null,
+      });
+    });
+    this.duplicates.set(dupes);
+    if (!added.length) return;
+
     this.staged.update((list) => [...list, ...added]);
     this.error.set(null);
     this.detect(added);
@@ -227,23 +339,19 @@ export class ReconciliationComponent {
             if (index === -1) return entry;
             const result = response.results[index];
             if (!result) return { ...entry, status: 'needs-input' as const };
-            // Every type that matched is pre-ticked, not just the best one.
-            // The detector reads all sheets, so two matches means two different
-            // sheet families are present — the combined bank+EaseBuzz export
-            // really is both, and both halves need ingesting. The user can
-            // untick one if it ever guesses wrong.
             const matched = result.detected ? [result.detected, ...result.alternatives] : [];
-            return {
+            const next: StagedFile = {
               ...entry,
               detected: result.detected,
               alternatives: result.alternatives,
               certain: result.certain,
-              chosenTypes: matched.map((m) => m.type),
-              // Still flag a multi-match for confirmation rather than assuming:
-              // "ready" means the screen is sure, and with two answers it isn't.
-              status: result.certain ? ('ready' as const) : ('needs-input' as const),
+              // Every type that matched is pre-ticked — the detector reads all
+              // sheets, so several matches mean several reports are present —
+              // EXCEPT one whose dry run says it must not be stored.
+              chosenTypes: matched.filter((m) => !this.previewBlock(m.preview)).map((m) => m.type),
               error: result.error ?? null,
             };
+            return { ...next, status: this.settledStatus(next) };
           }),
         );
       },
@@ -261,12 +369,25 @@ export class ReconciliationComponent {
 
   // ---- row actions ------------------------------------------------------
 
-  /** Replaces a file's chosen type(s). Picking anything counts as the user having confirmed. */
+  /** Replaces a file's chosen type(s). Picking anything counts as the user having confirmed the type. */
   protected setTypes(id: string, types: string[]): void {
     this.staged.update((list) =>
-      list.map((f) =>
-        f.id === id ? { ...f, chosenTypes: types ?? [], status: (types?.length ? 'ready' : 'needs-input'), error: null } : f,
-      ),
+      list.map((f) => {
+        if (f.id !== id) return f;
+        const next = { ...f, chosenTypes: types ?? [], certain: true, error: null };
+        return { ...next, status: this.settledStatus(next) };
+      }),
+    );
+  }
+
+  /** The person has read this file's warnings and accepts them — which also confirms what it is. */
+  protected acknowledge(id: string): void {
+    this.staged.update((list) =>
+      list.map((f) => {
+        if (f.id !== id) return f;
+        const next = { ...f, acknowledged: true, certain: true };
+        return { ...next, status: this.settledStatus(next) };
+      }),
     );
   }
 
@@ -276,6 +397,7 @@ export class ReconciliationComponent {
 
   protected clearAll(): void {
     this.staged.set([]);
+    this.duplicates.set([]);
     this.error.set(null);
   }
 
@@ -283,13 +405,13 @@ export class ReconciliationComponent {
 
   /**
    * The whole job in one press: save every staged file through its existing
-   * upload endpoint, then run all eight reconciliation passes across every batch.
+   * upload endpoint, then run all reconciliation passes across every batch.
    *
    * Sequenced here in the browser rather than on the server. There is no job
    * queue or progress-streaming anywhere in this app, and doing it this way
    * gives honest per-step progress, keeps each call its own request so nothing
-   * can time out as one long one, and meant not a single line of the upload or
-   * generate endpoints had to change.
+   * can time out as one long one, and meant none of the generate endpoints had
+   * to change.
    */
   protected run(): void {
     if (!this.canRun()) return;
@@ -297,10 +419,10 @@ export class ReconciliationComponent {
     this.error.set(null);
     this.runFinishedAt.set(null);
 
-    // One job per (file × chosen type). A workbook that is genuinely two things
-    // — the combined bank + EaseBuzz export — is uploaded twice, once through
-    // each endpoint. The dedupe guard is scoped by source precisely so that the
-    // same bytes are allowed to land under both.
+    // One job per (file × chosen type). A workbook that is genuinely several
+    // reports is uploaded once per report; each endpoint reads only its own
+    // sheet, and the duplicate guards are scoped per report so the same bytes
+    // are allowed to land under each.
     const jobs = this.staged()
       .filter((f) => f.chosenTypes.length && f.status !== 'uploaded')
       .flatMap((entry) => entry.chosenTypes.map((type) => ({ entry, type })));
@@ -325,16 +447,16 @@ export class ReconciliationComponent {
           this.setStep(stepId, { status: 'running' });
           const endpoint = this.endpointFor(type);
           if (!endpoint) {
-            return of({ entryId: entry.id, stepId, rowCount: null, error: `No upload route known for ${type}` });
+            return of({ entryId: entry.id, stepId, batch: null as UploadedBatch | null, error: `No upload route known for ${type}` });
           }
           return this.runner.upload(endpoint, entry.file, this.auth.userId()).pipe(
-            map((batch) => ({ entryId: entry.id, stepId, rowCount: batch.rowCount, error: null as string | null })),
-            catchError((err) => of({ entryId: entry.id, stepId, rowCount: null, error: errorMessage(err) })),
+            map((batch) => ({ entryId: entry.id, stepId, batch: batch as UploadedBatch | null, error: null as string | null })),
+            catchError((err) => of({ entryId: entry.id, stepId, batch: null, error: errorMessage(err) })),
           );
         }),
         tap((result) => {
-          // A file saved as two types reports the sum, and stays "failed" if
-          // either half failed — a half-ingested workbook is not a success.
+          // A file saved as several types reports the sum, and stays "failed"
+          // if any part failed — a half-ingested workbook is not a success.
           this.staged.update((list) =>
             list.map((f) => {
               if (f.id !== result.entryId) return f;
@@ -342,14 +464,14 @@ export class ReconciliationComponent {
               return {
                 ...f,
                 status: failed ? 'failed' : 'uploaded',
-                rowCount: (f.rowCount ?? 0) + (result.rowCount ?? 0),
+                rowCount: (f.rowCount ?? 0) + (result.batch?.rowCount ?? 0),
                 error: result.error ?? f.error,
               };
             }),
           );
           this.setStep(result.stepId, {
             status: result.error ? 'failed' : 'done',
-            detail: result.error ?? `${result.rowCount ?? 0} rows saved`,
+            detail: result.error ?? uploadSummary(result.batch),
           });
         }),
         // Collect so the next stage fires exactly once, after every upload has
@@ -404,6 +526,57 @@ export class ReconciliationComponent {
     });
   }
 
+  // ---- decisions about a file ------------------------------------------
+
+  /** Every detection for a file, best first. */
+  protected matchesOf(entry: StagedFile): DetectedType[] {
+    return entry.detected ? [entry.detected, ...entry.alternatives] : [];
+  }
+
+  /** The reports in this file that have a dry-run preview (the HIS collection reports). */
+  protected previewsOf(entry: StagedFile): DetectedType[] {
+    return this.matchesOf(entry).filter((m) => !!m.preview);
+  }
+
+  /** Why a preview says this report must not be stored, or null. */
+  protected previewBlock(p: UploadPreview | undefined): string | null {
+    if (!p) return null;
+    if (p.status === 'FAILED') return 'it could not be read safely — see the reason below';
+    if (p.overlap?.rows) return `${p.overlap.rows.toLocaleString('en-IN')} of its rows are already stored from an earlier upload`;
+    if (p.ingest.rows === 0 && p.alreadyStored?.rows) return 'all of its rows are already stored from an earlier upload';
+    if (p.ingest.rows === 0) return 'it holds nothing for this upload';
+    return null;
+  }
+
+  /** Why a chosen type cannot be uploaded from this file, or null. */
+  protected blockReason(entry: StagedFile, type: string): string | null {
+    return this.previewBlock(this.matchesOf(entry).find((m) => m.type === type)?.preview);
+  }
+
+  /** True when a chosen report can be stored but has warnings or could not be checked. */
+  protected needsReview(entry: StagedFile): boolean {
+    return this.matchesOf(entry).some(
+      (m) =>
+        !!m.preview &&
+        entry.chosenTypes.includes(m.type) &&
+        (m.preview.status === 'UNVERIFIED' ||
+          (m.preview.heldBack?.length ?? 0) > 0 ||
+          m.preview.sheets.some((s) => s.problems.some((p) => p.severity === 'warning'))),
+    );
+  }
+
+  private settledStatus(entry: StagedFile): StagedFile['status'] {
+    if (!entry.chosenTypes.length) return 'needs-input';
+    if (entry.chosenTypes.some((t) => this.blockReason(entry, t))) return 'needs-input';
+    if (this.needsReview(entry) && !entry.acknowledged) return 'needs-input';
+    return entry.certain ? 'ready' : 'needs-input';
+  }
+
+  private groupOf(entry: StagedFile): UploadZone | 'UNKNOWN' {
+    const type = entry.chosenTypes[0] ?? entry.detected?.type;
+    return this.typeOptions().find((t) => t.type === type)?.zone ?? entry.detected?.zone ?? 'UNKNOWN';
+  }
+
   private setStep(id: string, patch: Partial<RunStep>): void {
     this.steps.update((list) => list.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
@@ -427,17 +600,39 @@ export class ReconciliationComponent {
     return entry.detected?.label ?? 'Not recognised';
   }
 
-  /** True when a file was dropped in one zone but belongs to another — worth saying, not worth blocking. */
-  protected misplaced(entry: StagedFile): boolean {
-    if (!entry.chosenTypes.length) return false;
-    const zones = entry.chosenTypes
-      .map((t) => this.typeOptions().find((o) => o.type === t)?.zone)
-      .filter((z): z is UploadZone => !!z);
-    return zones.length > 0 && zones.every((z) => z !== entry.droppedZone);
+  /** What still needs doing on a file, in words, or null when it is settled. */
+  protected askFor(entry: StagedFile): string | null {
+    if (entry.status !== 'needs-input') return null;
+    if (!this.matchesOf(entry).length) return 'Not recognised — pick a type';
+    if (entry.chosenTypes.some((t) => this.blockReason(entry, t))) return 'A selected report cannot be uploaded — untick it';
+    if (!entry.chosenTypes.length && this.matchesOf(entry).every((m) => this.previewBlock(m.preview))) {
+      return 'Nothing in this file can be uploaded (see below) — remove it';
+    }
+    if (!entry.chosenTypes.length) return 'Nothing selected to upload';
+    if (this.needsReview(entry) && !entry.acknowledged) return 'Review the warnings below';
+    if (this.matchesOf(entry).some((m) => !entry.chosenTypes.includes(m.type) && this.previewBlock(m.preview))) {
+      return 'Some reports in this file will not be uploaded — confirm the selection';
+    }
+    return `Contains ${this.matchesOf(entry).length} types — confirm`;
   }
 
-  protected zoneTitle(zone: UploadZone): string {
-    return ZONES.find((z) => z.id === zone)?.title ?? zone;
+  /** Notes across a file's reports, each said once. */
+  protected notesOf(entry: StagedFile): string[] {
+    return [...new Set(this.previewsOf(entry).flatMap((m) => m.preview!.notes))];
+  }
+
+  protected problemsOf(preview: UploadPreview): { sheet: string; severity: string; message: string }[] {
+    return preview.sheets.flatMap((s) => s.problems.map((p) => ({ sheet: s.sheetName, severity: p.severity, message: p.message })));
+  }
+
+  protected money(amount: number): string {
+    return '₹' + amount.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  }
+
+  protected formatDate(ymd: string): string {
+    const [y, m, d] = ymd.split('-');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${d}-${months[Number(m) - 1]}-${y}`;
   }
 
   protected fileSizeLabel(bytes: number): string {

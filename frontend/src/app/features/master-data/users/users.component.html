@@ -1,0 +1,446 @@
+<div class="users-page">
+  <app-page-header
+    icon="pi pi-users"
+    title="User Management"
+    [subtitle]="users.users().length + ' user' + (users.users().length === 1 ? '' : 's') + ' on file'"
+  >
+    <button actions type="button" class="ai-button-primary" (click)="openAdd()">
+      <i class="pi pi-plus"></i>
+      <span>Add User</span>
+    </button>
+  </app-page-header>
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (users.stats(); as s) {
+    <div class="stat-cards">
+      <div class="stat-card">
+        <span class="stat-card__label">Total Users</span>
+        <span class="stat-card__value">{{ s.totalUsers }}</span>
+      </div>
+      <div class="stat-card stat-card--success">
+        <span class="stat-card__label">Active Users</span>
+        <span class="stat-card__value">{{ s.activeUsers }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Inactive Users</span>
+        <span class="stat-card__value">{{ s.inactiveUsers }}</span>
+      </div>
+      <div class="stat-card" [class.stat-card--danger]="s.lockedUsers > 0">
+        <span class="stat-card__label">Locked Users</span>
+        <span class="stat-card__value">{{ s.lockedUsers }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">New Users (7d)</span>
+        <span class="stat-card__value">{{ s.newUsers7d }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Total Branches</span>
+        <span class="stat-card__value">{{ s.totalLocations }}</span>
+      </div>
+      <div class="stat-card stat-card--success">
+        <span class="stat-card__label">Assigned Branches</span>
+        <span class="stat-card__value">{{ s.assignedLocations }}</span>
+      </div>
+      <div class="stat-card" [class.stat-card--warn]="s.unassignedLocations > 0">
+        <span class="stat-card__label">Unassigned Branches</span>
+        <span class="stat-card__value">{{ s.unassignedLocations }}</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__label">Branch Access Changed (7d)</span>
+        <span class="stat-card__value">{{ s.branchAccessChanged7d }}</span>
+      </div>
+    </div>
+  }
+
+  <div class="hub-picker" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="hub-option"
+        [class.hub-option--active]="activeTab() === tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        (click)="selectTab(tab.id)"
+      >
+        <i [class]="tab.icon"></i>
+        <span class="hub-option__title">{{ tab.label }}</span>
+      </button>
+    }
+  </div>
+
+  @if (activeTab() === 'audit-log') {
+    <app-audit-log [embedded]="true" />
+  }
+
+  @if (activeTab() === 'users') {
+  <div class="filter-bar">
+    <span class="filter-search">
+      <i class="pi pi-search"></i>
+      <input type="text" placeholder="Search employee ID or name…" (input)="onSearchInput($event, dt)" />
+    </span>
+  </div>
+
+  <div class="users-page__table-wrap glass-card glass-card--static">
+    <p-table
+      #dt
+      [value]="users.users()"
+      dataKey="id"
+      [paginator]="users.users().length > 10"
+      [rows]="10"
+      [globalFilterFields]="['employeeId', 'fullName']"
+      styleClass="p-datatable-sm users-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th pSortableColumn="employeeId">Employee ID <p-sortIcon field="employeeId" /></th>
+          <th pSortableColumn="fullName">Name <p-sortIcon field="fullName" /></th>
+          <th pSortableColumn="role">Role <p-sortIcon field="role" /></th>
+          <th>Reporting Manager</th>
+          <th>Branches</th>
+          <th>Screen Access</th>
+          <th>Status</th>
+          <th pSortableColumn="createdAt">Created <p-sortIcon field="createdAt" /></th>
+          <th pSortableColumn="lastLoginAt">Last Login <p-sortIcon field="lastLoginAt" /></th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-user>
+        <tr>
+          <td class="ref">{{ user.employeeId }}</td>
+          <td>{{ user.fullName }}</td>
+          <td>
+            <span class="role-badge" [class.role-badge--admin]="user.role === 'Admin'">{{ user.role }}</span>
+          </td>
+          <td>{{ user.managerName || '—' }}</td>
+          <td>
+            @if (user.role === 'Admin') {
+              <span class="branches-all">All locations</span>
+            } @else if (user.locations?.length) {
+              <span class="branch-chips">
+                @for (loc of user.locations; track loc) {
+                  <span class="branch-chip">{{ loc }}</span>
+                }
+              </span>
+            } @else {
+              <button type="button" class="branches-none" (click)="openBranches(user)">Not assigned</button>
+            }
+          </td>
+          <td>
+            <!-- Per-user screen access, enforced at the URL level (route guards). -->
+            @if (user.role === 'Admin') {
+              <span class="branches-all">All screens</span>
+            } @else if (user.screenKeys?.length) {
+              <button type="button" class="screens-count" (click)="openScreens(user)" [pTooltip]="screenLabels(user).join(', ')">
+                {{ user.screenKeys.length }} screen{{ user.screenKeys.length === 1 ? '' : 's' }}
+              </button>
+            } @else {
+              <button type="button" class="branches-none" (click)="openScreens(user)">None granted</button>
+            }
+          </td>
+          <td>
+            <button
+              type="button"
+              class="status-pill"
+              [class.status-pill--active]="user.isActive"
+              (click)="toggleActive(user)"
+              [disabled]="isSelf(user) && user.isActive"
+              [pTooltip]="isSelf(user) && user.isActive ? 'You cannot deactivate your own account' : (user.isActive ? 'Click to deactivate' : 'Click to activate')"
+            >
+              {{ user.isActive ? 'Active' : 'Inactive' }}
+            </button>
+            @if (user.isLocked) {
+              <button type="button" class="locked-pill" (click)="unlock(user)" pTooltip="5 failed logins — click to unlock">
+                <i class="pi pi-lock"></i> Locked
+              </button>
+            }
+            @if (user.mustChangePassword) {
+              <span class="pending-pill" pTooltip="Still on a temporary password">Temp pwd</span>
+            }
+          </td>
+          <td class="nowrap">{{ user.createdAt | date: 'd MMM y' }}</td>
+          <td class="nowrap">{{ user.lastLoginAt ? (user.lastLoginAt | date: 'd MMM y, h:mm a') : 'Never' }}</td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="openEdit(user)" pTooltip="Edit" aria-label="Edit user">
+              <i class="pi pi-pencil"></i>
+            </button>
+            @if (user.role === 'Auditor') {
+              <button type="button" class="action-icon" (click)="openBranches(user)" pTooltip="Branches" aria-label="Manage branches">
+                <i class="pi pi-sitemap"></i>
+              </button>
+              <button type="button" class="action-icon" (click)="openScreens(user)" pTooltip="Screen access" aria-label="Manage screen access">
+                <i class="pi pi-desktop"></i>
+              </button>
+            }
+            <button type="button" class="action-icon" (click)="openReset(user)" pTooltip="Reset password" aria-label="Reset password">
+              <i class="pi pi-key"></i>
+            </button>
+            <button type="button" class="action-icon" (click)="openActivity(user)" pTooltip="Activity" aria-label="View activity">
+              <i class="pi pi-history"></i>
+            </button>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="10">
+            <div class="empty-state">
+              <i class="pi pi-users"></i>
+              <strong>No users yet</strong>
+              <p>Add a user to give them a login and, if they're an Auditor, branch access.</p>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+  }
+
+  <!-- Create / edit -->
+  <p-dialog
+    [header]="editingId() ? 'Edit User' : 'Add User'"
+    [visible]="dialogVisible()"
+    (visibleChange)="dialogVisible.set($event)"
+    [modal]="true"
+    [style]="{ width: '30rem' }"
+  >
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+
+      @if (!editingId()) {
+        <label class="field">
+          <span class="field-label">Employee ID</span>
+          <input pInputText type="text" [ngModel]="form().employeeId" (ngModelChange)="updateForm({ employeeId: $event })" placeholder="e.g. AD4015" />
+        </label>
+      }
+
+      <label class="field">
+        <span class="field-label">Full Name</span>
+        <input pInputText type="text" [ngModel]="form().fullName" (ngModelChange)="updateForm({ fullName: $event })" />
+      </label>
+
+      @if (!editingId()) {
+        <label class="field">
+          <span class="field-label">Temporary Password</span>
+          <p-password [ngModel]="form().password" (ngModelChange)="updateForm({ password: $event })" [feedback]="false" [toggleMask]="true" />
+          <span class="field-hint">The user must change this on first login.</span>
+        </label>
+      }
+
+      <label class="field">
+        <span class="field-label">Role</span>
+        <p-select [options]="roles" [ngModel]="form().role" (ngModelChange)="updateForm({ role: $event })" placeholder="Select role" appendTo="body" styleClass="full-width" />
+      </label>
+
+      <label class="field">
+        <span class="field-label">Reporting Manager</span>
+        <p-select
+          [options]="managerOptions()"
+          optionLabel="label"
+          optionValue="value"
+          [ngModel]="form().managerId"
+          (ngModelChange)="updateForm({ managerId: $event })"
+          placeholder="None"
+          [showClear]="true"
+          appendTo="body"
+          styleClass="full-width"
+        />
+      </label>
+
+      @if (!editingId()) {
+        <label class="field">
+          <span class="field-label">Branches</span>
+          <p-multiselect
+            [options]="masterData.activeLocationNames()"
+            [ngModel]="form().locations"
+            (ngModelChange)="updateForm({ locations: $event })"
+            [disabled]="form().role === 'Admin'"
+            placeholder="Select branches"
+            appendTo="body"
+            styleClass="full-width"
+          />
+          @if (form().role === 'Admin') {
+            <span class="field-hint">Admin sees every branch — no assignment needed.</span>
+          }
+        </label>
+
+        <label class="field">
+          <span class="field-label">Screen Access</span>
+          <p-multiselect
+            [options]="screenOptions"
+            optionLabel="label"
+            optionValue="value"
+            [ngModel]="form().screenKeys"
+            (ngModelChange)="updateForm({ screenKeys: $event })"
+            [disabled]="form().role === 'Admin'"
+            placeholder="Select screens"
+            appendTo="body"
+            styleClass="full-width"
+          />
+          <span class="field-hint">
+            @if (form().role === 'Admin') {
+              Admin sees every screen — no assignment needed.
+            } @else {
+              Only these screens will appear in the menu or open by URL. The Dashboard is always visible.
+            }
+          </span>
+        </label>
+      }
+
+      <label class="field">
+        <span class="field-label">Email</span>
+        <input pInputText type="email" [ngModel]="form().email" (ngModelChange)="updateForm({ email: $event })" />
+      </label>
+
+      <label class="field">
+        <span class="field-label">Mobile Number</span>
+        <input pInputText type="text" [ngModel]="form().mobileNumber" (ngModelChange)="updateForm({ mobileNumber: $event })" />
+      </label>
+    </div>
+
+    <ng-template #footer>
+      <button type="button" class="btn btn-ghost" [disabled]="saving()" (click)="dialogVisible.set(false)">Cancel</button>
+      <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+        @if (saving()) {
+          <span class="btn-spinner"></span>
+        } @else {
+          <i class="pi pi-check"></i>
+        }
+        <span>{{ editingId() ? 'Save' : 'Add User' }}</span>
+      </button>
+    </ng-template>
+  </p-dialog>
+
+  <!-- Branches -->
+  @if (branchesUser(); as user) {
+    <p-dialog header="Manage Branches" [visible]="true" (visibleChange)="branchesUser.set(null)" [modal]="true" [style]="{ width: '24rem' }">
+      <div class="form">
+        <p class="branches-intro"><strong>{{ user.fullName }}</strong> ({{ user.employeeId }})</p>
+        @if (branchesError(); as err) {
+          <div class="modal-error">{{ err }}</div>
+        }
+        <p-multiselect
+          [options]="masterData.activeLocationNames()"
+          [ngModel]="branchesDraft()"
+          (ngModelChange)="branchesDraft.set($event)"
+          placeholder="Select branches"
+          appendTo="body"
+          styleClass="full-width"
+        />
+      </div>
+      <ng-template #footer>
+        <button type="button" class="btn btn-ghost" [disabled]="branchesSaving()" (click)="branchesUser.set(null)">Cancel</button>
+        <button type="button" class="btn btn-primary" [disabled]="branchesSaving()" (click)="saveBranches()">
+          @if (branchesSaving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-check"></i>
+          }
+          <span>Save</span>
+        </button>
+      </ng-template>
+    </p-dialog>
+  }
+
+  <!-- Screen access — URL-level access control (the route guards read these grants) -->
+  @if (screensUser(); as user) {
+    <p-dialog header="Manage Screen Access" [visible]="true" (visibleChange)="screensUser.set(null)" [modal]="true" [style]="{ width: '26rem' }">
+      <div class="form">
+        <p class="branches-intro"><strong>{{ user.fullName }}</strong> ({{ user.employeeId }})</p>
+        @if (screensError(); as err) {
+          <div class="modal-error">{{ err }}</div>
+        }
+        <p-multiselect
+          [options]="screenOptions"
+          optionLabel="label"
+          optionValue="value"
+          [ngModel]="screensDraft()"
+          (ngModelChange)="screensDraft.set($event)"
+          placeholder="Select screens"
+          appendTo="body"
+          styleClass="full-width"
+          [showToggleAll]="true"
+        />
+        <span class="field-hint">
+          The Dashboard is always visible. User Management, Location Master, Go-Live Settings and Shared Folder
+          Automation stay Admin-only by role.
+        </span>
+      </div>
+      <ng-template #footer>
+        <button type="button" class="btn btn-ghost" [disabled]="screensSaving()" (click)="screensUser.set(null)">Cancel</button>
+        <button type="button" class="btn btn-primary" [disabled]="screensSaving()" (click)="saveScreens()">
+          @if (screensSaving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-check"></i>
+          }
+          <span>Save</span>
+        </button>
+      </ng-template>
+    </p-dialog>
+  }
+
+  <!-- Reset password -->
+  @if (resetUser(); as user) {
+    <p-dialog header="Reset Password" [visible]="true" (visibleChange)="resetUser.set(null)" [modal]="true" [style]="{ width: '22rem' }">
+      <div class="form">
+        <p class="branches-intro"><strong>{{ user.fullName }}</strong> ({{ user.employeeId }})</p>
+        @if (resetError(); as err) {
+          <div class="modal-error">{{ err }}</div>
+        }
+        <label class="field">
+          <span class="field-label">New Password</span>
+          <p-password [ngModel]="resetPassword1()" (ngModelChange)="resetPassword1.set($event)" [feedback]="false" [toggleMask]="true" />
+        </label>
+        <label class="field">
+          <span class="field-label">Confirm Password</span>
+          <p-password [ngModel]="resetPassword2()" (ngModelChange)="resetPassword2.set($event)" [feedback]="false" [toggleMask]="true" />
+        </label>
+        <span class="field-hint">The user must set their own password on next login.</span>
+      </div>
+      <ng-template #footer>
+        <button type="button" class="btn btn-ghost" [disabled]="resetSaving()" (click)="resetUser.set(null)">Cancel</button>
+        <button type="button" class="btn btn-primary" [disabled]="resetSaving()" (click)="saveReset()">
+          @if (resetSaving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-key"></i>
+          }
+          <span>Reset</span>
+        </button>
+      </ng-template>
+    </p-dialog>
+  }
+
+  <!-- Activity -->
+  @if (activityUser(); as user) {
+    <p-dialog header="Activity" [visible]="true" (visibleChange)="activityUser.set(null)" [modal]="true" [style]="{ width: '30rem' }">
+      <p class="branches-intro"><strong>{{ user.fullName }}</strong> ({{ user.employeeId }})</p>
+      @if (activityLoading()) {
+        <div class="activity-loading"><span class="btn-spinner btn-spinner--dark"></span> Loading…</div>
+      } @else if (activityLog().length === 0) {
+        <p class="field-hint">No activity recorded yet.</p>
+      } @else {
+        <ul class="activity-list">
+          @for (entry of activityLog(); track entry.id) {
+            <li>
+              <span class="activity-action">{{ entry.action }}</span>
+              <span class="activity-meta">
+                {{ entry.actorName || 'System' }} · {{ entry.createdAt | date: 'd MMM y, h:mm a' }}
+              </span>
+            </li>
+          }
+        </ul>
+      }
+    </p-dialog>
+  }
+</div>

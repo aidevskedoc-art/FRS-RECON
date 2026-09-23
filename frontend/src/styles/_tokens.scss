@@ -43,17 +43,26 @@
   --overlay: rgba(9, 9, 11, 0.5);
 
   // -------------------------------------------------------------------
-  // 1b. Brand
+  // 1b. Brand — purple leads, orange is the accent (sriram, 2026-09-21).
+  //
+  // The accent orange is --ai-orange (#ea580c, orange-600) and is deliberately
+  // NOT --orange (#f97316) below: #f97316 already means something — the
+  // "matched by an auditor" status family and the Bank & PayU nav accent. A
+  // brand orange of the same value would put one colour in two meanings on
+  // the same screen. Status tokens (1c) are untouched by the rebrand.
   // -------------------------------------------------------------------
-  --brand: #0a0a0a;
-  --brand-hover: #000000;
-  --brand-soft: #f4f4f5;
-  --brand-ring: rgba(10, 10, 10, 0.14);
+  --brand: #7c3aed;
+  --brand-hover: #6d28d9;
+  --brand-soft: #f5f3ff;
+  --brand-ring: rgba(124, 58, 237, 0.18);
 
-  // Topbar masthead uses flat ink, deliberately NOT the AI gradient — an
-  // official-letterhead counterweight to the electric palette.
-  --brand-ink: #09090b;
+  // Topbar masthead — flat deep-purple ink rather than the gradient, keeping
+  // the official-letterhead weight while sitting on-brand.
+  --brand-ink: #3b0764;
   --brand-sub-ink: #6b6b71;
+
+  --ai-orange: #ea580c;
+  --ai-orange-soft: rgba(234, 88, 12, 0.1);
 
   // -------------------------------------------------------------------
   // 1c. Semantic status — the monochrome exception, so risk stays scannable
@@ -70,20 +79,21 @@
   --danger-soft: #fef2f2;
 
   // -------------------------------------------------------------------
-  // 1d. AI Glass primitives — monochrome ink/silver sheen in light mode
+  // 1d. AI Glass primitives — the brand purple in light mode (page-header
+  // icon tiles, avatar, progress bars all read --ai-gradient)
   // -------------------------------------------------------------------
-  --ai-primary: #0a0a0a;
-  --ai-primary-2: #262626;
-  --ai-accent: #171717;
-  --ai-ai: #404040;
-  --ai-gradient: linear-gradient(135deg, #0a0a0a 0%, #34343a 50%, #0a0a0a 100%);
+  --ai-primary: #7c3aed;
+  --ai-primary-2: #6d28d9;
+  --ai-accent: #a855f7;
+  --ai-ai: #8b5cf6;
+  --ai-gradient: linear-gradient(135deg, #6d28d9 0%, #a855f7 55%, #ea580c 130%);
   --ai-gradient-soft: linear-gradient(
     135deg,
-    rgba(10, 10, 10, 0.05) 0%,
-    rgba(10, 10, 10, 0.02) 50%,
-    rgba(10, 10, 10, 0.05) 100%
+    rgba(124, 58, 237, 0.08) 0%,
+    rgba(168, 85, 247, 0.04) 50%,
+    rgba(234, 88, 12, 0.06) 100%
   );
-  --ai-glow-ring: 0 0 0 6px rgba(10, 10, 10, 0.12);
+  --ai-glow-ring: 0 0 0 6px rgba(124, 58, 237, 0.14);
   --ai-glass-tint: rgba(255, 255, 255, 0.65);
   --ai-glass-border: rgba(9, 9, 11, 0.09);
   --ai-glass-shadow: 0 24px 60px -24px rgba(9, 9, 11, 0.14), 0 8px 24px -12px rgba(99, 102, 241, 0.1);
@@ -93,26 +103,30 @@
   // -------------------------------------------------------------------
   // 1e. Ambient aurora + dot grid (consumed by the fixed background layer)
   // -------------------------------------------------------------------
-  --ai-aurora-1: rgba(99, 102, 241, 0.13);
-  --ai-aurora-2: rgba(139, 92, 246, 0.11);
-  --ai-aurora-3: rgba(6, 182, 212, 0.1);
-  --ai-aurora-4: rgba(249, 115, 22, 0.06);
+  --ai-aurora-1: rgba(124, 58, 237, 0.12);
+  --ai-aurora-2: rgba(168, 85, 247, 0.1);
+  --ai-aurora-3: rgba(234, 88, 12, 0.07);
+  --ai-aurora-4: rgba(234, 88, 12, 0.05);
   --ai-grid-line: rgba(9, 9, 11, 0.045);
-  --glow-card: 0 8px 30px -10px rgba(79, 70, 229, 0.22);
+  --glow-card: 0 8px 30px -10px rgba(124, 58, 237, 0.22);
   --cursor-glow-blend: normal;
   --aurora-canvas-opacity: 0.5;
 
   // -------------------------------------------------------------------
   // 1f. KPI / hero highlight — real electric colour even in light mode
   // -------------------------------------------------------------------
-  --stat-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #0891b2 100%);
+  // Purple running into the accent orange — the one place the brand pair
+  // appears side by side on purpose.
+  --stat-gradient: linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #ea580c 100%);
   --stat-gradient-soft: linear-gradient(
     135deg,
-    rgba(79, 70, 229, 0.12) 0%,
-    rgba(124, 58, 237, 0.1) 50%,
-    rgba(8, 145, 178, 0.1) 100%
+    rgba(124, 58, 237, 0.12) 0%,
+    rgba(168, 85, 247, 0.1) 50%,
+    rgba(234, 88, 12, 0.1) 100%
   );
-  --stat-accent: #4f46e5;
+  // --ai-blue aliases this, so every "blue" KPI tile / active tab app-wide
+  // follows the brand purple with no per-file edits.
+  --stat-accent: #8b5cf6;
 
   // -------------------------------------------------------------------
   // 1g. Radius / shadow / motion / shell metrics
@@ -140,7 +154,7 @@
   --sidebar-width: 276px;
   --sidebar-width-collapsed: 84px;
   --topbar-height: 84px;
-  --shell-gap: 14px;
+  --shell-gap: 10px; // was 14px — tightened with the shell content padding
 
   // Native <select> chevron, recoloured per theme so selects match the
   // rest of the form controls (appearance: none kills the built-in arrow).
@@ -186,7 +200,7 @@
   // The old decorative "AI accent" trio now rides the stat gradient, which
   // is the one place light mode is allowed real hue.
   --ai-blue: var(--stat-accent);
-  --ai-blue-soft: rgba(79, 70, 229, 0.1);
+  --ai-blue-soft: rgba(139, 92, 246, 0.1);
   --ai-cyan: #0891b2;
   --ai-cyan-soft: rgba(8, 145, 178, 0.1);
   --ai-purple: #7c3aed;

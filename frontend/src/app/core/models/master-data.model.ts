@@ -17,3 +17,13 @@ export interface DivisionBankAccountDraft {
   bankName: string;
   active: boolean;
 }
+
+// AC-2 "hospital location master (add/delete)" — same 4 names as DIVISIONS
+// above, now a real table instead of a fixed enum, so it can grow.
+export interface FrsLocation {
+  id: string;
+  name: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

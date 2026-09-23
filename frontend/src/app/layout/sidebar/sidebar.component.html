@@ -9,7 +9,10 @@
 >
   <div class="sidebar__brand">
     <img class="sidebar__logo" src="logo.svg" alt="Yashoda" width="34" height="34" />
-    <span class="side-label sidebar__brand-text">FRS · Recon</span>
+    <span class="side-label sidebar__brand-text">
+      <span class="sidebar__brand-name">{{ appShortName }}</span>
+      <span class="sidebar__brand-full">{{ appName }}</span>
+    </span>
   </div>
 
   <nav class="sidebar__nav" #nav>
@@ -74,6 +77,6 @@
       <i [class]="sidebarStore.collapsed() ? 'pi pi-angle-right' : 'pi pi-angle-left'"></i>
       <span class="side-label">Collapse</span>
     </button>
-    <span class="side-label sidebar__version">Recon Console · v1.0</span>
+    <span class="side-label sidebar__version">Version 1.0</span>
   </div>
 </aside>

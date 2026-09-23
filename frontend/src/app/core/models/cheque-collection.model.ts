@@ -1,4 +1,5 @@
 import { MatchStatus, MatchedBankInfo, MatchedRefundInfo } from './matched-rules.model';
+import { AuditDetail, PendingChange } from './match-approval.model';
 
 /**
  * Cheque collection and the refund document.
@@ -75,6 +76,13 @@ export interface ChequeCollectionRecord {
   matchStatus: MatchStatus | null;
   matchAppliedRule: string | null;
   matchReason: string | null;
+  /** AC-16/17: set when a maker-checker approval locked this record (status-tone.js — colours it orange). */
+  lockedAt: string | null;
+  matchedByAuditor: boolean;
+  /** The open maker-checker request, if any — see PendingChange. */
+  pendingChange?: PendingChange | null;
+  /** Who flagged and who approved the change behind a current auditor lock — see AuditDetail. */
+  auditDetail?: AuditDetail | null;
   unitName: string | null;
   division: string | null;
   /** The bank line a Stage-1 match cleared against. */
@@ -98,8 +106,17 @@ export interface ChequeCollectionRecordsQuery {
   payType?: string;
   dateFrom?: string;
   dateTo?: string;
-  matchStatus?: MatchStatus;
+  /** Also accepts a comma-separated list of statuses — see the same note on OnlinePaymentRecordsQuery. */
+  matchStatus?: MatchStatus | string;
+  /** 'true' = only auditor-locked rows, 'false' = only system-matched rows, absent = either. */
+  matchedByAuditor?: string;
   collectionKind?: ChequeCollectionKind;
+  /** AC-10: comma-separated location names; absent = every location. */
+  location?: string;
+  /** AC-10: 'IP' | 'DIAG' ('OP' ledger) | 'OPD' (none). */
+  department?: 'IP' | 'DIAG' | 'OPD';
+  /** AC-12: 'BANK' = each row only up to its branch's last bank date. */
+  upTo?: 'BANK';
   /** '__NONE__' selects rows no rule caught. */
   matchAppliedRule?: string;
   page?: number;

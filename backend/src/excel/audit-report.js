@@ -41,6 +41,8 @@
 
 const XLSX = require('xlsx');
 const { MONTHS_SHORT } = require('../reconciliation/period');
+const { statusTone } = require('../reconciliation/status-tone');
+const { tagColumn } = require('./write-xlsx');
 
 const MONTHS_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -220,6 +222,8 @@ function differenceCell(realizationAmt, misAmt) {
  */
 function remarksCell(result) {
   if (!result || result.excluded) return '';
+  // The approved change's own text: "Manually matched — <reason> (approved by <name>)".
+  if (result.matchedByAuditor) return result.matchReason || AUDITOR_MATCHED_LABEL;
   if (result.status === 'CONTRA_ENTRY') return '';
   if (/inward remittance/i.test(result.appliedRuleName || '') && result.bank) {
     const ref = result.bank.chqRefNo || (String(result.bank.narration || '').match(/\bINW\s+(\S+)/i) || [])[1] || '';
@@ -372,10 +376,21 @@ const STATUS_LABEL = {
   UNMATCHED: 'Unmatched',
 };
 
+// Maker-checker: an approved auditor change outranks the engine's own verdict
+// (buildAuditSheets stamps `matchedByAuditor` on the result).
+const AUDITOR_MATCHED_LABEL = 'Matched by Auditor';
+
 const statusCell = (r) => {
   if (!r.__result) return '';
   if (r.__result.excluded) return 'Excluded';
+  if (r.__result.matchedByAuditor) return AUDITOR_MATCHED_LABEL;
   return STATUS_LABEL[r.__result.status] || r.__result.status || '';
+};
+
+// AC-17 colour for the RECONCILIATION STATUS cell — see reconciliation/status-tone.js.
+const statusToneCell = (r) => {
+  if (!r.__result || r.__result.excluded) return null;
+  return statusTone(r.__result.status, { matchedByAuditor: !!r.__result.matchedByAuditor });
 };
 
 /**
@@ -418,7 +433,7 @@ const bankDetailColumns = (refHeader, refGet) => [
 ];
 
 const reconColumns = () => [
-  { header: 'RECONCILIATION STATUS', get: statusCell, total: 'count' },
+  { header: 'RECONCILIATION STATUS', get: statusCell, total: 'count', tone: statusToneCell },
   // `total: null` deliberately: a group's shortfall is stamped on every member
   // row, so a per-row sum reports it two or three times over. The summary
   // endpoint dedupes by unitKey for exactly this reason.
@@ -624,7 +639,12 @@ const UCR_COLUMNS = [
   { header: 'RRN / ARN', get: gwField('rrn'), total: 'count' },
   { header: 'GATEWAY TRANSACTION ID', get: gwField('transactionId'), total: 'count' },
   // --- reconciliation ---
-  { header: 'RECONCILIATION STATUS', get: (r) => STATUS_LABEL[r.matchStatus] || r.matchStatus || '', total: 'count' },
+  {
+    header: 'RECONCILIATION STATUS',
+    get: (r) => (r.matchedByAuditor ? AUDITOR_MATCHED_LABEL : STATUS_LABEL[r.matchStatus] || r.matchStatus || ''),
+    total: 'count',
+    tone: (r) => statusTone(r.matchStatus, { matchedByAuditor: !!r.matchedByAuditor }),
+  },
   // Both are GROUP figures: several receipts can share one reference, and the
   // verdict is decided on their sum. Repeated on every member row, so `total`
   // is null — summing them down the column would count each group once per
@@ -965,6 +985,12 @@ function buildAuditWorkbook({ periodLabel, periodTitlePhrase, periodTitlePhraseB
       if (!col.fmt) return;
       applyColumnFormat(ws, i, col.fmt, headerRowIndex + 1, aoa.length - 1);
       if (col.fmt !== 'date' && totalRowIndex >= 0) applyColumnFormat(ws, i, col.fmt, totalRowIndex, totalRowIndex);
+    });
+
+    // AC-17: tag the colour-coded cells (the RECONCILIATION STATUS column);
+    // writeXlsx paints them — SheetJS CE can't write a fill itself.
+    columns.forEach((col, i) => {
+      if (col.tone) tagColumn(ws, i, rows, col.tone, headerRowIndex + 1);
     });
 
     const merges = bandMerges(preamble, columns.length);

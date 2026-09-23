@@ -16,6 +16,9 @@
 
   <div class="statements__body">
     @switch (active()) {
+      @case ('all-uploads') {
+        <app-view-all-uploads />
+      }
       @case ('bank-statements') {
         <app-view-bank-statements />
       }

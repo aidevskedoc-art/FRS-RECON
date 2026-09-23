@@ -5,7 +5,7 @@ interface SummaryCard {
   label: string;
   value: string;
   icon: string;
-  accent: 'blue' | 'success' | 'warning' | 'danger' | 'purple' | 'cyan';
+  accent: 'blue' | 'success' | 'warning' | 'danger' | 'purple' | 'cyan' | 'orange';
   /** Amount cards read as money; count cards read as plain numbers. */
   wide?: boolean;
 }
@@ -42,7 +42,7 @@ export class SummaryPanelComponent {
     const c = s.combined;
     return [
       { label: 'Total Transactions', value: count(c.totalTransactions), icon: 'pi pi-list', accent: 'blue' },
-      { label: 'Total Amount', value: money(c.totalAmount), icon: 'pi pi-indian-rupee', accent: 'blue', wide: true },
+      { label: 'Total Amount', value: money(c.totalAmount), icon: 'pi pi-indian-rupee', accent: 'orange', wide: true },
       { label: 'Matched', value: count(c.totalMatched), icon: 'pi pi-check-circle', accent: 'success' },
       { label: 'Gateway Matched', value: count(c.totalEasebuzzMatched), icon: 'pi pi-bolt', accent: 'purple' },
       { label: 'Contra Entries', value: count(c.totalContra), icon: 'pi pi-replay', accent: 'cyan' },

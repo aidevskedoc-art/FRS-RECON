@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db');
-const { divisionBankAccountRowToApi } = require('../mappers');
+const { divisionBankAccountRowToApi, locationRowToApi } = require('../mappers');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { logAction } = require('../audit-log');
 
 const router = express.Router();
 
@@ -95,6 +97,91 @@ router.delete('/division-bank-accounts/:id', async (req, res, next) => {
     const { rowCount } = await db.query('DELETE FROM master_division_bank_accounts WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Division bank account not found' });
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Locations (branches) — AC-2 "hospital location master (add/delete)" and
+// half of AC-5 ("bank master activate/deactivate" shares the same active
+// flag pattern). Readable by any logged-in user (drives filters/dropdowns);
+// writes are Admin-only. "Delete" deactivates rather than removing the row —
+// a hard delete would cascade-drop every user's branch grant on it
+// (user_locations references it ON DELETE CASCADE) and any future data tied
+// to a location should keep its history, same reasoning flagged for Radhika
+// re: the bank master. Reactivate by PATCHing active back to true.
+// ---------------------------------------------------------------------------
+
+router.get('/locations', requireAuth, async (req, res, next) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM locations ORDER BY name');
+    res.json(rows.map(locationRowToApi));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/locations', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const name = req.body?.name;
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
+
+    const { rows } = await db.query(
+      'INSERT INTO locations (name) VALUES ($1) RETURNING *',
+      [String(name).trim()],
+    );
+    await logAction({
+      actorUserId: req.user.sub, entityType: 'location', entityId: rows[0].id,
+      action: 'LOCATION_CREATED', details: { name: rows[0].name }, req,
+    });
+    res.status(201).json(locationRowToApi(rows[0]));
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'This location already exists' });
+    next(err);
+  }
+});
+
+router.patch('/locations/:id', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { name, active } = req.body || {};
+    const setClauses = [];
+    const values = [req.params.id];
+    if (name !== undefined) { values.push(String(name).trim()); setClauses.push(`name = $${values.length}`); }
+    if (active !== undefined) { values.push(!!active); setClauses.push(`active = $${values.length}`); }
+    if (setClauses.length === 0) return res.status(400).json({ error: 'No recognized fields in request body' });
+
+    const { rows } = await db.query(
+      `UPDATE locations SET ${setClauses.join(', ')}, updated_at = now() WHERE id = $1 RETURNING *`,
+      values,
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Location not found' });
+    await logAction({
+      actorUserId: req.user.sub, entityType: 'location', entityId: rows[0].id,
+      action: 'LOCATION_UPDATED', details: { fieldsChanged: Object.keys(req.body || {}) }, req,
+    });
+    res.json(locationRowToApi(rows[0]));
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'This location already exists' });
+    next(err);
+  }
+});
+
+// DELETE deactivates — see note above. Kept as DELETE (not a second PATCH
+// route) because that's the verb the client's "Addition/Deletion" wording
+// and the frontend's delete button will naturally call.
+router.delete('/locations/:id', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `UPDATE locations SET active = false, updated_at = now() WHERE id = $1 RETURNING *`,
+      [req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Location not found' });
+    await logAction({
+      actorUserId: req.user.sub, entityType: 'location', entityId: rows[0].id,
+      action: 'LOCATION_DEACTIVATED', details: { name: rows[0].name }, req,
+    });
+    res.json(locationRowToApi(rows[0]));
   } catch (err) {
     next(err);
   }

@@ -20,6 +20,8 @@
  */
 
 const XLSX = require('xlsx');
+const { statusTone } = require('../reconciliation/status-tone');
+const { tagColumn, findHeaderColumn } = require('./write-xlsx');
 
 /** Nested `matchedBank` promoted to scalars — anything left nested is silently dropped by the writer. */
 function flattenMatchedBank(record) {
@@ -112,11 +114,20 @@ function buildUnitMatchRows(records) {
  */
 function buildReconciliationWorkbook(records, detailSheetName) {
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(records.map(flattenRecord)), detailSheetName);
+  const detail = XLSX.utils.json_to_sheet(records.map(flattenRecord));
+  // AC-17 colour code on the status column — tagged here, painted by writeXlsx.
+  const statusCol = findHeaderColumn(detail, 'matchStatus');
+  if (statusCol >= 0) {
+    tagColumn(detail, statusCol, records, (r) => statusTone(r.matchStatus, { matchedByAuditor: !!r.matchedByAuditor }));
+  }
+  XLSX.utils.book_append_sheet(workbook, detail, detailSheetName);
 
   const unitRows = buildUnitMatchRows(records);
   if (unitRows.length > 0) {
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(unitRows), 'Unit Matches');
+    const units = XLSX.utils.json_to_sheet(unitRows);
+    const unitStatusCol = findHeaderColumn(units, 'Status');
+    if (unitStatusCol >= 0) tagColumn(units, unitStatusCol, unitRows, (u) => statusTone(u.Status));
+    XLSX.utils.book_append_sheet(workbook, units, 'Unit Matches');
   }
   return { workbook, unitRowCount: unitRows.length };
 }

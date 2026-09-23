@@ -159,9 +159,27 @@ const CASES = [
   ['UPI MPR', UPI_MPR_SHEET, 'UPI_MPR'],
   ['PayU MPR', PAYU_MPR_SHEET, 'PAYU_MPR'],
 ];
+// The instrument-level HIS reports also feed the older MIS / cheque / refund
+// uploads (his-mis-rows.js), so they legitimately match several types; the
+// upload preview, not the detector, decides whether that needs a person.
+const HIS_COMPANIONS = {
+  UCR_IP: ['MIS_IP', 'CHEQUE_COLLECTION', 'REFUND'],
+  UCR_OP: ['MIS_DIAG'],
+  UCR_DIAG: ['MIS_DIAG', 'CHEQUE_COLLECTION', 'REFUND'],
+};
 for (const [name, sheets, expected] of CASES) {
   const got = detectTop(sheets);
-  ok(`${name} -> ${expected}`, got.type === expected && got.certain, got);
+  const companions = HIS_COMPANIONS[expected];
+  if (companions) {
+    const types = got.matches.map((m) => m.type).sort();
+    ok(
+      `${name} -> ${expected} first, plus the older uploads it feeds (${companions.join(', ')})`,
+      got.type === expected && JSON.stringify(types) === JSON.stringify([expected, ...companions].sort()),
+      got.matches.map((m) => [m.type, m.confidence]),
+    );
+  } else {
+    ok(`${name} -> ${expected}`, got.type === expected && got.certain, got);
+  }
 }
 
 console.log('\n=== the collisions that exist in the parsers today (the assertions that matter) ===');
@@ -201,6 +219,31 @@ ok(
   detectTop(PAYU_MPR_SHEET).matches.every((m) => m.type !== 'UPI_MPR'),
   detectTop(PAYU_MPR_SHEET).matches,
 );
+
+// A short-period IP collections report puts its refunds-section header
+// ("SNO | REFUND NO | … | Reference ID") inside the scan window. It must not
+// also be taken for a refund document and uploaded to /api/refunds.
+const SHORT_IP_REPORT = {
+  'ADVANCES_YH.RPT': [
+    ...UCR_IP_SHEET['ADVANCES_YH.RPT'],
+    ['1', '09/IDE49402/26', '', '01-Sep-2026  0:01', '315597525', '327852', 'PATIENT', '', '', '', 'ADVANCE', 'Card', '30000', 'BL1210', 'RAGHUPATHI', '545980'],
+    ['', 'Cash Amount', 'Card Amt', 'Cheque Amt', 'UPI Amt', 'Online Amt', 'TOTAL COLLECTION :', '', '30000', '0', '30000', '0', '0', '0'],
+    ['SNO', 'REFUND NO', 'DATE', 'YH NO', 'IPNO', 'NAME', 'BILLNO', 'Type', 'AMOUNT', 'User ID', 'User Name', 'Reference ID'],
+  ],
+};
+const refundMatch = detectTop(SHORT_IP_REPORT).matches.find((m) => m.type === 'REFUND');
+ok(
+  "an IP report's own refunds-section header does NOT make it look like a refund document",
+  detectTop(SHORT_IP_REPORT).type === 'UCR_IP' && (!refundMatch || /from the HIS report/.test(refundMatch.reason)),
+  detectTop(SHORT_IP_REPORT).matches,
+);
+const renamedShort = { Sheet1: SHORT_IP_REPORT['ADVANCES_YH.RPT'] };
+ok(
+  '...not even when the sheet has been renamed',
+  detectTop(renamedShort).matches.every((m) => m.type !== 'REFUND'),
+  detectTop(renamedShort).matches,
+);
+ok('...while a real refund document still is', detectTop(REFUND_SHEET).type === 'REFUND' && detectTop(REFUND_SHEET).certain);
 
 console.log('\n=== unrecognised and multi-type files ===');
 const unknown = detectFileType(workbook({ Sheet1: [['Widget', 'Colour', 'Qty'], ['bolt', 'red', '4']] }));

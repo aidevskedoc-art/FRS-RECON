@@ -19,6 +19,14 @@
 // =====================================================================
 
 :root {
+  // Overview (the landing dashboard) — the brand pair itself: the new accent
+  // orange (--ai-orange, NOT the status/"matched by auditor" #f97316 family)
+  // running into the brand purple.
+  --nav-color-overview: #ea580c;
+  --nav-grad-overview: linear-gradient(135deg, #ea580c 0%, #7c3aed 100%);
+  --nav-soft-overview: rgba(234, 88, 12, 0.13);
+  --nav-line-overview: rgba(234, 88, 12, 0.42);
+
   // Automation Insurance — the primary workflow.
   //
   // Deliberately violet-700 rather than the violet-600 the other electric
@@ -72,6 +80,11 @@
 
 // Dark mode uses the neon variant of each hue and a slightly hotter soft fill.
 @mixin dark-nav-accents {
+  --nav-color-overview: #fb923c;
+  --nav-grad-overview: linear-gradient(135deg, #fb923c 0%, #a78bfa 100%);
+  --nav-soft-overview: rgba(251, 146, 60, 0.18);
+  --nav-line-overview: rgba(251, 146, 60, 0.52);
+
   // The aurora is stronger in dark (0.20–0.24 alpha vs 0.11–0.13), so the
   // insurance accent goes the other way here — up to violet-400, above the
   // blob band rather than below it.
@@ -130,7 +143,7 @@
 // per section — and it avoids composing `var(--nav-color-#{key})` from a
 // template-bound string, which CSS can't do.
 // ---------------------------------------------------------------------
-@each $key in (insurance, online, rules, masters, admin, reports, support) {
+@each $key in (overview, insurance, online, rules, masters, admin, reports, support) {
   .nav-accent--#{$key} {
     --nav-accent-color: var(--nav-color-#{$key});
     --nav-accent-grad: var(--nav-grad-#{$key});

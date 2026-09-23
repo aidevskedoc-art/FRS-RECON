@@ -1,0 +1,95 @@
+@let d = detail();
+<article class="record" [class]="toneClass()">
+  <!-- Summary: what it is, which status, how much, whose -->
+  <header class="record__hero">
+    <div class="record__top">
+      <span class="record__icon"><i [class]="d.icon"></i></span>
+      <div class="record__id">
+        <span class="record__type">{{ d.typeLabel }}</span>
+        <h2 class="record__no">{{ d.receiptNo }}</h2>
+      </div>
+      <button type="button" class="record__close" (click)="closed.emit()" aria-label="Close">
+        <i class="pi pi-times"></i>
+      </button>
+    </div>
+
+    <div class="record__badges">
+      <span class="pill pill--status"><i class="pill__dot"></i>{{ d.statusLabel }}</span>
+      @if (pending()) {
+        <span class="pill pill--pending"><i class="pi pi-clock"></i>Pending approval</span>
+      }
+    </div>
+
+    <div class="record__summary">
+      <div class="record__amount">
+        <span class="record__amount-label">{{ d.amountLabel }}</span>
+        <strong>{{ d.amount || '—' }}</strong>
+      </div>
+      <div class="record__who">
+        <span class="record__patient">{{ d.patientName || 'Patient not named' }}</span>
+        <div class="record__facts">
+          @if (d.receiptDate) {
+            <span><i class="pi pi-calendar"></i>{{ d.receiptDate | date: 'd MMM y' }}</span>
+          }
+          @if (d.location) {
+            <span><i class="pi pi-map-marker"></i>{{ d.location }}</span>
+          }
+          @if (d.department) {
+            <span><i class="pi pi-building"></i>{{ d.department }}</span>
+          }
+          @if (d.paymentMode) {
+            <span><i class="pi pi-wallet"></i>{{ d.paymentMode }}</span>
+          }
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="record__body">
+    @if (d.reason) {
+      <section class="reason">
+        <span class="reason__title">
+          <i [class]="d.tone === 'RED' ? 'pi pi-exclamation-circle' : d.tone === 'ORANGE' ? 'pi pi-user-edit' : 'pi pi-check-circle'"></i>
+          {{ reasonTitle() }}
+        </span>
+        <p>{{ d.reason }}</p>
+      </section>
+    }
+
+    <div class="sections">
+      @for (s of visibleSections(); track s.title) {
+        <section class="section">
+          <h3 class="section__title"><i [class]="s.icon"></i>{{ s.title }}</h3>
+          <dl class="section__fields">
+            @for (f of s.fields; track f.label) {
+              <div class="kv" [class.kv--empty]="!isFilled(f)">
+                <dt>{{ f.label }}</dt>
+                <dd [class.mono]="f.ref">
+                  @if (isFilled(f)) {
+                    <span>{{ f.value }}</span>
+                    @if (f.ref) {
+                      <button type="button" class="copy" (click)="copy(f.value!)" [attr.aria-label]="'Copy ' + f.label">
+                        <i [class]="copied() === f.value ? 'pi pi-check' : 'pi pi-copy'"></i>
+                      </button>
+                    }
+                  } @else {
+                    <span>—</span>
+                  }
+                </dd>
+              </div>
+            }
+          </dl>
+        </section>
+      }
+    </div>
+
+    @if (emptyCount() > 0) {
+      <button type="button" class="toggle-empty" (click)="showEmpty.set(!showEmpty())">
+        <i [class]="showEmpty() ? 'pi pi-eye-slash' : 'pi pi-eye'"></i>
+        {{ showEmpty() ? 'Hide' : 'Show' }} {{ emptyCount() }} empty field{{ emptyCount() === 1 ? '' : 's' }}
+      </button>
+    }
+
+    <ng-content />
+  </div>
+</article>

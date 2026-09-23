@@ -13,6 +13,8 @@ function toDateOnly(value) {
 }
 
 const { resolveDivision } = require('./reconciliation/matcher');
+const { isMatchedByAuditor } = require('./reconciliation/status-tone');
+const { TERMINAL_STATUSES } = require('./reconciliation/rules');
 
 function toNumber(value) {
   if (value === null || value === undefined) return null;
@@ -294,6 +296,47 @@ function ipPaymentRecordRowToApi(row) {
   };
 }
 
+// The Mismatch Review screen's combined "Online" tab (IP + Diag/OP in one
+// table, per sriram 2026-09-21) — backed by a UNION ALL query in
+// matched-rules.routes.js, not either table's own SELECT, so this reads the
+// UNION's own aliased column names, not ip_payment_records'/
+// diag_op_payment_records' native ones (e.g. unit_no = COALESCE(ip_no,
+// diag_no)). Each side joins its own batch for batch_unit_name, so
+// matchFieldsToApi fills unitName/division (AC-10 location column).
+function onlineMismatchRowToApi(row) {
+  return {
+    id: String(row.id),
+    recordType: row.record_type, // 'IP' | 'DIAG'
+    // 'IP' | 'DIAG' | 'OPD'; null on a legacy (non-HIS) Diag/OP upload.
+    department: row.department ?? null,
+    batchId: String(row.batch_id),
+    receiptNumber: row.receipt_number,
+    receiptDate: toIso(row.receipt_date),
+    yhno: row.yhno,
+    unitNo: row.unit_no, // ip_no on an IP row, diag_no on a Diag row
+    patientName: row.patient_name,
+    transactionRef1: row.transaction_id_1,
+    transactionRef2: row.transaction_id_2,
+    transId: row.trans_id,
+    paymentMode: row.payment_mode,
+    payType: row.pay_type,
+    remarks: row.remarks,
+    paymentRemarks: row.payment_remarks,
+    patType: row.pat_type,
+    billAmount: toNumber(row.bill_amount),
+    cashAmount: toNumber(row.cash_amount),
+    cardAmount: toNumber(row.card_amount),
+    chequeAmount: toNumber(row.cheque_amount),
+    onlineUpiAmount: toNumber(row.online_amount),
+    discountAmount: toNumber(row.discount_amount),
+    diffAmount: toNumber(row.diff_amount),
+    userId: row.user_id,
+    userName: row.user_name,
+    createdAt: toIso(row.created_at),
+    ...matchFieldsToApi(row),
+  };
+}
+
 function diagOpBatchRowToApi(row) {
   return {
     id: String(row.id),
@@ -357,6 +400,15 @@ function matchFieldsToApi(row) {
     matchStatus: row.match_status ?? null,
     matchAppliedRule: row.match_applied_rule ?? null,
     matchReason: row.match_reason ?? null,
+    // Maker-checker: an approved auditor change locks the record. The result
+    // files and screens colour such a row orange (reconciliation/status-tone.js).
+    lockedAt: toIso(row.locked_at),
+    matchedByAuditor: isMatchedByAuditor(row),
+    // The open maker-checker request, when the query selected it (src/pending-change.js).
+    pendingChange: row.pending_change,
+    // The approved request behind a current auditor lock — who flagged it,
+    // who approved it, and when (src/pending-change.js's auditDetailColumn).
+    auditDetail: row.audit_detail ?? null,
     // Unit-aggregation facts behind the verdict, written by the unit pass.
     // Null on a row an ordinary rule matched: only an aggregated row belongs
     // to a unit. Column names still read match_group_* for continuity.
@@ -606,6 +658,149 @@ function divisionBankAccountRowToApi(row) {
   };
 }
 
+function locationRowToApi(row) {
+  return {
+    id: String(row.id),
+    name: row.name,
+    active: row.active,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
+// `locations` (present when the caller loaded and attached user_locations)
+// is only meaningful for Auditors — Admins see every location by role, not
+// by grant, so the field stays [] for them rather than listing all 4.
+function userRowToApi(row) {
+  return {
+    id: String(row.id),
+    employeeId: row.employee_id,
+    username: row.username,
+    fullName: row.full_name,
+    role: row.role,
+    managerId: row.manager_id != null ? String(row.manager_id) : null,
+    managerName: row.manager_name ?? undefined,
+    managerEmployeeId: row.manager_employee_id ?? undefined,
+    email: row.email,
+    mobileNumber: row.mobile_number,
+    isActive: row.is_active,
+    mustChangePassword: row.must_change_password,
+    isLocked: row.locked_until != null && new Date(row.locked_until) > new Date(),
+    lastLoginAt: toIso(row.last_login_at),
+    locations: Array.isArray(row.locations) ? row.locations.filter(Boolean) : undefined,
+    // Per-user screen access (enhancement 2026-09-21, items 4/5). Meaningless
+    // for role='Admin' — same convention as `locations` above, an Admin sees
+    // every grantable screen by role, no explicit grant needed.
+    screenKeys: Array.isArray(row.screen_keys) ? row.screen_keys.filter(Boolean) : undefined,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
+// requester_name/requester_employee_id/reviewer_name are joined in by the
+// route (LEFT JOIN users), not stored columns — undefined-safe the same way
+function folderWatchConfigRowToApi(row) {
+  return {
+    id: String(row.id),
+    folderPath: row.folder_path,
+    runTime: row.run_time, // 'HH:MM:SS', IST — see folder-watch/scheduler.js
+    active: row.active,
+    uploadedByLabel: row.uploaded_by_label,
+    updatedAt: toIso(row.updated_at),
+    updatedBy: row.updated_by != null ? String(row.updated_by) : null,
+    updatedByName: row.updated_by_name ?? undefined,
+  };
+}
+
+// Client mail items 8/15 (2026-09-21) — the shared go-live switch (backend/src/go-live.js).
+function goLiveConfigRowToApi(row) {
+  return {
+    id: String(row.id),
+    cutoffDate: toDateOnly(row.cutoff_date),
+    active: row.active,
+    updatedAt: toIso(row.updated_at),
+    updatedBy: row.updated_by != null ? String(row.updated_by) : null,
+    updatedByName: row.updated_by_name ?? undefined,
+  };
+}
+
+function folderWatchRunRowToApi(row) {
+  return {
+    id: String(row.id),
+    startedAt: toIso(row.started_at),
+    finishedAt: toIso(row.finished_at),
+    status: row.status,
+    filesFound: row.files_found,
+    filesIngested: row.files_ingested,
+    filesSkipped: row.files_skipped,
+    filesFailed: row.files_failed,
+    errorMessage: row.error_message,
+    triggeredBy: row.triggered_by != null ? String(row.triggered_by) : null,
+    triggeredByName: row.triggered_by_name ?? undefined,
+    // One entry per reconciliation step run after this scan's uploads, or
+    // null when nothing new came in (see folder-watch/ingest.js runReconciliationPlan).
+    generateSummary: row.generate_summary ?? null,
+  };
+}
+
+function folderWatchRunFileRowToApi(row) {
+  return {
+    id: String(row.id),
+    runId: String(row.run_id),
+    fileName: row.file_name,
+    detectedType: row.detected_type,
+    outcome: row.outcome,
+    batchId: row.batch_id != null ? String(row.batch_id) : null,
+    rowsIngested: row.rows_ingested,
+    generateSummary: row.generate_summary,
+    errorMessage: row.error_message,
+    superseded: row.superseded ?? false,
+    createdAt: toIso(row.created_at),
+  };
+}
+
+// auditLogRowToApi's actor_name/target_name are, so a caller that skips the
+// join still gets a correctly-shaped (if sparser) object.
+function matchChangeRequestRowToApi(row) {
+  return {
+    id: String(row.id),
+    entityType: row.entity_type,
+    entityId: String(row.entity_id),
+    previousStatus: row.previous_status,
+    proposedStatus: row.proposed_status,
+    // Derived, not stored (client mail item 15): a request whose previous
+    // status was already a clean match is a correction (unlock + reset to
+    // Unmatched), not the original propose-as-matched flow.
+    requestKind: TERMINAL_STATUSES.has(row.previous_status) ? 'CORRECTION' : 'MATCH_PROPOSAL',
+    reason: row.reason,
+    requestedBy: String(row.requested_by),
+    requesterName: row.requester_name ?? undefined,
+    requesterEmployeeId: row.requester_employee_id ?? undefined,
+    requestedAt: toIso(row.requested_at),
+    status: row.status,
+    reviewedBy: row.reviewed_by != null ? String(row.reviewed_by) : null,
+    reviewerName: row.reviewer_name ?? undefined,
+    reviewedAt: toIso(row.reviewed_at),
+    reviewNote: row.review_note,
+  };
+}
+
+function auditLogRowToApi(row) {
+  return {
+    id: String(row.id),
+    actorUserId: row.actor_user_id != null ? String(row.actor_user_id) : null,
+    actorName: row.actor_name ?? undefined,
+    targetUserId: row.target_user_id != null ? String(row.target_user_id) : null,
+    targetName: row.target_name ?? undefined,
+    entityType: row.entity_type ?? null,
+    entityId: row.entity_id ?? null,
+    action: row.action,
+    details: row.details,
+    ipAddress: row.ip_address,
+    createdAt: toIso(row.created_at),
+  };
+}
+
 /**
  * matching_rules.condition_groups (JSONB) -> CNF array: an AND-list of
  * OR-groups of leaves (see reconciliation/rules.js). pg hands JSONB back as a
@@ -670,7 +865,16 @@ module.exports = {
   ipPaymentRecordRowToApi,
   diagOpBatchRowToApi,
   diagOpRecordRowToApi,
+  onlineMismatchRowToApi,
   divisionBankAccountRowToApi,
+  locationRowToApi,
+  userRowToApi,
+  auditLogRowToApi,
+  matchChangeRequestRowToApi,
+  folderWatchConfigRowToApi,
+  goLiveConfigRowToApi,
+  folderWatchRunRowToApi,
+  folderWatchRunFileRowToApi,
   chequeCollectionBatchRowToApi,
   chequeCollectionRecordRowToApi,
   refundBatchRowToApi,

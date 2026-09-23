@@ -15,6 +15,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 import { TooltipModule } from 'primeng/tooltip';
 import { AuthService } from '../../core/services/auth.service';
+import { APP_NAME, APP_SHORT_NAME } from '../../core/config/app-name';
 import { MagneticDirective } from '../../shared/motion/magnetic.directive';
 import { SidebarStore } from './sidebar.store';
 
@@ -22,12 +23,20 @@ interface NavItem {
   label: string;
   icon: string;
   path: string;
+  /**
+   * Per-user screen grant this link needs (core/config/screens.ts) — the same
+   * key its route's screenAccessGuard checks, so the rail never offers a link
+   * the URL would then refuse. No key and not adminOnly = always shown.
+   */
+  screenKey?: string;
+  /** Role-gated instead (AuthService.isFrsAdmin()) — the 4 screens whose backend routes require role='Admin'. */
+  adminOnly?: boolean;
 }
 
 interface NavGroup {
   label: string;
   /** Key into the --nav-color/grad/soft/line-* token sets in _nav-accents.scss. */
-  accent: 'insurance' | 'online' | 'rules' | 'masters' | 'admin' | 'reports' | 'support';
+  accent: 'overview' | 'insurance' | 'online' | 'rules' | 'masters' | 'admin' | 'reports' | 'support';
   items: NavItem[];
   /**
    * Extra path prefixes this group owns without listing a link for them —
@@ -40,48 +49,60 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
+    // The landing page — every signed-in user sees it, whatever they're granted.
+    label: 'Overview',
+    accent: 'overview',
+    items: [{ label: 'Dashboard', icon: 'pi pi-gauge', path: '/dashboard' }],
+  },
+  {
     // The whole reconciliation workflow, front to back: upload everything, see
-    // every uploaded batch, see every result, manage every rule — four
-    // screens, each already tabbed internally by type. Nothing per-type is
-    // listed here any more; the tabs are the detail.
+    // every uploaded batch, see every result, manage every rule — each screen
+    // already tabbed internally by type. Nothing per-type is listed here any
+    // more; the tabs are the detail.
     label: 'Reconciliation',
     accent: 'rules',
     // The off-nav legacy MIS archive is otherwise unreachable from the rail.
     owns: ['/upload-online/payments'],
     items: [
-      { label: 'Upload & Run', icon: 'pi pi-play-circle', path: '/reconciliation' },
-      { label: 'Statements', icon: 'pi pi-book', path: '/upload-online/statements' },
-      { label: 'Reconciliation Results', icon: 'pi pi-chart-bar', path: '/matched-rules/results' },
-      { label: 'Manage Rules', icon: 'pi pi-sliders-h', path: '/matched-rules/manage-rules' },
+      { label: 'Upload & Run', icon: 'pi pi-play-circle', path: '/reconciliation', screenKey: 'upload-run' },
+      { label: 'Mismatch Review', icon: 'pi pi-exclamation-triangle', path: '/reconciliation/mismatches', screenKey: 'mismatch-review' },
+      { label: 'Match Approvals', icon: 'pi pi-verified', path: '/reconciliation/approvals', screenKey: 'match-approvals' },
+      { label: 'Shared Folder Automation', icon: 'pi pi-cloud-download', path: '/reconciliation/folder-watch', adminOnly: true },
+      { label: 'Go-Live Settings', icon: 'pi pi-lock', path: '/reconciliation/go-live-settings', adminOnly: true },
+      { label: 'Statements', icon: 'pi pi-book', path: '/upload-online/statements', screenKey: 'statements' },
+      { label: 'Reconciliation Results', icon: 'pi pi-chart-bar', path: '/matched-rules/results', screenKey: 'reconciliation-results' },
+      { label: 'Manage Rules', icon: 'pi pi-sliders-h', path: '/matched-rules/manage-rules', screenKey: 'manage-rules' },
     ],
   },
   {
     label: 'Master Data',
     accent: 'masters',
-    items: [{ label: 'Division & Bank A/C', icon: 'pi pi-sitemap', path: '/master-data/division-bank-accounts' }],
+    items: [
+      { label: 'Division & Bank A/C', icon: 'pi pi-sitemap', path: '/master-data/division-bank-accounts', screenKey: 'division-bank-accounts' },
+      { label: 'Location Master', icon: 'pi pi-map-marker', path: '/master-data/locations', adminOnly: true },
+      { label: 'User Management', icon: 'pi pi-users', path: '/master-data/users', adminOnly: true },
+    ],
   },
   {
     // A separate product that happens to share this shell — not part of the
-    // reconciliation workflow above, so it sits near the bottom rather than
-    // leading the rail. It is also the only section a non-Super-Admin can
-    // reach, which is why superAdminGuard falls back to its dashboard.
+    // reconciliation workflow above, so it sits near the bottom. Reachable per
+    // user through the same screen grants as everything else.
     label: 'Automation Insurance',
     accent: 'insurance',
     // '/insurance-policy/processing' and the documents/:id/* workspace steps.
     owns: ['/insurance-policy'],
     items: [
-      { label: 'Dashboard', icon: 'pi pi-th-large', path: '/insurance-policy/dashboard' },
-      { label: 'Upload Documents', icon: 'pi pi-cloud-upload', path: '/insurance-policy/upload' },
-      { label: 'Excel Export', icon: 'pi pi-file-excel', path: '/insurance-policy/excel-preview' },
-      { label: 'Processing History', icon: 'pi pi-history', path: '/insurance-policy/history' },
+      { label: 'Insurance Dashboard', icon: 'pi pi-th-large', path: '/insurance-policy/dashboard', screenKey: 'insurance-dashboard' },
+      { label: 'Upload Documents', icon: 'pi pi-cloud-upload', path: '/insurance-policy/upload', screenKey: 'insurance-upload' },
+      { label: 'Excel Export', icon: 'pi pi-file-excel', path: '/insurance-policy/excel-preview', screenKey: 'insurance-excel-export' },
+      { label: 'Processing History', icon: 'pi pi-history', path: '/insurance-policy/history', screenKey: 'insurance-history' },
     ],
   },
   {
-    // The operating guide for the reconciliation workflow. `admin` is the one
-    // accent _nav-accents.scss defines that no nav group had claimed.
+    // The operating guide for the reconciliation workflow.
     label: 'Help',
     accent: 'admin',
-    items: [{ label: 'How to Use', icon: 'pi pi-compass', path: '/how-to-use' }],
+    items: [{ label: 'How to Use', icon: 'pi pi-compass', path: '/how-to-use', screenKey: 'how-to-use' }],
   },
 ];
 
@@ -108,6 +129,8 @@ const NAV_GROUPS: NavGroup[] = [
   host: { class: 'app-sidebar-host' },
 })
 export class SidebarComponent {
+  protected readonly appShortName = APP_SHORT_NAME;
+  protected readonly appName = APP_NAME;
   protected readonly sidebarStore = inject(SidebarStore);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
@@ -115,9 +138,15 @@ export class SidebarComponent {
 
   private readonly navRef = viewChild<ElementRef<HTMLElement>>('nav');
 
+  /** Only the links this user can actually open — a group left with none is dropped. */
   protected readonly navGroups = computed(() =>
-    this.authService.isSuperAdmin() ? NAV_GROUPS : NAV_GROUPS.filter((g) => g.label === 'Automation Insurance'),
+    NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => this.canSee(i)) })).filter((g) => g.items.length > 0),
   );
+
+  private canSee(item: NavItem): boolean {
+    if (item.adminOnly) return this.authService.isFrsAdmin();
+    return item.screenKey ? this.authService.hasScreenAccess(item.screenKey) : true;
+  }
 
   /** Only one group is open at a time. */
   protected readonly expandedGroup = signal<string | null>(null);

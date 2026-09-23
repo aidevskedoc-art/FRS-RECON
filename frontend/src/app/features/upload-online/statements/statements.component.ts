@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { ViewAllUploadsComponent } from '../view-all-uploads/view-all-uploads.component';
 import { ViewBankStatementsComponent } from '../view-bank-statements/view-bank-statements.component';
 import { ViewPayuMprComponent } from '../view-payu-mpr/view-payu-mpr.component';
 import { ViewEasebuzzComponent } from '../view-easebuzz/view-easebuzz.component';
@@ -10,6 +11,7 @@ import { ViewChequeCollectionsComponent } from '../view-cheque-collections/view-
 import { ViewRefundDocumentsComponent } from '../view-refund-documents/view-refund-documents.component';
 
 type StatementsTabId =
+  | 'all-uploads'
   | 'bank-statements'
   | 'payu-mpr'
   | 'easebuzz'
@@ -26,6 +28,7 @@ interface StatementsTab {
 }
 
 const TABS: readonly StatementsTab[] = [
+  { id: 'all-uploads', label: 'All Uploads' },
   { id: 'bank-statements', label: 'Bank Statements' },
   { id: 'payu-mpr', label: 'PayU MPR' },
   { id: 'easebuzz', label: 'EaseBuzz' },
@@ -48,6 +51,7 @@ const TABS: readonly StatementsTab[] = [
   selector: 'app-statements',
   standalone: true,
   imports: [
+    ViewAllUploadsComponent,
     ViewBankStatementsComponent,
     ViewPayuMprComponent,
     ViewEasebuzzComponent,

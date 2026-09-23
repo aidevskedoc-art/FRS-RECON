@@ -1,12 +1,5 @@
 @use 'styles/mixins';
 
-// The Cheque & Refunds section sits on a plain page ground rather than the
-// shell's ambient aurora. Scoped to this component, so the neighbouring
-// IP / Diag / Bank screens are untouched.
-:host {
-  @include mixins.opaque-page-surface;
-}
-
 .matching-rules {
   display: flex;
   flex-direction: column;

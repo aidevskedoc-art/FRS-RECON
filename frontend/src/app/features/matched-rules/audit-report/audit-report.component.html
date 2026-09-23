@@ -97,6 +97,17 @@
       />
     </label>
 
+    <label class="field">
+      <span class="field__label">Unit</span>
+      <p-select
+        [options]="unitOptions()"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="unit()"
+        (ngModelChange)="setUnit($event)"
+      />
+    </label>
+
     <p-button label="Refresh preview" icon="pi pi-refresh" size="small" [outlined]="true" [loading]="loading()" (onClick)="loadPreview()" />
   </div>
 
@@ -104,6 +115,7 @@
     <div class="audit-report__meta">
       Period <strong>{{ p.periodLabel }}</strong> · filtered on
       <strong>{{ p.dateBasis === 'REALIZATION' ? 'realization (bank) date' : 'receipt date' }}</strong>
+      · <strong>{{ unit() || 'All Units' }}</strong>
     </div>
 
     <div class="audit-report__table-wrap">

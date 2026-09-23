@@ -4,6 +4,14 @@
   gap: var(--space-4);
 }
 
+.manage-rules__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .hub-picker {
   display: flex;
   gap: var(--space-2);
@@ -35,4 +43,70 @@
 
 .hub-option__title {
   white-space: nowrap;
+}
+
+// ---------------------------------------------------------------------
+// Regenerate All — client ask, 2026-09-23.
+// ---------------------------------------------------------------------
+.regenerate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+}
+
+.regenerate-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 22rem;
+  overflow-y: auto;
+  margin-bottom: var(--space-3);
+}
+
+.regenerate-step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  font-size: var(--text-sm);
+}
+
+.regenerate-step--error {
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-bg);
+}
+
+.regenerate-step__name {
+  font-weight: 600;
+}
+
+.regenerate-step__batch {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.regenerate-step__error {
+  color: var(--status-danger-fg);
+  font-size: var(--text-xs);
+}
+
+.regenerate-step__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }

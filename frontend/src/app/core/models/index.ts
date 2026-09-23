@@ -11,3 +11,8 @@ export * from './matching-rules.model';
 export * from './cheque-collection.model';
 export * from './ucr.model';
 export * from './upload-detect.model';
+export * from './user.model';
+export * from './mismatch-review.model';
+export * from './match-approval.model';
+export * from './folder-watch.model';
+export * from './go-live.model';

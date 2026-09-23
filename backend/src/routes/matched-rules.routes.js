@@ -4,6 +4,7 @@ const db = require('../db');
 const {
   ipPaymentRecordRowToApi,
   diagOpRecordRowToApi,
+  onlineMismatchRowToApi,
   bankStatementRecordRowToApi,
   matchingRuleRowToApi,
   chequeCollectionRecordRowToApi,
@@ -19,9 +20,15 @@ const { reconcileEasebuzzSettlements, settlementDateFor } = require('../reconcil
 const { runContraPass, CONTRA_ENTRY } = require('../reconciliation/contra-pass');
 const { resolvePeriod, DATE_BASES, inRange } = require('../reconciliation/period');
 const { buildAuditWorkbook, summariseSheet } = require('../excel/audit-report');
+const { writeXlsx } = require('../excel/write-xlsx');
 const { ucrRecordSelect } = require('../reconciliation/upi-card-recon/ucr-record-query');
 const { ucrIpRecordRowToApi } = require('../ucr-mappers');
 const { loadGatewayPolicy } = require('../gateway-policy-store');
+const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, settlementCutoffs, cutoffClause } = require('../scope-filters');
+const { isPastGoLive } = require('../go-live');
+const { pendingChangeColumn, auditDetailColumn } = require('../pending-change');
+const { requireAdmin } = require('../middleware/auth');
+const { logAction } = require('../audit-log');
 
 const router = express.Router();
 
@@ -738,13 +745,22 @@ async function runMatching(req, res, opts) {
   res.json(paginate(results, page, pageSize));
 }
 
-/** One row per individual payment record (a split-payment group's members all get the same verdict) for the bulk UPDATE below. */
-function flattenToRecordRows(results) {
+/**
+ * One row per individual payment record (a split-payment group's members all
+ * get the same verdict) for the bulk UPDATE below.
+ *
+ * `pastGoLive` (client mail item 15, 2026-09-21): once the go-live switch is
+ * live (backend/src/go-live.js), a row landing on a clean status locks itself
+ * the moment Generate writes it — not just an auditor-approved one. Before
+ * go-live this is always false, so nothing here changes pre-cutoff.
+ */
+function flattenToRecordRows(results, pastGoLive) {
   const rows = [];
   for (const group of results) {
     const status = group.excluded ? null : group.status;
     const amountField = group.excluded ? null : group.matchedAmountField;
     const bankRecordId = !group.excluded && group.bank ? Number(group.bank.recordId) : null;
+    const shouldLock = pastGoLive && status !== null && TERMINAL_STATUSES.has(status);
     for (const id of group.sourceRecordIds) {
       rows.push([
         Number(id),
@@ -757,6 +773,7 @@ function flattenToRecordRows(results) {
         group.unitCount,
         group.unitTotal,
         group.unitDifference,
+        shouldLock,
       ]);
     }
   }
@@ -765,22 +782,28 @@ function flattenToRecordRows(results) {
 
 /** Chunked bulk UPDATE via VALUES — same chunking rationale as insertRecordsChunked in ip-payments.routes.js (stays well under Postgres's ~65535 param limit). */
 async function bulkUpdateMatchStatus(client, recordTable, rows, chunkSize = 500) {
-  const cols = 10;
+  const cols = 11;
   for (let start = 0; start < rows.length; start += chunkSize) {
     const chunk = rows.slice(start, start + chunkSize);
     const valuesSql = chunk
       .map(
         (_, i) =>
-          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::text, $${i * cols + 5}::varchar, $${i * cols + 6}::int, $${i * cols + 7}::varchar, $${i * cols + 8}::int, $${i * cols + 9}::numeric, $${i * cols + 10}::numeric)`,
+          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::text, $${i * cols + 5}::varchar, $${i * cols + 6}::int, $${i * cols + 7}::varchar, $${i * cols + 8}::int, $${i * cols + 9}::numeric, $${i * cols + 10}::numeric, $${i * cols + 11}::boolean)`,
       )
       .join(', ');
     await client.query(
       `UPDATE ${recordTable} AS t
        SET match_status = v.status, match_applied_rule = v.rule, match_reason = v.reason, match_amount_field = v.amount_field, match_bank_record_id = v.bank_id,
            match_group_base_ref = v.unit_key, match_group_member_count = v.unit_count, match_group_total = v.unit_total,
-           match_group_difference = v.unit_difference
-       FROM (VALUES ${valuesSql}) AS v(id, status, rule, reason, amount_field, bank_id, unit_key, unit_count, unit_total, unit_difference)
-       WHERE t.id = v.id`,
+           match_group_difference = v.unit_difference,
+           locked_at = CASE WHEN v.should_lock THEN now() ELSE NULL END, locked_by = NULL
+       FROM (VALUES ${valuesSql}) AS v(id, status, rule, reason, amount_field, bank_id, unit_key, unit_count, unit_total, unit_difference, should_lock)
+       -- A checker-approved row is locked (locked_at set) and must survive a
+       -- re-run untouched — otherwise the next Generate silently overwrites
+       -- what maker-checker just signed off on. should_lock (client mail item
+       -- 15) is how a plain system match earns that same protection from the
+       -- go-live date onward — see flattenToRecordRows above.
+       WHERE t.id = v.id AND t.locked_at IS NULL`,
       chunk.flat(),
     );
   }
@@ -796,34 +819,40 @@ async function bulkUpdateMatchStatus(client, recordTable, rows, chunkSize = 500)
  * VALUES list in lockstep across three tables, where a single off-by-one
  * silently shifts every column after it.
  */
-function flattenChequeRecordRows(results) {
-  return results.map((group) => [
-    Number(group.sourceRecordIds[0]),
-    group.excluded ? null : group.status,
-    group.appliedRuleName,
-    group.matchReason,
-    !group.excluded && group.bank ? Number(group.bank.recordId) : null,
-    !group.excluded && group.contra ? Number(group.contra.refundRecordId) : null,
-  ]);
+function flattenChequeRecordRows(results, pastGoLive) {
+  return results.map((group) => {
+    const status = group.excluded ? null : group.status;
+    return [
+      Number(group.sourceRecordIds[0]),
+      status,
+      group.appliedRuleName,
+      group.matchReason,
+      !group.excluded && group.bank ? Number(group.bank.recordId) : null,
+      !group.excluded && group.contra ? Number(group.contra.refundRecordId) : null,
+      pastGoLive && status !== null && TERMINAL_STATUSES.has(status),
+    ];
+  });
 }
 
 /** Chunked bulk UPDATE for cheque collection verdicts — same chunking rationale as bulkUpdateMatchStatus. */
 async function bulkUpdateChequeMatchStatus(client, recordTable, rows, chunkSize = 500) {
-  const cols = 6;
+  const cols = 7;
   for (let start = 0; start < rows.length; start += chunkSize) {
     const chunk = rows.slice(start, start + chunkSize);
     const valuesSql = chunk
       .map(
         (_, i) =>
-          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::text, $${i * cols + 5}::int, $${i * cols + 6}::int)`,
+          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::text, $${i * cols + 5}::int, $${i * cols + 6}::int, $${i * cols + 7}::boolean)`,
       )
       .join(', ');
     await client.query(
       `UPDATE ${recordTable} AS t
        SET match_status = v.status, match_applied_rule = v.rule, match_reason = v.reason,
-           match_bank_record_id = v.bank_id, match_refund_record_id = v.refund_id
-       FROM (VALUES ${valuesSql}) AS v(id, status, rule, reason, bank_id, refund_id)
-       WHERE t.id = v.id`,
+           match_bank_record_id = v.bank_id, match_refund_record_id = v.refund_id,
+           locked_at = CASE WHEN v.should_lock THEN now() ELSE NULL END, locked_by = NULL
+       FROM (VALUES ${valuesSql}) AS v(id, status, rule, reason, bank_id, refund_id, should_lock)
+       -- See the same guard + should_lock note in bulkUpdateMatchStatus above.
+       WHERE t.id = v.id AND t.locked_at IS NULL`,
       chunk.flat(),
     );
   }
@@ -874,7 +903,7 @@ async function generateForBatch(req, res, opts) {
   if (!batchId) return res.status(400).json({ error: 'batchId is required' });
 
   const results = await computeMatchResults({ ...opts, batchId });
-  const rows = flattenRows(results);
+  const rows = flattenRows(results, await isPastGoLive());
 
   // Seeded with every status the engine can emit. An unseeded key would give
   // `undefined + n` = NaN, which JSON.stringify writes as null — a whole
@@ -893,19 +922,29 @@ async function generateForBatch(req, res, opts) {
   res.json({ batchId: String(batchId), matchedAt: new Date().toISOString(), counts });
 }
 
-/** Chunked bulk UPDATE for bank_statement_records' own match verdict — same chunking rationale as bulkUpdateMatchStatus above. */
+/**
+ * Chunked bulk UPDATE for bank_statement_records' own match verdict — same
+ * chunking rationale as bulkUpdateMatchStatus above. Unlike that one, this
+ * table carried no lock guard at all until client mail item 15 (2026-09-21):
+ * it now gets the same `t.locked_at IS NULL` guard and should_lock column as
+ * every other record table.
+ */
 async function bulkUpdateBankMatchStatus(client, rows, chunkSize = 500) {
-  const cols = 4;
+  const cols = 5;
   for (let start = 0; start < rows.length; start += chunkSize) {
     const chunk = rows.slice(start, start + chunkSize);
     const valuesSql = chunk
-      .map((_, i) => `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::int)`)
+      .map(
+        (_, i) =>
+          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::int, $${i * cols + 5}::boolean)`,
+      )
       .join(', ');
     await client.query(
       `UPDATE bank_statement_records AS t
-       SET match_status = v.status, match_payment_type = v.payment_type, match_payment_record_id = v.payment_record_id
-       FROM (VALUES ${valuesSql}) AS v(id, status, payment_type, payment_record_id)
-       WHERE t.id = v.id`,
+       SET match_status = v.status, match_payment_type = v.payment_type, match_payment_record_id = v.payment_record_id,
+           locked_at = CASE WHEN v.should_lock THEN now() ELSE NULL END, locked_by = NULL
+       FROM (VALUES ${valuesSql}) AS v(id, status, payment_type, payment_record_id, should_lock)
+       WHERE t.id = v.id AND t.locked_at IS NULL`,
       chunk.flat(),
     );
   }
@@ -980,11 +1019,12 @@ async function generateForBankBatch(req, res, next) {
     // on an unseeded key yields undefined + 1 = NaN, which JSON.stringify emits
     // as null, so a whole verdict silently disappears from the response.
     const counts = Object.fromEntries(UNIT_STATUSES.map((s) => [s, 0]));
+    const pastGoLive = await isPastGoLive();
     const updateRows = bankRows.map(({ id }) => {
       const claim = claims.get(id);
       const status = claim ? claim.status : 'UNMATCHED';
       counts[status] = (counts[status] || 0) + 1;
-      return [id, status, claim ? claim.paymentType : null, claim ? claim.paymentRecordId : null];
+      return [id, status, claim ? claim.paymentType : null, claim ? claim.paymentRecordId : null, pastGoLive && TERMINAL_STATUSES.has(status)];
     });
 
     await db.withTransaction(async (client) => {
@@ -1022,6 +1062,260 @@ router.get('/diag-op-payments', async (req, res, next) => {
       rulesTable: 'diag_payment_matching_rules',
       paymentModeField: 'payMode',
       batchTable: 'diag_op_upload_batches',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/matched-rules/online-mismatches?search=&dateFrom=&dateTo=&matchStatus=&location=&department=&upTo=BANK&page=&pageSize=
+//
+// Mismatch Review screen's combined "Online" tab (2026-09-21) — IP and
+// Diag/OP mismatches in ONE table with a `recordType` column, not two
+// separate calls merged in the browser: IP alone already runs to 900+
+// mismatched rows and Diag/OP to several thousand, so pagination has to
+// happen in the database, across both tables at once, or it isn't real
+// pagination. Both tables share every match_* column outright (see
+// schema.sql) and differ only in a handful of business columns (ip_no vs
+// diag_no, payment_mode vs pay_mode, diag's discount/diff amounts) — bridged
+// here with column aliases and NULL placeholders, not two different shapes.
+router.get('/online-mismatches', async (req, res, next) => {
+  try {
+    const { search, dateFrom, dateTo, matchStatus, matchedByAuditor } = req.query;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
+
+    // Shared clauses/params — both UNION halves reference the same $n
+    // placeholders for the conditions that mean the same thing on either
+    // table (match_status, receipt_date); only the search clause's unit
+    // number column differs (ip_no vs diag_no), reusing the same search
+    // param value against a different column name per side.
+    const clauses = [];
+    const params = [];
+
+    if (matchStatus) {
+      const statuses = String(matchStatus).split(',').map((s) => s.trim()).filter(Boolean);
+      params.push(statuses);
+      clauses.push(`r.match_status = ANY($${params.length}::text[])`);
+    }
+    // 'Matched' vs 'Matched by Auditor' split the same clean-match set by who
+    // locked it — see status-tone.js's isMatchedByAuditor (both columns, not
+    // locked_at alone).
+    if (matchedByAuditor === 'true') {
+      clauses.push(`(r.locked_at IS NOT NULL AND r.locked_by IS NOT NULL)`);
+    } else if (matchedByAuditor === 'false') {
+      clauses.push(`(r.locked_at IS NULL OR r.locked_by IS NULL)`);
+    }
+    if (dateFrom) {
+      params.push(dateFrom);
+      clauses.push(`r.receipt_date >= $${params.length}`);
+    }
+    if (dateTo) {
+      params.push(dateTo);
+      clauses.push(`r.receipt_date < ($${params.length}::date + interval '1 day')`);
+    }
+
+    let searchParamIdx = null;
+    if (search && String(search).trim()) {
+      params.push(`%${String(search).trim()}%`);
+      searchParamIdx = params.length;
+    }
+
+    const ipSearch = searchParamIdx
+      ? [`(r.patient_name ILIKE $${searchParamIdx} OR r.receipt_number ILIKE $${searchParamIdx} OR r.ip_no ILIKE $${searchParamIdx} OR r.transaction_id_1 ILIKE $${searchParamIdx} OR r.transaction_id_2 ILIKE $${searchParamIdx})`]
+      : [];
+    const diagSearch = searchParamIdx
+      ? [`(r.patient_name ILIKE $${searchParamIdx} OR r.receipt_number ILIKE $${searchParamIdx} OR r.diag_no ILIKE $${searchParamIdx} OR r.transaction_id_1 ILIKE $${searchParamIdx} OR r.transaction_id_2 ILIKE $${searchParamIdx})`]
+      : [];
+
+    // AC-10 location + department (src/scope-filters.js). Department picks a
+    // side of the UNION: IP is the IP table, DIAG/OPD the Diag/OP table's
+    // department column — the other side is switched off with FALSE.
+    const ipScope = [];
+    const diagScope = [];
+    const locations = locationPatterns(req.query.location);
+    if (locations) {
+      params.push(locations);
+      ipScope.push(batchLocationClause('ip_payment_upload_batches', params.length));
+      diagScope.push(batchLocationClause('diag_op_upload_batches', params.length));
+    }
+    const department = parseDepartment(req.query.department);
+    if (department === 'IP') diagScope.push('FALSE');
+    if (department === 'DIAG' || department === 'OPD') {
+      ipScope.push('FALSE');
+      params.push(department);
+      diagScope.push(`r.department = $${params.length}`);
+    }
+    // AC-12 "till bank upload": each row cut at its own branch's bank date.
+    if (parseUpTo(req.query.upTo) === 'BANK') {
+      const cutoffs = await settlementCutoffs('BANK');
+      const ipCut = cutoffClause('ip_payment_upload_batches', cutoffs, params);
+      const diagCut = cutoffClause('diag_op_upload_batches', cutoffs, params);
+      if (ipCut) ipScope.push(ipCut);
+      if (diagCut) diagScope.push(diagCut);
+    }
+
+    const ipAll = [...clauses, ...ipSearch, ...ipScope];
+    const diagAll = [...clauses, ...diagSearch, ...diagScope];
+    const ipWhere = ipAll.length ? `WHERE ${ipAll.join(' AND ')}` : '';
+    const diagWhere = diagAll.length ? `WHERE ${diagAll.join(' AND ')}` : '';
+
+    const ipSelect = `
+      SELECT 'IP' AS record_type, 'IP' AS department, pb.unit_name AS batch_unit_name,
+             r.id, r.batch_id, r.receipt_number, r.receipt_date, r.yhno,
+             r.ip_no AS unit_no, r.patient_name, r.transaction_id_1, r.transaction_id_2, r.trans_id,
+             r.payment_mode, r.pay_type, r.remarks, r.payment_remarks, r.pat_type,
+             r.bill_amount, r.cash_amount, r.card_amount, r.cheque_amount, r.online_amount,
+             NULL::numeric AS discount_amount, NULL::numeric AS diff_amount,
+             r.user_id, r.user_name, r.created_at,
+             r.match_status, r.match_applied_rule, r.match_reason, r.locked_at, r.locked_by,
+             r.match_group_base_ref, r.match_group_member_count, r.match_group_total, r.match_group_difference,
+             ${pendingChangeColumn("'IP'")}, ${auditDetailColumn("'IP'")}
+        FROM ip_payment_records r
+        LEFT JOIN ip_payment_upload_batches pb ON pb.id = r.batch_id
+        ${ipWhere}`;
+    const diagSelect = `
+      SELECT 'DIAG' AS record_type, r.department, pb.unit_name AS batch_unit_name,
+             r.id, r.batch_id, r.receipt_number, r.receipt_date, r.yhno,
+             r.diag_no AS unit_no, r.patient_name, r.transaction_id_1, r.transaction_id_2, NULL AS trans_id,
+             r.pay_mode AS payment_mode, r.pay_type, NULL AS remarks, NULL AS payment_remarks, r.pat_type,
+             r.bill_amount, r.cash_amount, r.card_amount, r.cheque_amount, r.online_amount,
+             r.discount_amount, r.diff_amount,
+             r.user_id, r.user_name, r.created_at,
+             r.match_status, r.match_applied_rule, r.match_reason, r.locked_at, r.locked_by,
+             r.match_group_base_ref, r.match_group_member_count, r.match_group_total, r.match_group_difference,
+             ${pendingChangeColumn("'DIAG'")}, ${auditDetailColumn("'DIAG'")}
+        FROM diag_op_payment_records r
+        LEFT JOIN diag_op_upload_batches pb ON pb.id = r.batch_id
+        ${diagWhere}`;
+
+    const { rows: countRows } = await db.query(
+      `SELECT COUNT(*)::int AS total FROM (${ipSelect} UNION ALL ${diagSelect}) t`,
+      params,
+    );
+
+    const { rows } = await db.query(
+      `${ipSelect} UNION ALL ${diagSelect}
+       ORDER BY receipt_date DESC NULLS LAST, id DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, pageSize, (page - 1) * pageSize],
+    );
+
+    res.json({
+      total: countRows[0].total,
+      page,
+      pageSize,
+      records: rows.map(onlineMismatchRowToApi),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/matched-rules/reconciliation-dates?location=&department=
+//
+// Client mail AC-11 — the Collection and Bank Deposit Reconciliation screen
+// shows, per collection type, when its MIS data was last uploaded and when the
+// file it reconciles against was: the bank statement for Online and Cheque, the
+// Card MPR / Pine Labs export for Card, the UPI MPR for UPI. Each carries two
+// dates: `uploadedAt` (when the file came in) and `dataUpTo` (the latest
+// transaction date inside it — what the reconciliation actually covers).
+//
+// Location scopes the MIS side by batch unit_name (src/scope-filters.js) and the
+// bank statement by its account's division in master_division_bank_accounts.
+// The MPR exports carry no reliable unit, so they are never location-scoped
+// (`locationScoped: false` tells the screen to say so). Department narrows the
+// MIS side the same way the list endpoints do.
+//
+// Calendar dates come back via to_char — never a JS Date — see the
+// date-timezone note on loadEasebuzzDivisionData() above.
+router.get('/reconciliation-dates', async (req, res, next) => {
+  try {
+    const locations = locationPatterns(req.query.location);
+    const department = parseDepartment(req.query.department);
+    const iso = (v) => (v ? new Date(v).toISOString() : null);
+    const one = async (sql, params) => {
+      const { rows } = await db.query(sql, params);
+      return { uploadedAt: iso(rows[0] && rows[0].uploaded_at), dataUpTo: (rows[0] && rows[0].data_up_to) || null };
+    };
+    // Latest of several sources: each date independently.
+    const latest = (...parts) => ({
+      uploadedAt: parts.map((p) => p.uploadedAt).filter(Boolean).sort().pop() || null,
+      dataUpTo: parts.map((p) => p.dataUpTo).filter(Boolean).sort().pop() || null,
+    });
+    const EMPTY = { uploadedAt: null, dataUpTo: null };
+    const LOC = `($1::text[] IS NULL OR b.unit_name ILIKE ANY($1::text[]))`;
+
+    // ---- MIS side -------------------------------------------------------------
+    const misIp = department && department !== 'IP' ? EMPTY : await one(
+      `SELECT max(b.uploaded_at) AS uploaded_at, to_char(max(r.receipt_date), 'YYYY-MM-DD') AS data_up_to
+         FROM ip_payment_upload_batches b JOIN ip_payment_records r ON r.batch_id = b.id
+        WHERE ${LOC}`,
+      [locations],
+    );
+    const misDiag = department === 'IP' ? EMPTY : await one(
+      `SELECT max(b.uploaded_at) AS uploaded_at, to_char(max(r.receipt_date), 'YYYY-MM-DD') AS data_up_to
+         FROM diag_op_upload_batches b JOIN diag_op_payment_records r ON r.batch_id = b.id
+        WHERE ${LOC} AND ($2::text IS NULL OR r.department = $2)`,
+      [locations, department],
+    );
+    // A cheque's collection_kind 'OP' is the diagnostics ledger; there is no OPD one.
+    const chequeKind = { IP: 'IP', DIAG: 'OP' }[department];
+    const misCheque = department === 'OPD' ? EMPTY : await one(
+      `SELECT max(b.uploaded_at) AS uploaded_at, to_char(max(r.receipt_date), 'YYYY-MM-DD') AS data_up_to
+         FROM cheque_collection_upload_batches b JOIN cheque_collection_records r ON r.batch_id = b.id
+        WHERE ${LOC} AND ($2::text IS NULL OR r.collection_kind = $2)`,
+      [locations, chequeKind || null],
+    );
+    const ucrSource = department === 'OPD' ? 'OP' : department;
+    const misUcr = (instrumentType) => one(
+      `SELECT max(b.uploaded_at) AS uploaded_at, to_char(max(r.receipt_date), 'YYYY-MM-DD') AS data_up_to
+         FROM ucr_ip_upload_batches b JOIN ucr_ip_records r ON r.batch_id = b.id
+        WHERE ${LOC} AND r.instrument_type = $2 AND ($3::text IS NULL OR r.mis_source = $3)`,
+      [locations, instrumentType, ucrSource || null],
+    );
+
+    // ---- Bank / settlement side -------------------------------------------------
+    const bank = await one(
+      `SELECT max(u.uploaded_at) AS uploaded_at, to_char(max(br.txn_date), 'YYYY-MM-DD') AS data_up_to
+         FROM bank_statement_uploads u LEFT JOIN bank_statement_records br ON br.batch_id = u.id
+        WHERE u.source = 'BANK'
+          AND ($1::text[] IS NULL OR EXISTS (
+                SELECT 1 FROM master_division_bank_accounts mda
+                 WHERE regexp_replace(mda.account_number, '\\D', '', 'g') = regexp_replace(u.account_no, '\\D', '', 'g')
+                   AND mda.division_name ILIKE ANY($1::text[])))`,
+      [locations],
+    );
+    const cardMpr = await one(
+      `SELECT max(uploaded_at) AS uploaded_at, to_char(max(d), 'YYYY-MM-DD') AS data_up_to FROM (
+         SELECT b.uploaded_at, r.chg_date AS d
+           FROM ucr_card_mpr_upload_batches b LEFT JOIN ucr_card_mpr_records r ON r.batch_id = b.id
+         UNION ALL
+         SELECT b.uploaded_at, r.txn_date::date
+           FROM ucr_card_pinelabs_upload_batches b LEFT JOIN ucr_card_pinelabs_records r ON r.batch_id = b.id
+       ) t`,
+      [],
+    );
+    const upiMpr = await one(
+      `SELECT max(b.uploaded_at) AS uploaded_at, to_char(max(r.transaction_req_date::date), 'YYYY-MM-DD') AS data_up_to
+         FROM ucr_upi_mpr_upload_batches b LEFT JOIN ucr_upi_mpr_records r ON r.batch_id = b.id`,
+      [],
+    );
+
+    // AC-12: each branch's own bank date — what "till bank upload" cuts each
+    // row at — so the screen can say which date applied where.
+    // `overallDataUpTo` is the fallback for a branch with no statement of its own.
+    const bankCutoffs = await settlementCutoffs('BANK');
+    const perBranch = {
+      byLocation: bankCutoffs.byLocation.map((c) => ({ location: c.name, dataUpTo: c.cutoff })),
+      overallDataUpTo: bankCutoffs.fallback,
+    };
+
+    res.json({
+      online: { mis: latest(misIp, misDiag), bank: { ...bank, source: 'Bank statement', locationScoped: true, ...perBranch } },
+      cheque: { mis: misCheque, bank: { ...bank, source: 'Bank statement', locationScoped: true, ...perBranch } },
+      card: { mis: await misUcr('CARD'), bank: { ...cardMpr, source: 'Card MPR / Pine Labs', locationScoped: false } },
+      upi: { mis: await misUcr('UPI'), bank: { ...upiMpr, source: 'UPI MPR', locationScoped: false } },
     });
   } catch (err) {
     next(err);
@@ -1078,6 +1372,42 @@ router.post('/cheque-collections/generate', async (req, res, next) => {
 
 // POST /api/matched-rules/bank-statements/generate?batchId= — run once per bank statement upload, persist onto bank_statement_records.
 router.post('/bank-statements/generate', generateForBankBatch);
+
+/**
+ * POST /api/matched-rules/regenerate-all — Admin only (client ask, 2026-09-23:
+ * a matching-rule edit leaves every already-generated batch silently stale
+ * until someone finds it and clicks Regenerate — "give a global option").
+ *
+ * Every /generate endpoint here except the four global ones (PayU/EaseBuzz
+ * settlements, Card/UPI recon) needs a batchId — there is no "every batch at
+ * once" SQL path for those. Rather than re-deriving that batch list and the
+ * IP -> Diag -> Cheque -> Bank -> settlements -> UCR ordering here,
+ * this reuses folder-watch/ingest.js's runReconciliationPlan() outright — the
+ * exact same steps the shared-folder automation and the Upload & Run screen
+ * already run, just unconditionally over every existing batch instead of
+ * only the ones a fresh upload just touched.
+ *
+ * require() is deliberately inside the handler, not at module scope: ingest.js
+ * itself requires this router (to invoke its own /generate handlers
+ * in-process), so requiring ingest.js at the top of this file would be a
+ * circular require resolved in whichever module happens to load first.
+ */
+router.post('/regenerate-all', requireAdmin, async (req, res, next) => {
+  try {
+    const { runReconciliationPlan } = require('../folder-watch/ingest');
+    const steps = await runReconciliationPlan();
+    const failed = steps.filter((s) => s.error);
+    await logAction({
+      actorUserId: req.user.sub, entityType: 'reconciliation',
+      action: 'REGENERATE_ALL',
+      details: { stepCount: steps.length, failedCount: failed.length, failedSteps: failed.map((s) => s.step) },
+      req,
+    });
+    res.json({ generatedAt: new Date().toISOString(), steps });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * GET /api/matched-rules/unit-matches?paymentType=&batchId=&status=&page=&pageSize=
@@ -1941,6 +2271,13 @@ async function buildAuditSheets(query) {
     : 'RECEIPT';
   const scopeByReceipt = basis === 'RECEIPT';
   const engineDates = scopeByReceipt ? { dateFrom: period.dateFrom, dateTo: period.dateToInclusive } : {};
+  // Client ask, 2026-09-23: a "Unit wise" report — every sheet scoped to one
+  // branch. Every row here already carries `division`, resolved the same way
+  // Mismatch Review's Location filter is (matchFieldsToApi/ucrIpRecordRowToApi
+  // -> resolveDivision), so this filters in memory rather than adding a
+  // parallel SQL path — the engine still runs over the branch's own rows only
+  // via the per-row filter below, not a separate per-unit query.
+  const unit = query.unit ? String(query.unit).trim() : null;
 
   // The sample's online sheets carry only receipts that land as a direct bank
   // credit — NEFT / IMPS / RTGS / BHIM / wallet / "Online". A bare gateway-UPI
@@ -2007,11 +2344,20 @@ async function buildAuditSheets(query) {
             res.settlementDate = { ...resolved, payoutAmount: payout, receiptedCount, receiptedTotal, balance };
           }
         }
+        // Maker-checker: the engine above re-derives every verdict live, so on
+        // its own it would print an auditor-approved (locked) record with the
+        // engine's view — typically still Unmatched — contradicting the
+        // approval. The approval wins: MATCHED, flagged for the orange colour
+        // (AC-17), with the approved change's own text as the reason.
+        if (rec.matchedByAuditor) {
+          return { ...rec, __result: { ...res, status: 'MATCHED', matchedByAuditor: true, matchReason: rec.matchReason } };
+        }
         return { ...rec, __result: res };
       })
       .filter(Boolean);
 
     if (s.rowFilter) rows = rows.filter(s.rowFilter);
+    if (unit) rows = rows.filter((row) => row.division === unit);
 
     if (!scopeByReceipt) {
       // Filter on the SAME date the report prints, or the workbook contradicts
@@ -2035,7 +2381,9 @@ async function buildAuditSheets(query) {
     sheets.push({ key: s.key, rows });
   }
 
-  sheets.push({ key: 'UCR', rows: await loadUcrAuditRows(period, scopeByReceipt) });
+  let ucrRows = await loadUcrAuditRows(period, scopeByReceipt);
+  if (unit) ucrRows = ucrRows.filter((row) => row.division === unit);
+  sheets.push({ key: 'UCR', rows: ucrRows });
 
   return {
     periodLabel: period.label,
@@ -2046,7 +2394,7 @@ async function buildAuditSheets(query) {
   };
 }
 
-// GET /api/matched-rules/audit-report/preview?periodType=&period=&dateBasis= — per-sheet rollup for the screen's pre-download summary.
+// GET /api/matched-rules/audit-report/preview?periodType=&period=&dateBasis=&unit= — per-sheet rollup for the screen's pre-download summary.
 router.get('/audit-report/preview', async (req, res, next) => {
   try {
     const { periodLabel, dateBasis, sheets } = await buildAuditSheets(req.query);
@@ -2061,17 +2409,19 @@ router.get('/audit-report/preview', async (req, res, next) => {
   }
 });
 
-// GET /api/matched-rules/audit-report?periodType=DAILY|MONTHLY|YEARLY&period=<value>&dateBasis=RECEIPT|REALIZATION&variant=client|internal — streams the .xlsx.
+// GET /api/matched-rules/audit-report?periodType=DAILY|MONTHLY|YEARLY&period=<value>&dateBasis=RECEIPT|REALIZATION&unit=<division name>&variant=client|internal — streams the .xlsx.
+// unit scopes every sheet to one branch (client ask, 2026-09-23: "Unit wise report"), by the same division name Mismatch Review's Location filter uses.
 // variant=internal appends MATCH STATUS / APPLIED RULE / REASON / bank columns to every sheet (the FRS working copy); client (default) is the exact client layout.
 router.get('/audit-report', async (req, res, next) => {
   try {
     const variant = String(req.query.variant || '').toLowerCase() === 'internal' ? 'internal' : 'client';
     const { periodLabel, periodTitlePhrase, periodTitlePhraseBare, sheets } = await buildAuditSheets(req.query);
     const workbook = buildAuditWorkbook({ periodLabel, periodTitlePhrase, periodTitlePhraseBare, sheets, variant });
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeXlsx(workbook);
+    const unitSuffix = req.query.unit ? ` - ${String(req.query.unit).trim()}` : '';
     const suffix = variant === 'internal' ? ' (internal)' : '';
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Audit Working Report - ${periodLabel}${suffix}.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="Audit Working Report - ${periodLabel}${unitSuffix}${suffix}.xlsx"`);
     res.send(buffer);
   } catch (err) {
     next(err);

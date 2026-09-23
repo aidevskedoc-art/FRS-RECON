@@ -1,0 +1,220 @@
+<div class="folder-watch">
+  <app-page-header
+    icon="pi pi-cloud-download"
+    title="Shared Folder Automation"
+    subtitle="Check the shared folder automatically, ingest what's new, and run the reconciliation — no manual upload."
+  />
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="folder-watch__settings glass-card glass-card--static">
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+
+      <label class="field">
+        <span class="field-label">Shared Folder Path</span>
+        <input
+          pInputText
+          type="text"
+          placeholder="\\SERVER\share\folder"
+          [ngModel]="draft().folderPath"
+          (ngModelChange)="updateDraft({ folderPath: $event })"
+        />
+        <span class="field-hint">A UNC path the backend server can read — e.g. \\YHCORP-ED7080\BS_share_san</span>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Check Time (IST, daily)</span>
+        <input
+          pInputText
+          type="time"
+          [ngModel]="draft().runTime"
+          (ngModelChange)="updateDraft({ runTime: $event })"
+          class="time-input"
+        />
+      </label>
+
+      <label class="field">
+        <span class="field-label">Batch "Uploaded By" Label</span>
+        <input
+          pInputText
+          type="text"
+          [ngModel]="draft().uploadedByLabel"
+          (ngModelChange)="updateDraft({ uploadedByLabel: $event })"
+        />
+        <span class="field-hint">Shown on every automatically-ingested batch, so it's clearly not a manual upload.</span>
+      </label>
+
+      <label class="field field--switch">
+        <span class="field-label">Automation Enabled</span>
+        <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
+      </label>
+
+      <div class="folder-watch__actions">
+        <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+          @if (saving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-check"></i>
+          }
+          <span>Save Settings</span>
+        </button>
+        @if (saved()) {
+          <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
+        }
+
+        <button type="button" class="btn btn-ghost" [disabled]="runningNow()" (click)="runNow()" pTooltip="Check the folder right now, without waiting for the scheduled time">
+          @if (runningNow()) {
+            <span class="btn-spinner btn-spinner--dark"></span>
+          } @else {
+            <i class="pi pi-play"></i>
+          }
+          <span>Run Now</span>
+        </button>
+      </div>
+
+      @if (runNowError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+    </div>
+  </div>
+
+  <div class="folder-watch__table-wrap glass-card glass-card--static">
+    <p-table
+      [value]="folderWatch.runsPage().runs"
+      dataKey="id"
+      [lazy]="true"
+      [paginator]="true"
+      [rows]="folderWatch.runsPage().pageSize"
+      [first]="(folderWatch.runsPage().page - 1) * folderWatch.runsPage().pageSize"
+      [totalRecords]="folderWatch.runsPage().total"
+      [loading]="folderWatch.loading()"
+      (onLazyLoad)="onPageChange($event)"
+      styleClass="p-datatable-sm runs-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th>Started</th>
+          <th>Trigger</th>
+          <th>Status</th>
+          <th>Found</th>
+          <th>Ingested</th>
+          <th>Skipped</th>
+          <th>Failed</th>
+          <th class="actions-col">Detail</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-run>
+        <tr class="clickable-row" (click)="openRunDetail(run)">
+          <td class="nowrap">{{ run.startedAt | date: 'd MMM y, h:mm a' }}</td>
+          <td>{{ run.triggeredByName || 'Scheduled' }}</td>
+          <td><span class="status-pill" [class]="statusPillClass(run.status)">{{ run.status }}</span></td>
+          <td class="num">{{ run.filesFound }}</td>
+          <td class="num">{{ run.filesIngested }}</td>
+          <td class="num">{{ run.filesSkipped }}</td>
+          <td class="num" [class.has-failures]="run.filesFailed > 0">{{ run.filesFailed }}</td>
+          <td class="actions-col"><i class="pi pi-angle-right"></i></td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="8">
+            <div class="empty-state">
+              <i class="pi pi-cloud-download"></i>
+              <strong>No runs yet</strong>
+              <p>Save the folder path above, then use "Run Now" to check it for the first time.</p>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  <!-- Run detail — every file the scan saw, and what happened to it -->
+  @if (detailRun(); as run) {
+    <p-dialog
+      [header]="'Run — ' + (run.startedAt | date: 'd MMM y, h:mm a')"
+      [visible]="true"
+      (visibleChange)="closeDetail()"
+      [modal]="true"
+      [style]="{ width: '40rem' }"
+    >
+      @if (run.errorMessage) {
+        <div class="notice notice--danger">
+          <i class="pi pi-times-circle"></i>
+          {{ run.errorMessage }}
+        </div>
+      }
+
+      @if (retryNote(); as note) {
+        <div class="notice notice--info">
+          <i class="pi pi-info-circle"></i>
+          {{ note }}
+        </div>
+      }
+
+      @if (detailLoading()) {
+        <div class="activity-loading"><span class="btn-spinner btn-spinner--dark"></span> Loading…</div>
+      } @else if (detailGroups().length === 0) {
+        <p class="field-hint">No new files were read on this run.</p>
+      } @else {
+        <h3 class="detail-heading">Files</h3>
+        <ul class="file-list">
+          @for (g of detailGroups(); track g.fileName) {
+            <li [class.file-list__item--superseded]="g.superseded">
+              <div class="file-list__head">
+                <span class="file-list__name">{{ g.fileName }}</span>
+                @if (g.superseded) {
+                  <span class="file-list__retried">Will be read again</span>
+                } @else if (g.canRetry) {
+                  <button type="button" class="btn btn-ghost btn-sm" [disabled]="retrying() === g.fileName" (click)="retry(g)"
+                    pTooltip="Read this file again on the next check (e.g. after it was fixed)">
+                    <i class="pi pi-refresh"></i>
+                    <span>Retry</span>
+                  </button>
+                }
+              </div>
+              <ul class="report-list">
+                @for (r of g.reports; track r.id) {
+                  <li>
+                    <div class="report-list__head">
+                      <span class="report-list__type">{{ r.detectedType || 'Unrecognised' }}</span>
+                      <span class="status-pill" [class]="outcomePillClass(r.outcome)">{{ outcomeLabel(r.outcome) }}</span>
+                      @if (r.rowsIngested != null) {
+                        <span class="report-list__rows">{{ r.rowsIngested }} rows</span>
+                      }
+                    </div>
+                    @if (r.errorMessage) {
+                      <p class="report-list__reason" [class.report-list__reason--error]="r.outcome === 'FAILED'">{{ r.errorMessage }}</p>
+                    }
+                  </li>
+                }
+              </ul>
+            </li>
+          }
+        </ul>
+      }
+
+      @if (run.generateSummary; as steps) {
+        <h3 class="detail-heading">Reconciliation run after these uploads</h3>
+        <ul class="step-list">
+          @for (step of steps; track $index) {
+            <li [class.step-list__item--error]="!!step.error">
+              <span class="step-list__name">{{ step.step }}@if (step.batchId) { <span class="step-list__batch">#{{ step.batchId }}</span> }</span>
+              <span class="step-list__counts">{{ stepCounts(step) }}</span>
+            </li>
+          }
+        </ul>
+      } @else if (!detailLoading() && detailGroups().length > 0) {
+        <p class="field-hint">Nothing new was stored on this run, so the reconciliation was not re-run.</p>
+      }
+    </p-dialog>
+  }
+</div>

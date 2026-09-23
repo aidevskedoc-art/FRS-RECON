@@ -2,7 +2,7 @@
   <div class="page-header">
     <div class="page-header__text">
       <h2>Reconciliation</h2>
-      <p>Drop the MIS, bank and cheque reports together — the system works out what each file is — then run every reconciliation in one go.</p>
+      <p>Drop every report in one place — MIS, the combined “All Collections” workbook, bank statements, MPRs, cheque ledgers. Each file is identified from its content and checked before anything is saved; then every reconciliation runs in one go.</p>
     </div>
     <!-- The deliverable this whole screen feeds. Sits here so it is reachable
          straight after a run, without going back out to the sidebar. -->
@@ -29,6 +29,13 @@
     </div>
   }
 
+  @if (duplicates().length) {
+    <div class="notice notice--warning">
+      <i class="pi pi-copy"></i>
+      <span>Not added — already in the list: {{ duplicates().join(', ') }}</span>
+    </div>
+  }
+
   <div class="card">
     <div class="card__head">
       <h3>Upload Reports</h3>
@@ -37,129 +44,228 @@
       }
     </div>
 
-    <div class="zones">
-      @for (zone of zones; track zone.id) {
-        <div class="zone">
-          <div class="zone__label">
-            {{ zone.title }}
-            @if (zone.qualifier) { <span class="zone__qualifier">{{ zone.qualifier }}</span> }
-          </div>
+    <!-- The whole box is the click target, not just the text line. -->
+    <div
+      class="dropzone"
+      [class.dropzone--active]="dragging()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave()"
+      (drop)="onDrop($event)"
+      (click)="picker.click()"
+    >
+      <!-- `multiple` is a property binding, not a bare attribute, so the DOM
+           property is set explicitly and the OS dialog always allows picking
+           several files. The click guard matters too: this input lives inside
+           the clickable dropzone, so without it the programmatic .click()
+           bubbles back up and re-opens the dialog. -->
+      <input
+        #picker
+        type="file"
+        accept=".xlsx,.xls"
+        [multiple]="true"
+        hidden
+        (click)="$event.stopPropagation()"
+        (change)="onFileInput($event)"
+      />
+      <i class="pi pi-cloud-upload dropzone__icon"></i>
+      <p class="dropzone__title">Drag &amp; drop all your .xlsx / .xls files here, or click to browse</p>
+      <p class="dropzone__hint">
+        MIS &amp; HIS collection reports (including the combined IP / OP / Diagnostics “All Collections” workbook) ·
+        bank statements · CARD / UPI MPR · Pine Labs · PayU · EaseBuzz · cheque ledgers · refund documents
+      </p>
+      <p class="dropzone__multi">Several files at once, in any order</p>
+    </div>
 
-          <!-- The whole box is the click target, not just the text line. -->
-          <div
-            class="dropzone"
-            [class.dropzone--active]="draggingZone() === zone.id"
-            (dragover)="onDragOver($event, zone.id)"
-            (dragleave)="onDragLeave()"
-            (drop)="onDrop($event, zone.id)"
-            (click)="picker.click()"
-          >
-            <!-- `multiple` is a property binding, not a bare attribute, so the
-                 DOM property is set explicitly and the OS dialog always allows
-                 picking several files. The click guard matters too: this input
-                 lives inside the clickable dropzone, so without it the
-                 programmatic .click() bubbles back up and re-opens the dialog. -->
-            <input
-              #picker
-              type="file"
-              accept=".xlsx,.xls"
-              [multiple]="true"
-              hidden
-              (click)="$event.stopPropagation()"
-              (change)="onFileInput($event, zone.id)"
-            />
-            <p class="dropzone__title">Drag &amp; drop .xlsx / .xls files here, or click to browse</p>
-            <p class="dropzone__hint">{{ zone.hint }}</p>
-            <p class="dropzone__multi">You can select several files at once</p>
-          </div>
+    @for (group of filesByGroup(); track group.id) {
+      <div class="group">
+        <p class="group__title">{{ group.title }} <span class="group__count">{{ group.files.length }}</span></p>
+        <ul class="staged">
+          @for (entry of group.files; track entry.id) {
+            <li class="staged__row" [class.staged__row--problem]="entry.status === 'needs-input' || entry.status === 'failed'">
+              <div class="staged__main">
+                <span class="staged__name" [pTooltip]="entry.file.name">{{ entry.file.name }}</span>
+                <span class="staged__size">{{ fileSizeLabel(entry.file.size) }}</span>
+              </div>
 
-          <p class="zone__count">{{ filesIn(zone.id).length }} file(s) selected</p>
-
-          @if (filesIn(zone.id).length) {
-            <ul class="staged">
-              @for (entry of filesIn(zone.id); track entry.id) {
-                <li class="staged__row" [class.staged__row--problem]="entry.status === 'needs-input' || entry.status === 'failed'">
-                  <div class="staged__main">
-                    <span class="staged__name" [pTooltip]="entry.file.name">{{ entry.file.name }}</span>
-                    <span class="staged__size">{{ fileSizeLabel(entry.file.size) }}</span>
+              @switch (entry.status) {
+                @case ('detecting') {
+                  <span class="staged__state"><i class="pi pi-spin pi-spinner"></i> identifying and checking…</span>
+                }
+                @case ('uploading') {
+                  <span class="staged__state"><i class="pi pi-spin pi-spinner"></i> saving…</span>
+                }
+                @case ('uploaded') {
+                  <span class="staged__state staged__state--ok">
+                    <i class="pi pi-check-circle"></i>
+                    {{ labelFor(entry) }}@if (entry.rowCount !== null) { · {{ entry.rowCount | number }} rows }
+                  </span>
+                }
+                @case ('failed') {
+                  <span class="staged__state staged__state--bad" [pTooltip]="entry.error || ''">
+                    <i class="pi pi-times-circle"></i> {{ entry.error }}
+                  </span>
+                }
+                @default {
+                  <!-- Type is always changeable, not only when detection was
+                       unsure — otherwise a confident-but-wrong answer would be
+                       uncorrectable without removing the file. -->
+                  <div class="staged__resolve">
+                    @if (askFor(entry); as ask) {
+                      <span class="staged__ask">{{ ask }}</span>
+                    } @else {
+                      <span class="staged__ok-tick" [pTooltip]="entry.detected?.reason || ''"><i class="pi pi-check"></i></span>
+                    }
+                    <!-- Multi-select, because one workbook can genuinely be
+                         several reports. Each ticked type is ingested
+                         separately through its own endpoint. -->
+                    <p-multiselect
+                      [options]="optionsFor(entry)"
+                      optionLabel="label"
+                      optionValue="value"
+                      optionDisabled="disabled"
+                      placeholder="Choose type(s)"
+                      appendTo="body"
+                      display="chip"
+                      [showToggleAll]="false"
+                      [filter]="false"
+                      styleClass="staged__select"
+                      [ngModel]="entry.chosenTypes"
+                      (ngModelChange)="setTypes(entry.id, $event)"
+                    />
                   </div>
-
-                  @switch (entry.status) {
-                    @case ('detecting') {
-                      <span class="staged__state"><i class="pi pi-spin pi-spinner"></i> identifying…</span>
-                    }
-                    @case ('uploading') {
-                      <span class="staged__state"><i class="pi pi-spin pi-spinner"></i> saving…</span>
-                    }
-                    @case ('uploaded') {
-                      <span class="staged__state staged__state--ok">
-                        <i class="pi pi-check-circle"></i>
-                        {{ labelFor(entry) }}@if (entry.rowCount !== null) { · {{ entry.rowCount }} rows }
-                      </span>
-                    }
-                    @case ('failed') {
-                      <span class="staged__state staged__state--bad" [pTooltip]="entry.error || ''">
-                        <i class="pi pi-times-circle"></i> {{ entry.error }}
-                      </span>
-                    }
-                    @default {
-                      <!-- Type is always changeable, not only when detection was
-                           unsure — otherwise a confident-but-wrong answer would
-                           be uncorrectable without removing the file. -->
-                      <div class="staged__resolve">
-                        @if (entry.status === 'needs-input') {
-                          <span class="staged__ask">
-                            @if (entry.alternatives.length) {
-                              Contains {{ entry.alternatives.length + 1 }} types — confirm
-                            } @else {
-                              Not recognised — pick a type
-                            }
-                          </span>
-                        } @else {
-                          <span class="staged__ok-tick" [pTooltip]="entry.detected?.reason || ''"><i class="pi pi-check"></i></span>
-                        }
-                        <!-- Multi-select, because one workbook can genuinely be
-                             more than one type (bank statements + EaseBuzz in
-                             the same file). Each ticked type is ingested
-                             separately through its own endpoint. -->
-                        <p-multiselect
-                          [options]="typeOptionsFor(zone.id)"
-                          optionLabel="label"
-                          optionValue="value"
-                          placeholder="Choose type(s)"
-                          appendTo="body"
-                          display="chip"
-                          [showToggleAll]="false"
-                          [filter]="false"
-                          styleClass="staged__select"
-                          [ngModel]="entry.chosenTypes"
-                          (ngModelChange)="setTypes(entry.id, $event)"
-                        />
-                        @if (misplaced(entry)) {
-                          <span class="staged__moved" pTooltip="Detected as belonging to another zone — it will still be filed correctly">
-                            → {{ zoneTitle(entry.detected?.zone || zone.id) }}
-                          </span>
-                        }
-                      </div>
-                    }
-                  }
-
-                  <button
-                    type="button"
-                    class="staged__remove"
-                    [disabled]="running()"
-                    (click)="remove(entry.id)"
-                    pTooltip="Remove"
-                  >
-                    <i class="pi pi-times"></i>
-                  </button>
-                </li>
+                }
               }
-            </ul>
+
+              <button
+                type="button"
+                class="staged__remove"
+                [disabled]="running()"
+                (click)="remove(entry.id)"
+                pTooltip="Remove"
+              >
+                <i class="pi pi-times"></i>
+              </button>
+
+              <!-- The dry run for the HIS collection reports: what will be
+                   stored, what was read but is not used here, and how it was
+                   checked — so nothing is saved on trust. -->
+              @if (previewsOf(entry).length && entry.status !== 'uploaded') {
+                <div class="reports">
+                  @for (m of previewsOf(entry); track m.type) {
+                    @let p = m.preview!;
+                    <div
+                      class="report"
+                      [class.report--ok]="p.status === 'VERIFIED' && !previewBlock(p)"
+                      [class.report--warn]="p.status === 'UNVERIFIED'"
+                      [class.report--bad]="!!previewBlock(p)"
+                      [class.report--off]="!entry.chosenTypes.includes(m.type)"
+                    >
+                      <div class="report__head">
+                        <span class="report__name">{{ m.label }}</span>
+                        @if (p.unitNames.length) { <span class="report__meta">{{ p.unitNames.join(', ') }}</span> }
+                        @if (p.period) { <span class="report__meta">{{ formatDate(p.period.from) }} → {{ formatDate(p.period.to) }}</span> }
+                        <span class="report__badge">
+                          @if (previewBlock(p); as why) {
+                            <i class="pi pi-ban"></i> Will not be uploaded: {{ why }}
+                          } @else {
+                            <i class="pi" [class.pi-verified]="p.status === 'VERIFIED'" [class.pi-exclamation-triangle]="p.status !== 'VERIFIED'"></i>
+                            {{ statusLabel[p.status] }}
+                          }
+                        </span>
+                      </div>
+
+                      @if (p.ingest.rows) {
+                        <p class="report__line">
+                          <span class="report__key">Will reconcile</span>
+                          @for (t of p.ingest.byType; track t.type; let last = $last) {
+                            {{ t.rows | number }} {{ t.type === 'CARD' ? 'Card' : t.type }} ({{ money(t.amount) }})@if (!last) { · }
+                          }
+                        </p>
+                      }
+                      @if (p.notUsed.length) {
+                        <p class="report__line report__line--quiet">
+                          <span class="report__key">Read, not used here</span>
+                          @for (t of p.notUsed; track t.label; let last = $last) {
+                            {{ t.label }} {{ t.rows | number }} ({{ money(t.amount) }})@if (!last) { · }
+                          }
+                        </p>
+                      }
+                      @for (s of p.sheets; track s.sheetName) {
+                        <p class="report__line report__line--quiet">
+                          <span class="report__key">{{ s.sheetName }}</span>
+                          @for (sec of s.sections; track sec.name; let last = $last) {
+                            <span [pTooltip]="'Rows ' + sec.firstRow + '–' + sec.lastRow + ', total line at row ' + sec.footerRow + ': ' + money(sec.total)">
+                              {{ sec.name }} {{ sec.rowCount | number }} rows
+                              @if (sec.totalPrinted) { <i class="pi pi-check report__tick"></i> } @else { <i class="pi pi-times report__cross"></i> }
+                            </span>@if (!last) { · }
+                          }
+                          @if (s.variantId) { <span class="report__variant">layout {{ s.variantId }}</span> }
+                        </p>
+                      }
+                      @if (p.overlap?.rows) {
+                        <p class="report__problem report__problem--error">
+                          <i class="pi pi-copy"></i>
+                          Already stored:
+                          @for (b of p.overlap!.batches; track b.id; let last = $last) {
+                            {{ b.rows | number }} rows in batch #{{ b.id }} “{{ b.fileName }}”@if (!last) {, }
+                          }
+                          — delete that batch first if this file replaces it.
+                        </p>
+                      }
+                      @for (pr of problemsOf(p); track $index) {
+                        <p class="report__problem" [class.report__problem--error]="pr.severity === 'error'">
+                          <i class="pi" [class.pi-times-circle]="pr.severity === 'error'" [class.pi-exclamation-triangle]="pr.severity !== 'error'"></i>
+                          {{ pr.message }}
+                        </p>
+                      }
+                      <!-- Receipts the report cannot state safely (e.g. one amount
+                           split across UPI and ManualUPI) are not stored; a
+                           person has to see them. -->
+                      @for (h of p.heldBack; track h.receiptNo) {
+                        <p class="report__problem">
+                          <i class="pi pi-pause-circle"></i>
+                          Held back, not stored: {{ h.receiptNo }} · {{ money(h.amount) }} · refs {{ h.references.join(', ') }} — {{ h.reason }}
+                        </p>
+                      }
+                    </div>
+                  }
+                  @for (note of notesOf(entry); track note) {
+                    <p class="reports__note"><i class="pi pi-info-circle"></i> {{ note }}</p>
+                  }
+                  @if (needsReview(entry) && !entry.acknowledged) {
+                    <button type="button" class="reports__ack" (click)="acknowledge(entry.id)">
+                      <i class="pi pi-check-square"></i> I have reviewed the warnings — include this file
+                    </button>
+                  }
+                </div>
+              }
+            </li>
+          }
+        </ul>
+      </div>
+    }
+
+    @if (coverage().length) {
+      <div class="coverage">
+        <p class="coverage__title">What this run will reconcile</p>
+        <div class="coverage__grid">
+          @for (c of coverage(); track c.name) {
+            <div class="coverage__item">
+              <p class="coverage__name">{{ c.name }}</p>
+              <ul class="coverage__needs">
+                @for (n of c.needs; track n.label) {
+                  <li [class.coverage__need--missing]="!n.present">
+                    <i class="pi" [class.pi-check]="n.present" [class.pi-minus-circle]="!n.present"></i>
+                    {{ n.label }}
+                    @if (!n.present) { <span class="coverage__hint">— not in this upload; earlier uploads are used if present</span> }
+                  </li>
+                }
+              </ul>
+            </div>
           }
         </div>
-      }
-    </div>
+      </div>
+    }
 
     <div class="actions">
       <p-button
@@ -169,10 +275,10 @@
         [disabled]="!canRun()"
         (onClick)="run()"
       />
-      @if (hasFiles() && unresolved() > 0) {
+      @if (hasFiles() && blockers().length) {
         <span class="actions__blocked">
           <i class="pi pi-exclamation-circle"></i>
-          {{ unresolved() }} file(s) still need a type before this can run
+          {{ blockers().join(' · ') }}
         </span>
       }
       <label class="actions__opt" pTooltip="Every reconciliation is re-run by default. Tick this to leave batches that have already been generated alone — much faster on a repeat run.">
@@ -207,7 +313,7 @@
                   }
                 </span>
                 <span class="step__label">{{ step.label }}</span>
-                @if (step.detail) { <span class="step__detail">{{ step.detail }}</span> }
+                @if (step.detail) { <span class="step__detail" [pTooltip]="step.detail">{{ step.detail }}</span> }
               </li>
             }
           </ul>

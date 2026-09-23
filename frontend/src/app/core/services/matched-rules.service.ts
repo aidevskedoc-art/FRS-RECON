@@ -52,6 +52,20 @@ export interface GenerateEasebuzzSettlementsResult {
   counts: { total: number; matched: number; mismatched: number; unmatched: number };
 }
 
+/** One step of a POST .../regenerate-all run — see matched-rules.routes.js and folder-watch/ingest.js's runReconciliationPlan. */
+export interface RegenerateAllStep {
+  step: string;
+  batchId?: string;
+  counts?: Record<string, number> | null;
+  error?: string;
+}
+
+/** Client ask, 2026-09-23: "give a global regenerate option" — every batch, every payment type, one Admin action. */
+export interface RegenerateAllResult {
+  generatedAt: string;
+  steps: RegenerateAllStep[];
+}
+
 /** Bank statement <-> IP/Diag payment matching results (Matched Rules pages). */
 @Injectable({ providedIn: 'root' })
 export class MatchedRulesService {
@@ -136,6 +150,11 @@ export class MatchedRulesService {
   /** POST /api/matched-rules/easebuzz-settlements/generate — re-verdict every uploaded settlement row against the bank statement. */
   generateEasebuzzSettlements(): Observable<GenerateEasebuzzSettlementsResult> {
     return this.http.post<GenerateEasebuzzSettlementsResult>(`${API_BASE_URL}/matched-rules/easebuzz-settlements/generate`, null);
+  }
+
+  /** POST /api/matched-rules/regenerate-all — Admin only: re-runs Generate over every existing batch, every payment type, in one action. */
+  regenerateAll(): Observable<RegenerateAllResult> {
+    return this.http.post<RegenerateAllResult>(`${API_BASE_URL}/matched-rules/regenerate-all`, null);
   }
 
   /** GET /api/matched-rules/audit-report/preview — per-sheet rollup for the Audit Working Report screen, before the (large) workbook is generated. */

@@ -381,6 +381,8 @@ export interface AuditReportQuery {
   dateBasis: AuditDateBasis;
   /** 'client' = exact client layout (default). 'internal' = also appends the engine's status / applied rule / reason columns. */
   variant?: 'client' | 'internal';
+  /** A division/branch name (client ask, 2026-09-23: "Unit wise report") — every sheet scoped to just that unit. Absent = every branch. */
+  unit?: string;
 }
 
 export interface AuditReportSheetSummary {

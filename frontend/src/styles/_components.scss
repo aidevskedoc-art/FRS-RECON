@@ -533,6 +533,13 @@
   cursor: pointer;
 }
 
+// Room for the magnifier icon. Must come after the shared input rule above,
+// whose `padding: 9px 12px` otherwise wins and slides the placeholder text
+// under the icon.
+.filter-search input {
+  padding-left: 34px;
+}
+
 .filter-bar__spacer {
   flex: 1 1 auto;
 }

@@ -39,22 +39,23 @@ export const FrsAiPreset = definePreset(Aura, {
     },
     colorScheme: {
       light: {
-        // Editorial monochrome: PrimeNG's accents resolve to ink, matching
-        // --brand: #0a0a0a.
+        // Brand purple (2026-09-21 rebrand), matching --brand: #7c3aed in
+        // _tokens.scss. Hand-kept in sync — Aura can't read CSS variables, so
+        // without this checkboxes, toggles, radios, tabs etc. would stay ink.
         primary: {
-          color: '#0a0a0a',
+          color: '#7c3aed',
           contrastColor: '#ffffff',
-          hoverColor: '#000000',
-          activeColor: '#000000',
+          hoverColor: '#6d28d9',
+          activeColor: '#5b21b6',
         },
         highlight: {
-          background: '#f4f4f5',
-          focusBackground: '#efeff1',
-          color: '#09090b',
-          focusColor: '#09090b',
+          background: '#f5f3ff',
+          focusBackground: '#ede9fe',
+          color: '#5b21b6',
+          focusColor: '#4c1d95',
         },
         focusRing: {
-          color: '#0a0a0a',
+          color: '#7c3aed',
         },
         // Zinc-based neutrals, matching the --neutral-* aliases in _tokens.scss.
         surface: {

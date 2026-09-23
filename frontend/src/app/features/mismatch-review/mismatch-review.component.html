@@ -1,0 +1,522 @@
+<div class="mismatch-review">
+  <app-page-header
+    icon="pi pi-exclamation-triangle"
+    title="Mismatch Review"
+    subtitle="Mismatched transactions across every collection type — click one to see the full record and why it didn't tally."
+  />
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (noBranches()) {
+    <div class="notice notice--warn">
+      <i class="pi pi-map-marker"></i>
+      No branches are assigned to you yet, so there's nothing to show. Ask an Admin to assign your locations in User Management.
+    </div>
+  }
+
+  <!-- AC-10 Location, moved up here: it scopes the whole highlighted summary
+       below (every count already reads filters().location via fetchPage) —
+       Department/Search/Date stay in the toolbar as table-level filters. -->
+  <div class="tab-totals-header">
+    <span class="tab-totals-header__scope">
+      <i class="pi pi-map-marker"></i>
+      {{ scopeLabel() }}
+    </span>
+    <p-select
+      [options]="locationOptions()"
+      optionLabel="label"
+      optionValue="value"
+      [ngModel]="filters().location"
+      (ngModelChange)="updateScopeFilter({ location: $event })"
+      appendTo="body"
+      styleClass="filter-scope"
+      ariaLabel="Location"
+    />
+  </div>
+
+  <!-- Client ask: Online/Cheque/Card/UPI's own record totals, highlighted at the very top,
+       plus one lead tile for every collection type added together. -->
+  <div class="tab-totals">
+    <div class="tab-totals__tile tab-totals__tile--lead">
+      <i class="pi pi-database"></i>
+      <span class="tab-totals__label">All Records</span>
+      <span class="tab-totals__value">{{ allRecordsTotal() === null ? '…' : allRecordsTotal() }}</span>
+    </div>
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        class="tab-totals__tile"
+        [class.tab-totals__tile--active]="activeTab() === tab.id"
+        (click)="selectTab(tab.id)"
+      >
+        <i [class]="tab.icon"></i>
+        <span class="tab-totals__label">{{ tab.label }}</span>
+        <span class="tab-totals__value">{{ tabTotal(tab.id) === null ? '…' : tabTotal(tab.id) }}</span>
+      </button>
+    }
+  </div>
+
+  <div class="hub-picker" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="hub-option"
+        [class.hub-option--active]="activeTab() === tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        (click)="selectTab(tab.id)"
+      >
+        <i [class]="tab.icon"></i>
+        <span class="hub-option__title">{{ tab.label }}</span>
+        @if (tabCount(tab.id); as count) {
+          <span class="hub-option__count">{{ count }}</span>
+        }
+      </button>
+    }
+  </div>
+
+  <!-- Client mail item 15: "Matched" / "Matched by Auditor" browse views, so an
+       Auditor can find a locked system match to flag as wrong (Propose a
+       Correction, below); "All" drops the status filter entirely. Each badge
+       is that view's count against the active tab's total (e.g. 20/300),
+       shown regardless of which view is currently open. -->
+  <div class="view-toggle" role="tablist" aria-label="View">
+    @for (mode of viewModes; track mode.id) {
+      <button type="button" role="tab" class="view-toggle__btn" [class.view-toggle__btn--active]="viewMode() === mode.id" (click)="selectViewMode(mode.id)">
+        <i [class]="mode.icon"></i>
+        <span>{{ mode.label }}</span>
+        @if (viewModeBadge(mode.id); as badge) {
+          <span class="view-toggle__count" [class]="viewModeBadgeClass(mode.id)">{{ badge }}</span>
+        }
+      </button>
+    }
+  </div>
+
+  <!-- AC-11: MIS / bank file freshness + mismatch count, for the tab showing -->
+  <div class="fresh-cards">
+    <div class="fresh-card">
+      <span class="fresh-card__label"><i class="pi pi-database"></i> MIS Data Updated</span>
+      @if (activeDates()?.mis; as mis) {
+        @if (mis.uploadedAt) {
+          <span class="fresh-card__value">{{ mis.uploadedAt | date: 'd MMM y, h:mm a' }}</span>
+          <span class="fresh-card__sub">Data up to {{ calendarDate(mis.dataUpTo) ?? '—' }}</span>
+        } @else {
+          <span class="fresh-card__value fresh-card__value--empty">Not uploaded yet</span>
+          <span class="fresh-card__sub">No MIS data for this selection</span>
+        }
+      } @else {
+        <span class="fresh-card__value fresh-card__value--empty">—</span>
+      }
+    </div>
+
+    <div class="fresh-card">
+      <span class="fresh-card__label"><i class="pi pi-building-columns"></i> Bank File Uploaded</span>
+      @if (activeDates()?.bank; as bank) {
+        @if (bank.uploadedAt) {
+          <span class="fresh-card__value">{{ bank.uploadedAt | date: 'd MMM y, h:mm a' }}</span>
+          <span class="fresh-card__sub">
+            {{ bank.source }} · data up to {{ calendarDate(bank.dataUpTo) ?? '—' }}
+            @if (!bank.locationScoped) {
+              · all locations
+            }
+          </span>
+        } @else {
+          <span class="fresh-card__value fresh-card__value--empty">Not uploaded yet</span>
+          <span class="fresh-card__sub">No {{ bank.source }} for this selection</span>
+        }
+      } @else {
+        <span class="fresh-card__value fresh-card__value--empty">—</span>
+      }
+    </div>
+
+    <div class="fresh-card fresh-card--count" [class.fresh-card--alert]="viewMode() === 'mismatches' && activeTotal() > 0">
+      <span class="fresh-card__label">
+        <i [class]="viewModeCountIcon()"></i>
+        {{ viewModeCountLabel() }}
+      </span>
+      <span class="fresh-card__value">
+        @if (loading()) {
+          …
+        } @else {
+          {{ activeTotal() }}
+        }
+      </span>
+      <span class="fresh-card__sub">{{ activeTabLabel() }}{{ hasFilters() ? ' · filtered' : '' }}</span>
+    </div>
+  </div>
+
+  <!-- One panel: filters sit on top of the table they filter -->
+  <section class="review-panel glass-card glass-card--static">
+    <div class="review-panel__toolbar filter-bar">
+      <span class="filter-search">
+        <i class="pi pi-search"></i>
+        <input
+          type="text"
+          placeholder="Search patient, receipt, reference…"
+          [value]="filters().search"
+          (input)="onSearchInput($event)"
+        />
+      </span>
+      <!-- AC-10: Department (Location now lives with the highlighted totals above) -->
+      <p-select
+        [options]="departmentOptions()"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="filters().department"
+        (ngModelChange)="updateScopeFilter({ department: $event })"
+        appendTo="body"
+        styleClass="filter-scope"
+        ariaLabel="Department"
+      />
+      <p-datepicker
+        [ngModel]="filters().dateFrom"
+        (ngModelChange)="updateDateFilter({ dateFrom: $event })"
+        placeholder="From date"
+        dateFormat="d M yy"
+        [showIcon]="true"
+        iconDisplay="input"
+        appendTo="body"
+        styleClass="filter-date"
+      />
+      <!-- AC-12: by default only up to the bank data; or as on a chosen date -->
+      <p-select
+        [options]="upToOptions"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="filters().upTo"
+        (ngModelChange)="updateDateFilter({ upTo: $event })"
+        appendTo="body"
+        styleClass="filter-scope"
+        ariaLabel="Show up to"
+      />
+      @if (filters().upTo === 'AS_ON') {
+        <p-datepicker
+          [ngModel]="filters().asOn"
+          (ngModelChange)="updateDateFilter({ asOn: $event })"
+          placeholder="As on date"
+          dateFormat="d M yy"
+          [showIcon]="true"
+          iconDisplay="input"
+          appendTo="body"
+          styleClass="filter-date"
+        />
+      }
+      @if (hasFilters()) {
+        <button type="button" class="btn btn-ghost" (click)="clearFilters()">
+          <i class="pi pi-filter-slash"></i>
+          <span>Clear</span>
+        </button>
+      }
+      <span class="filter-bar__spacer"></span>
+      <span class="review-panel__count">Scroll sideways for every MIS field →</span>
+    </div>
+
+    @if (cutoffNote(); as note) {
+      <div class="review-panel__cutoff">
+        <i class="pi pi-calendar"></i>
+        <span>{{ note }}</span>
+      </div>
+    }
+
+    <!-- Client ask, 2026-09-23: an Auditor can multi-select several mismatches
+         below and propose them all as Matched in one go, with one shared reason. -->
+    @if (viewMode() === 'mismatches' && selectedRows().length > 0) {
+      <div class="bulk-bar">
+        <span class="bulk-bar__count"><span class="num">{{ selectedRows().length }}</span> selected</span>
+        <div class="bulk-bar__actions">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()">
+            <i class="pi pi-times"></i><span>Clear</span>
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" (click)="openBulkPropose()">
+            <i class="pi pi-send"></i><span>Propose as Matched</span>
+          </button>
+        </div>
+      </div>
+    }
+
+    <!-- AC-16: the colour code, spelled out — this screen only ever lists mismatches,
+         so Matched (green) never actually shows here, but the legend explains the
+         scheme the exported files (AC-17) use too. -->
+    <div class="status-legend">
+      <span class="status-legend__label">Colour code:</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span>Matched</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span>Matched by Auditor</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span>Unmatched / Mismatch</span>
+    </div>
+
+    <!-- AC-11: every MIS field per collection type (COLUMNS_BY_TAB) + the reason.
+         Receipt Number pinned left, Status + Reason pinned right. -->
+    <p-table
+      [value]="activeRows()"
+      [columns]="columns()"
+      dataKey="id"
+      [lazy]="true"
+      [paginator]="true"
+      [rows]="pageSize"
+      [first]="(activePage() - 1) * pageSize"
+      [totalRecords]="activeTotal()"
+      [loading]="loading()"
+      (onLazyLoad)="onPageChange($event)"
+      [scrollable]="true"
+      [selection]="selectedRows()"
+      (selectionChange)="selectedRows.set($event)"
+      styleClass="p-datatable-sm mismatch-table"
+    >
+      <ng-template #header let-cols>
+        <tr>
+          @if (viewMode() === 'mismatches') {
+            <th pFrozenColumn [frozen]="true" alignFrozen="left" style="width: 2.5rem">
+              <p-tableHeaderCheckbox />
+            </th>
+          }
+          @for (col of cols; track col.header) {
+            <th
+              pFrozenColumn
+              [frozen]="!!col.pin"
+              [alignFrozen]="col.pin === 'right' ? 'right' : 'left'"
+              [class.num]="col.kind === 'amount'"
+              [class.col-reason]="col.kind === 'reason'"
+              [class.col-pin-right]="col.pin === 'right'"
+            >
+              {{ col.header }}
+            </th>
+          }
+        </tr>
+      </ng-template>
+      <ng-template #body let-row let-cols="columns">
+        <tr class="clickable-row" (click)="openDetail(row)">
+          @if (viewMode() === 'mismatches') {
+            <td pFrozenColumn [frozen]="true" alignFrozen="left" (click)="$event.stopPropagation()">
+              <p-tableCheckbox [value]="row" />
+            </td>
+          }
+          @for (col of cols; track col.header) {
+            <td
+              pFrozenColumn
+              [frozen]="!!col.pin"
+              [alignFrozen]="col.pin === 'right' ? 'right' : 'left'"
+              [class.num]="col.kind === 'amount'"
+              [class.ref]="col.kind === 'ref'"
+              [class.nowrap]="col.kind !== 'reason'"
+              [class.reason-cell]="col.kind === 'reason'"
+              [class.col-pin-right]="col.pin === 'right'"
+            >
+              @switch (col.kind) {
+                @case ('chip') {
+                  <span class="type-chip">{{ col.value(row) }}</span>
+                }
+                @case ('status') {
+                  <span class="status-pill" [class]="statusPillClass(row.matchStatus, row.matchedByAuditor)">{{ statusLabel(row.matchStatus, row.matchedByAuditor) }}</span>
+                  @if (row.pendingChange) {
+                    <span class="pending-tag" title="A change request is waiting for approval"><i class="pi pi-clock"></i>Pending approval</span>
+                  }
+                }
+                @case ('amount') {
+                  {{ amount(col.value(row)) }}
+                }
+                @case ('date') {
+                  {{ (col.value(row) | date: 'd MMM y') || '—' }}
+                }
+                @default {
+                  {{ col.value(row) || '—' }}
+                }
+              }
+            </td>
+          }
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage let-cols>
+        <tr>
+          <td [attr.colspan]="cols.length">
+            <div class="empty-state">
+              <i class="pi pi-check-circle"></i>
+              <strong>{{ emptyState().title }}</strong>
+              <p>{{ emptyState().hint }}</p>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </section>
+
+  <!--
+    Click-through detail — the full record, grouped, with its plain-English
+    reason (record-detail/). Solid, not the app's glass dialog: a record's
+    fields must read cleanly over a busy table.
+  -->
+  @if (detail(); as d) {
+    <p-dialog
+      [visible]="true"
+      (visibleChange)="closeDetail()"
+      [modal]="true"
+      [dismissableMask]="true"
+      [showHeader]="false"
+      [style]="{ width: '46rem', maxWidth: '94vw', background: 'var(--surface)', overflow: 'hidden' }"
+      [contentStyle]="{ padding: '0', overflow: 'hidden' }"
+    >
+      <app-record-detail [detail]="d" [pending]="detailPendingChange()" (closed)="closeDetail()">
+        <!--
+          Changing a match (client mail point 2, extended by item 15). An
+          Auditor proposes it be marked Matched (mismatch) or flags it as wrong
+          (a locked/clean match — a Correction, unlocking it and resetting it
+          to Unmatched); their own Reporting Manager or an Admin approves
+          either kind. An Admin, the final checker, decides at once — and
+          reviews an Auditor's open request right here. An auditor-approved
+          lock is final: no panel is offered against it. While a request is
+          open (one per record, server-enforced) it is shown in place of the form.
+        -->
+        @if (decisionMessage(); as message) {
+          <div class="propose propose--done">
+            <div class="propose__head">
+              <span class="propose__icon"><i class="pi pi-check"></i></span>
+              <div class="propose__text"><strong>Done</strong><span>{{ message }}</span></div>
+            </div>
+          </div>
+        } @else if (detailPendingChange(); as pending) {
+          <div class="propose propose--pending">
+            <div class="propose__head">
+              <span class="propose__icon"><i class="pi pi-clock"></i></span>
+              <div class="propose__text">
+                <strong>{{ pending.proposedStatus === 'UNMATCHED' ? 'Correction' : 'Match' }} requested — pending approval</strong>
+                <span>
+                  {{ pending.requestedBy || 'An auditor' }} asked on {{ pending.requestedAt | date: 'd MMM y, h:mm a' }}.
+                  @if (isAdmin()) {
+                    Approve it to apply the change, or reject it with a note.
+                  } @else {
+                    The status changes only when the Reporting Manager or an Admin approves it in Match Approvals.
+                  }
+                </span>
+              </div>
+            </div>
+            @if (isAdmin()) {
+              <textarea
+                rows="2"
+                placeholder="Note (required to reject, optional to approve)"
+                [ngModel]="proposeReason()"
+                (ngModelChange)="proposeReason.set($event)"
+                class="propose-textarea"
+              ></textarea>
+              @if (proposeError(); as err) {
+                <div class="modal-error">{{ err }}</div>
+              }
+              <div class="propose__actions">
+                <button type="button" class="btn btn-ghost" [disabled]="proposing()" (click)="rejectPending()">
+                  <i class="pi pi-times"></i><span>Reject</span>
+                </button>
+                <button type="button" class="btn btn-primary" [disabled]="proposing()" (click)="approvePending()">
+                  @if (proposing()) {
+                    <span class="btn-spinner"></span>
+                  } @else {
+                    <i class="pi pi-check"></i>
+                  }
+                  <span>Approve</span>
+                </button>
+              </div>
+            }
+          </div>
+        } @else if (canChangeMatch(d)) {
+          <div class="propose">
+            <div class="propose__head">
+              <span class="propose__icon"><i [class]="isCleanMatch(d.status) ? 'pi pi-flag' : 'pi pi-check-square'"></i></span>
+              <div class="propose__text">
+                @if (isAdmin()) {
+                  <strong>{{ isCleanMatch(d.status) ? 'Reset to Unmatched' : 'Mark as Matched' }}</strong>
+                  <span>
+                    {{ isCleanMatch(d.status)
+                      ? 'Applies at once: it is unlocked and goes back to Unmatched, and the next Generate decides it again.'
+                      : 'Applies at once and locks the record — recorded in the Audit Log under your name.' }}
+                  </span>
+                } @else {
+                  <strong>{{ isCleanMatch(d.status) ? 'Propose a Correction' : 'Propose as Matched' }}</strong>
+                  <span>
+                    {{ isCleanMatch(d.status)
+                      ? 'Once approved it goes back to Unmatched, and the next Generate decides it again.'
+                      : 'Your Reporting Manager or an Admin approves it — nothing changes until then.' }}
+                  </span>
+                }
+              </div>
+            </div>
+            <textarea
+              rows="3"
+              [placeholder]="isCleanMatch(d.status) ? 'Why is this match wrong? (required)' : 'Why should this be marked Matched? (required)'"
+              [ngModel]="proposeReason()"
+              (ngModelChange)="proposeReason.set($event)"
+              class="propose-textarea"
+            ></textarea>
+            @if (proposeError(); as err) {
+              <div class="modal-error">{{ err }}</div>
+            }
+            <button type="button" class="btn btn-primary propose__submit" [disabled]="proposing()" (click)="submitProposeMatch()">
+              @if (proposing()) {
+                <span class="btn-spinner"></span>
+              } @else {
+                <i [class]="isAdmin() ? 'pi pi-check' : 'pi pi-send'"></i>
+              }
+              <span>{{ isAdmin() ? (isCleanMatch(d.status) ? 'Reset to Unmatched' : 'Mark as Matched') : 'Submit for Approval' }}</span>
+            </button>
+          </div>
+        }
+      </app-record-detail>
+    </p-dialog>
+  }
+
+  <!-- Bulk propose — client ask, 2026-09-23: multi-select several mismatches
+       and submit them all as Matched with one shared reason. -->
+  @if (bulkProposeOpen()) {
+    <p-dialog
+      [visible]="true"
+      (visibleChange)="closeBulkPropose()"
+      [modal]="true"
+      [dismissableMask]="!bulkProgress()"
+      [closable]="!bulkProgress()"
+      [style]="{ width: '28rem' }"
+      header="Propose as Matched"
+    >
+      @if (bulkResultMessage(); as message) {
+        <div class="propose propose--done">
+          <div class="propose__head">
+            <span class="propose__icon"><i class="pi pi-check"></i></span>
+            <div class="propose__text"><strong>Done</strong><span>{{ message }}</span></div>
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary propose__submit" (click)="closeBulkPropose()">
+          <span>Close</span>
+        </button>
+      } @else {
+        <div class="propose">
+          <p>
+            <strong>{{ selectedRows().length }}</strong> selected mismatch{{ selectedRows().length === 1 ? '' : 'es' }}
+            will be sent to your Reporting Manager (or an Admin) for approval, all with the same reason.
+          </p>
+          <textarea
+            rows="3"
+            placeholder="Why should these be marked Matched? (required)"
+            [ngModel]="bulkReason()"
+            (ngModelChange)="bulkReason.set($event)"
+            [disabled]="!!bulkProgress()"
+            class="propose-textarea"
+          ></textarea>
+          @if (bulkError(); as err) {
+            <div class="modal-error">{{ err }}</div>
+          }
+          @if (bulkProgress(); as progress) {
+            <div class="propose__head">
+              <span class="spinner bulk-propose__spinner"></span>
+              <span>Submitting… {{ progress.done }} / {{ progress.total }}</span>
+            </div>
+          } @else {
+            <button type="button" class="btn btn-primary propose__submit" (click)="submitBulkPropose()">
+              <i class="pi pi-send"></i>
+              <span>Submit {{ selectedRows().length }} for Approval</span>
+            </button>
+          }
+        </div>
+      }
+    </p-dialog>
+  }
+</div>

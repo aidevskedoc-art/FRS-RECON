@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, forkJoin, map, of } from 'rxjs';
 import { API_BASE_URL } from '../config/api.config';
-import { DetectResponse, UploadTypeOption } from '../models';
+import { DetectResponse, ReportStatus, UploadTypeOption } from '../models';
 import { MatchedRulesService } from './matched-rules.service';
 import { UcrMatchedService } from './ucr-matched.service';
 import { IpPaymentService } from './ip-payment.service';
@@ -10,11 +10,38 @@ import { DiagOpPaymentService } from './diag-op-payment.service';
 import { ChequeCollectionService } from './cheque-collection.service';
 import { BankStatementService } from './bank-statement.service';
 
-/** What one upload endpoint returns — every upload route in this app returns at least these. */
+/**
+ * What one upload call amounts to, normalised: routes answer either one batch
+ * (`rowCount`) or, when a file becomes several batches, `{ batches: [...] }`
+ * with no top-level count — which read as "0 rows saved" before this.
+ */
 export interface UploadedBatch {
-  id: string;
-  fileName: string;
   rowCount: number;
+  /** Rows an earlier upload already holds, skipped rather than stored twice. */
+  rowsSkipped: number;
+  /** Receipts read but deliberately not stored (see the file's preview). */
+  heldBack: number;
+  /** How the stored rows were checked against the report's own totals, where the route says. */
+  verification: ReportStatus | null;
+}
+
+interface UploadResponse {
+  rowCount?: number;
+  rowsStored?: number;
+  rowsSkipped?: number;
+  batches?: { rowCount: number }[];
+  heldBack?: unknown[];
+  verification?: { status: ReportStatus } | { status: ReportStatus }[];
+}
+
+function normaliseUpload(body: UploadResponse): UploadedBatch {
+  const statuses = body.verification ? (Array.isArray(body.verification) ? body.verification : [body.verification]).map((v) => v.status) : [];
+  return {
+    rowCount: body.rowCount ?? body.rowsStored ?? (body.batches ?? []).reduce((n, b) => n + (b.rowCount || 0), 0),
+    rowsSkipped: body.rowsSkipped ?? 0,
+    heldBack: body.heldBack?.length ?? 0,
+    verification: statuses.length ? (statuses.includes('FAILED') ? 'FAILED' : statuses.includes('UNVERIFIED') ? 'UNVERIFIED' : 'VERIFIED') : null,
+  };
 }
 
 /**
@@ -83,7 +110,7 @@ export class ReconciliationRunService {
     if (uploadedBy) form.append('uploadedBy', uploadedBy);
     // `endpoint` already starts with /api; API_BASE_URL ends at /api, so trim the overlap.
     const path = endpoint.replace(/^\/api/, '');
-    return this.http.post<UploadedBatch>(`${API_BASE_URL}${path}`, form);
+    return this.http.post<UploadResponse>(`${API_BASE_URL}${path}`, form).pipe(map(normaliseUpload));
   }
 
   /**
@@ -108,8 +135,14 @@ export class ReconciliationRunService {
       diag: this.diagPayments.refreshBatches(),
       cheque: this.chequeCollections.refreshBatches(),
       bank: this.bankStatements.refreshBatches(),
+      // PayU MPR and EaseBuzz rows live in the same bank_statement_uploads table
+      // and are reconciled by the same per-batch Generate (their own batch page
+      // already calls it) — without these, a "run everything" left them
+      // permanently "Not generated".
+      payuMpr: this.bankStatements.refreshMprBatches(),
+      easebuzz: this.bankStatements.refreshEasebuzzBatches(),
     }).pipe(
-      map(({ ip, diag, cheque, bank }) => {
+      map(({ ip, diag, cheque, bank, payuMpr, easebuzz }) => {
         const steps: PlannedStep[] = [];
 
         const batchSteps = (
@@ -136,6 +169,8 @@ export class ReconciliationRunService {
         batchSteps('Diagnostics / OP Payments', diag, (id) => this.matchedRules.generateDiagPaymentMatches(id));
         batchSteps('Cheque Collections', cheque, (id) => this.matchedRules.generateChequeCollectionMatches(id));
         batchSteps('Bank Statements', bank, (id) => this.matchedRules.generateBankStatementMatches(id));
+        batchSteps('PayU MPR', payuMpr, (id) => this.matchedRules.generateBankStatementMatches(id));
+        batchSteps('EaseBuzz', easebuzz, (id) => this.matchedRules.generateBankStatementMatches(id));
 
         // The four global passes: no batch scope, each re-processes its own
         // table in full every time, so they always run.

@@ -19,14 +19,38 @@
   <div class="filters">
     <label class="filters__date-label">
       <span>From</span>
-      <input type="date" [(ngModel)]="dateFrom" class="filters__date" />
+      <p-datepicker
+        [ngModel]="dateFrom()"
+        (ngModelChange)="dateFrom.set($event)"
+        placeholder="From date"
+        dateFormat="d M yy"
+        [showIcon]="true"
+        iconDisplay="input"
+        appendTo="body"
+        styleClass="filter-date"
+      />
     </label>
     <label class="filters__date-label">
       <span>To</span>
-      <input type="date" [(ngModel)]="dateTo" class="filters__date" />
+      <p-datepicker
+        [ngModel]="dateTo()"
+        (ngModelChange)="dateTo.set($event)"
+        placeholder="To date"
+        dateFormat="d M yy"
+        [showIcon]="true"
+        iconDisplay="input"
+        appendTo="body"
+        styleClass="filter-date"
+      />
     </label>
     <p-button label="Apply" size="small" [outlined]="true" (onClick)="applyFilters()" />
     <p-button label="Clear" size="small" severity="secondary" [text]="true" (onClick)="clearFilters()" />
+  </div>
+
+  <!-- AC-13: the dashboard's own date selection — which window every figure below reflects. -->
+  <div class="recon-summary__range-note">
+    <i class="pi pi-calendar"></i>
+    <span>{{ rangeNote() }}</span>
   </div>
 
   @if (summary(); as s) {

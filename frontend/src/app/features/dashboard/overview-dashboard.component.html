@@ -1,0 +1,238 @@
+<div class="dash">
+  <app-page-header
+    icon="pi pi-gauge"
+    title="Dashboard"
+    [subtitle]="'Everything the reconciliation is doing, at a glance' + (loadedAt() ? ' · updated ' + (loadedAt() | date: 'h:mm a') : '')"
+  >
+    <div actions class="dash__actions">
+      <button type="button" class="btn btn-ghost" (click)="load()" [disabled]="loading()" pTooltip="Reload every figure">
+        <i class="pi pi-refresh" [class.pi-spin]="loading()"></i>
+        <span>Refresh</span>
+      </button>
+      @if (can('upload-run')) {
+        <a class="ai-button-primary dash__upload" routerLink="/reconciliation">
+          <i class="pi pi-cloud-upload"></i>
+          <span>Upload &amp; Run</span>
+        </a>
+      }
+    </div>
+  </app-page-header>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <!-- Hero: the five numbers that say how things stand -->
+  <section class="hero">
+    <a class="hero__tile hero__tile--lead" [routerLink]="can('reconciliation-results') ? '/matched-rules/results' : null">
+      <span class="hero__label"><i class="pi pi-check-circle"></i> Reconciled</span>
+      <span class="hero__value">{{ reconciledRate() === null ? '—' : reconciledRate() + '%' }}</span>
+      <span class="hero__bar"><span class="hero__bar-fill" [style.width.%]="reconciledRate() ?? 0"></span></span>
+      <span class="hero__sub">of {{ count(totalTransactions()) }} transactions in scope</span>
+    </a>
+
+    <a class="hero__tile" [class.hero__tile--alert]="(attention() ?? 0) > 0" [routerLink]="can('mismatch-review') ? '/reconciliation/mismatches' : null">
+      <span class="hero__label"><i class="pi pi-exclamation-triangle"></i> Needs Attention</span>
+      <span class="hero__value">{{ count(attention()) }}</span>
+      <span class="hero__sub">mismatched, partial or unmatched</span>
+    </a>
+
+    <a class="hero__tile" [routerLink]="can('match-approvals') ? '/reconciliation/approvals' : null">
+      <span class="hero__label"><i class="pi pi-verified"></i> Awaiting Approval</span>
+      <span class="hero__value">{{ count(pendingApprovals()) }}</span>
+      <span class="hero__sub">maker-checker requests for you</span>
+    </a>
+
+    <div class="hero__tile">
+      <span class="hero__label"><i class="pi pi-indian-rupee"></i> Collection Value</span>
+      <span class="hero__value">{{ collectionValue() }}</span>
+      <span class="hero__sub">balance short {{ balanceValue() }}</span>
+    </div>
+
+    <a class="hero__tile" [routerLink]="can('statements') ? '/upload-online/statements' : null">
+      <span class="hero__label"><i class="pi pi-building-columns"></i> Bank Data Up To</span>
+      <span class="hero__value hero__value--date">{{ bankUpTo() ?? '—' }}</span>
+      <span class="hero__sub">MIS up to {{ misUpTo() ?? '—' }}</span>
+    </a>
+  </section>
+
+  <!-- The flow: MIS -> bank/MPR -> reconciled -> to review, per collection type -->
+  <section class="panel">
+    <header class="panel__head">
+      <h2><i class="pi pi-sitemap"></i> Reconciliation Flow</h2>
+      <span class="panel__hint">MIS file → bank / MPR file → matched → left to review, per collection type</span>
+    </header>
+    <div class="flow">
+      @for (lane of flow(); track lane.key) {
+        <div class="flow__lane">
+          <div class="flow__type">
+            <i [class]="lane.icon"></i>
+            <span>{{ lane.label }}</span>
+          </div>
+          <ol class="flow__steps">
+            @for (step of lane.steps; track step.label; let last = $last) {
+              <li class="flow__step" [class]="'flow__step--' + step.state">
+                <span class="flow__dot">
+                  @switch (step.state) {
+                    @case ('done') { <i class="pi pi-check"></i> }
+                    @case ('ok') { <i class="pi pi-check"></i> }
+                    @case ('warn') { <i class="pi pi-exclamation"></i> }
+                    @default { <i class="pi pi-minus"></i> }
+                  }
+                </span>
+                <span class="flow__text">
+                  <span class="flow__label">{{ step.label }}</span>
+                  <span class="flow__value">{{ step.value }}</span>
+                  @if (step.sub) {
+                    <span class="flow__sub">{{ step.sub }}</span>
+                  }
+                </span>
+                @if (!last) {
+                  <span class="flow__arrow"><i class="pi pi-angle-right"></i></span>
+                }
+              </li>
+            }
+          </ol>
+          @if (can('mismatch-review') && lane.attention > 0) {
+            <a class="flow__go" [routerLink]="'/reconciliation/mismatches'" [queryParams]="{ tab: lane.key }" pTooltip="Open these in Mismatch Review">
+              Review <i class="pi pi-arrow-right"></i>
+            </a>
+          }
+        </div>
+      }
+    </div>
+  </section>
+
+  <!-- Charts -->
+  <section class="charts">
+    <div class="panel chart-card">
+      <header class="panel__head"><h2><i class="pi pi-chart-pie"></i> Status</h2></header>
+      <div class="chart-card__body">
+        @if (statusChart(); as data) {
+          <p-chart type="doughnut" [data]="data" [options]="doughnutOptions()" height="100%" />
+          <div class="chart-card__center">
+            <span class="chart-card__center-value">{{ reconciledRate() === null ? '—' : reconciledRate() + '%' }}</span>
+            <span class="chart-card__center-label">reconciled</span>
+          </div>
+        } @else {
+          <div class="chart-card__empty">{{ loading() ? 'Loading…' : 'No data yet' }}</div>
+        }
+      </div>
+    </div>
+
+    <div class="panel chart-card chart-card--wide">
+      <header class="panel__head"><h2><i class="pi pi-chart-bar"></i> By Collection Type</h2></header>
+      <div class="chart-card__body">
+        @if (typeChart(); as data) {
+          <p-chart type="bar" [data]="data" [options]="barOptions()" height="100%" />
+        } @else {
+          <div class="chart-card__empty">{{ loading() ? 'Loading…' : 'No data yet' }}</div>
+        }
+      </div>
+    </div>
+
+    <div class="panel chart-card">
+      <header class="panel__head"><h2><i class="pi pi-wallet"></i> Collection Value</h2></header>
+      <div class="chart-card__body">
+        @if (valueChart(); as data) {
+          <p-chart type="doughnut" [data]="data" [options]="valueOptions()" height="100%" />
+          <div class="chart-card__center">
+            <span class="chart-card__center-value chart-card__center-value--sm">{{ collectionValue() }}</span>
+            <span class="chart-card__center-label">total</span>
+          </div>
+        } @else {
+          <div class="chart-card__empty">{{ loading() ? 'Loading…' : 'No data yet' }}</div>
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- Settlement / gateway, and (Admin) the automation's recent activity -->
+  <section class="split" [class.split--single]="recentRuns() === null">
+    <div class="panel">
+      <header class="panel__head">
+        <h2><i class="pi pi-building-columns"></i> Bank &amp; Gateway Files</h2>
+        @if (can('reconciliation-results')) {
+          <a class="panel__link" routerLink="/matched-rules/results">Details <i class="pi pi-arrow-right"></i></a>
+        }
+      </header>
+      <table class="mini-table">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th class="num">Rows</th>
+            <th class="num">Matched</th>
+            <th class="num">Mismatch</th>
+            <th class="num">Unclaimed</th>
+            <th class="num">Not generated</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of settlementRows(); track row.name) {
+            <tr>
+              <td>{{ row.name }}</td>
+              <td class="num">{{ count(row.d.total) }}</td>
+              <td class="num num--ok">{{ count(row.d.matched) }}</td>
+              <td class="num num--warn">{{ count(row.d.mismatched) }}</td>
+              <td class="num num--bad" [pTooltip]="row.unmatchedLabel">{{ count(row.d.unmatched) }}</td>
+              <td class="num" [class.num--muted]="row.d.notGenerated === 0">{{ count(row.d.notGenerated) }}</td>
+            </tr>
+          }
+          @if (summary(); as s) {
+            <tr>
+              <td>PayU Settlement</td>
+              <td class="num">{{ count(s.payuSettlement.total) }}</td>
+              <td class="num num--ok">{{ count(s.payuSettlement.matched) }}</td>
+              <td class="num num--warn">{{ count(s.payuSettlement.mismatched) }}</td>
+              <td class="num num--bad" pTooltip="no bank credit">{{ count(s.payuSettlement.unmatched) }}</td>
+              <td class="num num--muted" pTooltip="gap between MPR net and bank total">gap {{ rupees(s.payuSettlement.gap) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    @if (recentRuns(); as runs) {
+      <div class="panel">
+        <header class="panel__head">
+          <h2><i class="pi pi-cloud-download"></i> Recent Automation</h2>
+          <a class="panel__link" routerLink="/reconciliation/folder-watch">All runs <i class="pi pi-arrow-right"></i></a>
+        </header>
+        @if (runs.length === 0) {
+          <div class="chart-card__empty">No shared-folder runs yet.</div>
+        } @else {
+          <ul class="runs">
+            @for (run of runs; track run.id) {
+              <li class="runs__row">
+                <span class="run-pill" [class]="runStatusClass(run.status)">{{ run.status }}</span>
+                <span class="runs__when">{{ run.startedAt | date: 'd MMM, h:mm a' }}</span>
+                <span class="runs__counts">
+                  <span pTooltip="stored">{{ run.filesIngested }} in</span> ·
+                  <span pTooltip="already stored / not recognised">{{ run.filesSkipped }} skipped</span>
+                  @if (run.filesFailed) {
+                    · <span class="num--bad">{{ run.filesFailed }} failed</span>
+                  }
+                </span>
+                <span class="runs__by">{{ run.triggeredByName || (run.triggeredBy ? 'Manual' : 'Scheduled') }}</span>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    }
+  </section>
+
+  <!-- Every figure, in full -->
+  @if (summary(); as s) {
+    <section class="panel">
+      <header class="panel__head">
+        <h2><i class="pi pi-table"></i> Detailed Figures</h2>
+        <span class="panel__hint">generated {{ s.generatedAt | date: 'd MMM y, h:mm a' }}</span>
+      </header>
+      <app-summary-panel [summary]="s" />
+    </section>
+  }
+</div>

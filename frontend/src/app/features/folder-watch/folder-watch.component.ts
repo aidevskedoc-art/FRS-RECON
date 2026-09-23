@@ -1,0 +1,209 @@
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { TableLazyLoadEvent, TableModule } from 'primeng/table';
+import { InputTextModule } from 'primeng/inputtext';
+import { DialogModule } from 'primeng/dialog';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { TooltipModule } from 'primeng/tooltip';
+import { FolderWatchService } from '../../core/services/folder-watch.service';
+import { errorMessage } from '../../core/services/policy-document.service';
+import { FolderWatchConfig, FolderWatchConfigDraft, FolderWatchReconcileStep, FolderWatchRun, FolderWatchRunFile } from '../../core/models';
+import { PageHeaderComponent } from '../../shared/ui/page-header.component';
+
+const OUTCOME_LABELS: Record<string, string> = {
+  INGESTED: 'Stored',
+  SKIPPED_DUPLICATE: 'Already stored',
+  SKIPPED_UNRECOGNIZED: 'Not recognised',
+  SKIPPED_NEEDS_REVIEW: 'Needs a person',
+  SKIPPED_EMPTY: 'Nothing to store',
+  FAILED: 'Failed',
+};
+
+/** One file in a run, with every report found in it (several for a combined workbook). */
+interface FileGroup {
+  fileName: string;
+  reports: FolderWatchRunFile[];
+  superseded: boolean;
+  /** Retry only helps a file where nothing was stored — re-reading a stored one just finds duplicates. */
+  canRetry: boolean;
+}
+
+function emptyDraft(): FolderWatchConfigDraft {
+  return { folderPath: '', runTime: '06:00', active: true, uploadedByLabel: 'Automated (Folder Watch)' };
+}
+
+/**
+ * "Collection and Bank Deposit Reconciliation" automation (client mail
+ * 2026-09-21, point 3): configure the shared network folder + daily IST
+ * check time, see the run history, and trigger an immediate check to
+ * confirm the setup actually works before trusting the daily schedule.
+ */
+@Component({
+  selector: 'app-folder-watch',
+  standalone: true,
+  imports: [DatePipe, FormsModule, TableModule, InputTextModule, DialogModule, ToggleSwitchModule, TooltipModule, PageHeaderComponent],
+  templateUrl: './folder-watch.component.html',
+  styleUrl: './folder-watch.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class FolderWatchComponent {
+  protected readonly folderWatch = inject(FolderWatchService);
+
+  protected readonly draft = signal<FolderWatchConfigDraft>(emptyDraft());
+  protected readonly formError = signal<string | null>(null);
+  protected readonly saving = signal(false);
+  protected readonly saved = signal(false);
+
+  protected readonly runningNow = signal(false);
+  protected readonly runNowError = signal<string | null>(null);
+
+  protected readonly listError = signal<string | null>(null);
+
+  // ---- run detail dialog -----------------------------------------------------------
+  protected readonly detailRun = signal<FolderWatchRun | null>(null);
+  protected readonly detailFiles = signal<FolderWatchRunFile[]>([]);
+  protected readonly detailLoading = signal(false);
+  protected readonly retrying = signal<string | null>(null);
+  protected readonly retryNote = signal<string | null>(null);
+
+  protected readonly detailGroups = computed<FileGroup[]>(() => {
+    const byName = new Map<string, FolderWatchRunFile[]>();
+    for (const f of this.detailFiles()) {
+      if (!byName.has(f.fileName)) byName.set(f.fileName, []);
+      byName.get(f.fileName)!.push(f);
+    }
+    return [...byName.entries()].map(([fileName, reports]) => {
+      const superseded = reports.every((r) => r.superseded);
+      return {
+        fileName,
+        reports,
+        superseded,
+        canRetry: !superseded && !reports.some((r) => r.outcome === 'INGESTED'),
+      };
+    });
+  });
+
+  constructor() {
+    this.folderWatch.refreshConfig().subscribe({
+      next: (config) => { if (config) this.draft.set(this.toDraft(config)); },
+      error: (err) => this.listError.set(errorMessage(err)),
+    });
+    this.folderWatch.refreshRuns().subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
+  }
+
+  private toDraft(config: FolderWatchConfig): FolderWatchConfigDraft {
+    return {
+      folderPath: config.folderPath,
+      runTime: config.runTime.slice(0, 5), // 'HH:MM:SS' -> 'HH:MM' for the time input
+      active: config.active,
+      uploadedByLabel: config.uploadedByLabel,
+    };
+  }
+
+  protected updateDraft(patch: Partial<FolderWatchConfigDraft>): void {
+    this.draft.update((d) => ({ ...d, ...patch }));
+    this.saved.set(false);
+  }
+
+  protected save(): void {
+    const d = this.draft();
+    if (!d.folderPath.trim()) return this.formError.set('Folder path is required');
+    if (!d.runTime) return this.formError.set('Run time is required');
+
+    this.saving.set(true);
+    this.formError.set(null);
+    this.folderWatch.saveConfig({ ...d, folderPath: d.folderPath.trim() }).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.saved.set(true);
+      },
+      error: (err) => {
+        this.saving.set(false);
+        this.formError.set(errorMessage(err));
+      },
+    });
+  }
+
+  protected runNow(): void {
+    this.runningNow.set(true);
+    this.runNowError.set(null);
+    this.folderWatch.runNow().subscribe({
+      next: () => {
+        this.runningNow.set(false);
+        this.folderWatch.refreshRuns().subscribe();
+      },
+      error: (err) => {
+        this.runningNow.set(false);
+        this.runNowError.set(errorMessage(err));
+      },
+    });
+  }
+
+  protected onPageChange(event: TableLazyLoadEvent): void {
+    const pageSize = event.rows || 20;
+    const page = Math.floor((event.first ?? 0) / pageSize) + 1;
+    this.folderWatch.refreshRuns(page, pageSize).subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
+  }
+
+  protected statusPillClass(status: string): string {
+    if (status === 'COMPLETED') return 'status-pill--completed';
+    if (status === 'FAILED') return 'status-pill--failed';
+    return 'status-pill--running';
+  }
+
+  protected outcomePillClass(outcome: string): string {
+    if (outcome === 'INGESTED') return 'status-pill--completed';
+    if (outcome === 'FAILED') return 'status-pill--failed';
+    if (outcome === 'SKIPPED_NEEDS_REVIEW') return 'status-pill--running';
+    return 'status-pill'; // duplicate / not recognised / nothing to store — neutral
+  }
+
+  protected outcomeLabel(outcome: string): string {
+    return OUTCOME_LABELS[outcome] ?? outcome;
+  }
+
+  /** "1,844 matched · 6 amount mismatch · 4 unmatched" for one reconciliation step. */
+  protected stepCounts(step: FolderWatchReconcileStep): string {
+    if (step.error) return step.error;
+    if (!step.counts) return 'done';
+    const parts = Object.entries(step.counts)
+      .filter(([, n]) => typeof n === 'number' && n > 0)
+      .map(([k, n]) => `${n.toLocaleString('en-IN')} ${k.toLowerCase().replace(/_/g, ' ')}`);
+    return parts.length ? parts.join(' · ') : 'nothing to match';
+  }
+
+  protected retry(group: FileGroup): void {
+    this.retrying.set(group.fileName);
+    this.retryNote.set(null);
+    this.folderWatch.retryFile(group.fileName).subscribe({
+      next: () => {
+        this.retrying.set(null);
+        this.retryNote.set(`"${group.fileName}" will be read again on the next check — press Run Now to do it now.`);
+        this.detailFiles.update((files) => files.map((f) => (f.fileName === group.fileName ? { ...f, superseded: true } : f)));
+      },
+      error: (err) => {
+        this.retrying.set(null);
+        this.retryNote.set(errorMessage(err));
+      },
+    });
+  }
+
+  protected openRunDetail(run: FolderWatchRun): void {
+    this.detailRun.set(run);
+    this.retryNote.set(null);
+    this.detailLoading.set(true);
+    this.detailFiles.set([]);
+    this.folderWatch.fetchRunFiles(run.id).subscribe({
+      next: (files) => {
+        this.detailLoading.set(false);
+        this.detailFiles.set(files);
+      },
+      error: () => this.detailLoading.set(false),
+    });
+  }
+
+  protected closeDetail(): void {
+    this.detailRun.set(null);
+  }
+}

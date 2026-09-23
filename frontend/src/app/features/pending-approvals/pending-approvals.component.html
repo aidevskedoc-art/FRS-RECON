@@ -1,0 +1,218 @@
+<div class="pending-approvals">
+  <app-page-header
+    icon="pi pi-verified"
+    title="Match Approvals"
+    subtitle="Maker-checker for mismatch resolution — an Auditor proposes, their Reporting Manager approves."
+  />
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="hub-picker" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="hub-option"
+        [class.hub-option--active]="activeTab() === tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        (click)="selectTab(tab.id)"
+      >
+        <i [class]="tab.icon"></i>
+        <span class="hub-option__title">{{ tab.label }}</span>
+      </button>
+    }
+  </div>
+
+  <!-- Client ask, 2026-09-23: the checker can multi-select several open
+       requests and approve (or reject) them all in one go. -->
+  @if (activeTab() === 'toReview' && selectedRequests().length > 0) {
+    <div class="bulk-bar">
+      <span class="bulk-bar__count"><span class="num">{{ selectedRequests().length }}</span> selected</span>
+      <div class="bulk-bar__actions">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()">
+          <i class="pi pi-times"></i><span>Clear</span>
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="openBulkReview('reject')">
+          <i class="pi pi-times-circle"></i><span>Reject Selected</span>
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="openBulkReview('approve')">
+          <i class="pi pi-check"></i><span>Approve Selected</span>
+        </button>
+      </div>
+    </div>
+  }
+
+  <div class="pending-approvals__list glass-card glass-card--static">
+    @if (activeTab() === 'toReview') {
+      @if (matchApproval.toReview().length === 0 && !loading()) {
+        <div class="empty-state">
+          <i class="pi pi-check-circle"></i>
+          <strong>Nothing waiting on you</strong>
+          <p>Requests from auditors who report to you will show up here.</p>
+        </div>
+      } @else {
+        @for (req of matchApproval.toReview(); track req.id) {
+          <div class="request-row" (click)="openReview(req)">
+            <input
+              type="checkbox"
+              class="request-row__checkbox"
+              [checked]="isSelected(req)"
+              (click)="$event.stopPropagation(); toggleSelect(req)"
+            />
+            <span class="type-chip">{{ req.entityType }}</span>
+            <span class="type-chip" [class.kind-chip--correction]="req.requestKind === 'CORRECTION'">{{ requestKindLabel(req.requestKind) }}</span>
+            <span class="request-row__main">
+              <span class="request-row__title">{{ req.record?.receiptNumber || '—' }} · {{ req.record?.patientName || '—' }}</span>
+              <span class="request-row__reason">{{ req.reason }}</span>
+            </span>
+            <span class="request-row__meta">
+              <span class="num">{{ amount(req.record?.amount) }}</span>
+              <span class="request-row__by">{{ req.requesterName }} · {{ req.requestedAt | date: 'd MMM, h:mm a' }}</span>
+            </span>
+            <i class="pi pi-angle-right"></i>
+          </div>
+        }
+      }
+    } @else {
+      @if (matchApproval.mine().length === 0 && !loading()) {
+        <div class="empty-state">
+          <i class="pi pi-send"></i>
+          <strong>No requests yet</strong>
+          <p>Propose a mismatch as Matched from the Mismatch Review screen — it'll show up here.</p>
+        </div>
+      } @else {
+        @for (req of matchApproval.mine(); track req.id) {
+          <div class="request-row request-row--static">
+            <span class="type-chip">{{ req.entityType }}</span>
+            <span class="type-chip" [class.kind-chip--correction]="req.requestKind === 'CORRECTION'">{{ requestKindLabel(req.requestKind) }}</span>
+            <span class="request-row__main">
+              <span class="request-row__title">{{ req.record?.receiptNumber || '—' }} · {{ req.record?.patientName || '—' }}</span>
+              <span class="request-row__reason">{{ req.reason }}</span>
+              @if (req.reviewNote) {
+                <span class="request-row__note">Manager's note: {{ req.reviewNote }}</span>
+              }
+            </span>
+            <span class="request-row__meta">
+              <span class="status-pill" [class]="statusPillClass(req.status)">{{ req.status }}</span>
+              <span class="request-row__by">{{ req.requestedAt | date: 'd MMM, h:mm a' }}</span>
+            </span>
+          </div>
+        }
+      }
+    }
+  </div>
+
+  <!-- Review dialog — approve / reject -->
+  @if (reviewingRequest(); as req) {
+    <p-dialog header="Review Change Request" [visible]="true" (visibleChange)="closeReview()" [modal]="true" [style]="{ width: '28rem' }">
+      <div class="review">
+        <p class="review__summary">
+          <span class="type-chip">{{ req.entityType }}</span>
+          <span class="type-chip" [class.kind-chip--correction]="req.requestKind === 'CORRECTION'">{{ requestKindLabel(req.requestKind) }}</span>
+          <strong>{{ req.record?.receiptNumber || '—' }}</strong> · {{ req.record?.patientName || '—' }} · {{ amount(req.record?.amount) }}
+        </p>
+        @if (req.requestKind === 'CORRECTION') {
+          <div class="notice notice--warning">
+            <i class="pi pi-exclamation-triangle"></i>
+            Approving this unlocks the record and resets it to Unmatched — the next Generate run will re-decide it.
+          </div>
+        }
+        <p class="review__requester">Requested by <strong>{{ req.requesterName }}</strong> ({{ req.requesterEmployeeId }})</p>
+        <div class="detail__reason">
+          <span class="detail__reason-label">Reason given</span>
+          <p>{{ req.reason }}</p>
+        </div>
+
+        <label class="field">
+          <span class="field-label">Note (required to reject, optional to approve)</span>
+          <textarea rows="2" [ngModel]="reviewNote()" (ngModelChange)="reviewNote.set($event)" class="propose-textarea"></textarea>
+        </label>
+
+        @if (reviewError(); as err) {
+          <div class="modal-error">{{ err }}</div>
+        }
+      </div>
+      <ng-template #footer>
+        <button type="button" class="btn btn-ghost" [disabled]="reviewSaving()" (click)="reject()">
+          <i class="pi pi-times"></i>
+          <span>Reject</span>
+        </button>
+        <button type="button" class="btn btn-primary" [disabled]="reviewSaving()" (click)="approve()">
+          @if (reviewSaving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-check"></i>
+          }
+          <span>Approve</span>
+        </button>
+      </ng-template>
+    </p-dialog>
+  }
+
+  <!-- Bulk review dialog — client ask, 2026-09-23 -->
+  @if (bulkReviewOpen()) {
+    <p-dialog
+      [header]="bulkReviewAction() === 'approve' ? 'Approve Selected' : 'Reject Selected'"
+      [visible]="true"
+      (visibleChange)="closeBulkReview()"
+      [modal]="true"
+      [dismissableMask]="!bulkReviewProgress()"
+      [closable]="!bulkReviewProgress()"
+      [style]="{ width: '28rem' }"
+    >
+      @if (bulkReviewResultMessage(); as message) {
+        <p>{{ message }}</p>
+      } @else {
+        <div class="review">
+          <p class="review__summary">
+            {{ bulkReviewAction() === 'approve' ? 'Approve' : 'Reject' }}
+            <strong>{{ selectedRequests().length }}</strong> selected request{{ selectedRequests().length === 1 ? '' : 's' }}?
+          </p>
+          <label class="field">
+            <span class="field-label">{{ bulkReviewAction() === 'reject' ? 'Note (required)' : 'Note (required to reject, optional to approve)' }}</span>
+            <textarea
+              rows="2"
+              [ngModel]="bulkReviewNote()"
+              (ngModelChange)="bulkReviewNote.set($event)"
+              [disabled]="!!bulkReviewProgress()"
+              class="propose-textarea"
+            ></textarea>
+          </label>
+          @if (bulkReviewError(); as err) {
+            <div class="modal-error">{{ err }}</div>
+          }
+          @if (bulkReviewProgress(); as progress) {
+            <p class="review__requester">
+              <span class="spinner bulk-review__spinner"></span>
+              Processing… {{ progress.done }} / {{ progress.total }}
+            </p>
+          }
+        </div>
+      }
+      <ng-template #footer>
+        @if (bulkReviewResultMessage()) {
+          <button type="button" class="btn btn-primary" (click)="closeBulkReview()">
+            <span>Close</span>
+          </button>
+        } @else {
+          <button type="button" class="btn btn-ghost" [disabled]="!!bulkReviewProgress()" (click)="closeBulkReview()">
+            <span>Cancel</span>
+          </button>
+          <button type="button" class="btn btn-primary" [disabled]="!!bulkReviewProgress()" (click)="submitBulkReview()">
+            @if (bulkReviewProgress()) {
+              <span class="btn-spinner"></span>
+            } @else {
+              <i class="pi pi-check"></i>
+            }
+            <span>{{ bulkReviewAction() === 'approve' ? 'Approve' : 'Reject' }} {{ selectedRequests().length }}</span>
+          </button>
+        }
+      </ng-template>
+    </p-dialog>
+  }
+</div>

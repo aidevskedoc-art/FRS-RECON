@@ -2,11 +2,15 @@ const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const db = require('../db');
+const { uploaderOf } = require('../uploader');
 const { parseBankStatementWorkbook } = require('../online-upload/bank-statement-parser');
 const { parsePayuMprWorkbook } = require('../online-upload/payu-mpr-parser');
 const { parseEasebuzzWorkbook } = require('../online-upload/easebuzz-parser');
 const { parseEasebuzzSettlementWorkbook } = require('../online-upload/easebuzz-settlement-parser');
 const { assertNewFile } = require('../online-upload/dedupe');
+const { columnSheet, writeXlsx } = require('../excel/write-xlsx');
+const { statusTone } = require('../reconciliation/status-tone');
+const { assertNotPastGoLive } = require('../go-live');
 const {
   onlineUploadBatchRowToApi,
   onlinePaymentRecordRowToApi,
@@ -79,6 +83,7 @@ router.get('/mis/batches/:id', async (req, res, next) => {
 // DELETE /api/online-upload/mis/batches/:id
 router.delete('/mis/batches/:id', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     const { rowCount } = await db.query('DELETE FROM online_upload_batches WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
     res.status(204).send();
@@ -149,6 +154,7 @@ router.get('/mis/records', async (req, res, next) => {
 // DELETE /api/online-upload/mis/records?batchId=  (clears all rows in a batch, keeps the batch itself)
 router.delete('/mis/records', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     if (!req.query.batchId) return res.status(400).json({ error: 'batchId is required' });
     await db.withTransaction(async (client) => {
       await client.query('DELETE FROM online_payment_records WHERE batch_id = $1', [req.query.batchId]);
@@ -191,7 +197,7 @@ router.post('/bank-statement', upload.single('file'), async (req, res, next) => 
 
     const fileHash = await assertNewFile('bank_statement_uploads', req.file.buffer, { column: 'source', value: 'BANK' });
     const { statements, skippedSheets } = parseBankStatementWorkbook(req.file.buffer);
-    const uploadedBy = req.body.uploadedBy || null;
+    const uploadedBy = uploaderOf(req);
     const single = statements.length === 1;
 
     const created = await db.withTransaction(async (client) => {
@@ -269,7 +275,7 @@ router.post('/payu-mpr', upload.single('file'), async (req, res, next) => {
     }
 
     const dates = rows.map((r) => r.txnDate).filter(Boolean).sort();
-    const uploadedBy = req.body.uploadedBy || null;
+    const uploadedBy = uploaderOf(req);
 
     const batch = await db.withTransaction(async (client) => {
       const { rows: batchRows } = await client.query(
@@ -383,7 +389,7 @@ router.post('/easebuzz', upload.single('file'), async (req, res, next) => {
     }
 
     const dates = success.map((r) => r.txnDate).filter(Boolean).sort();
-    const uploadedBy = req.body.uploadedBy || null;
+    const uploadedBy = uploaderOf(req);
 
     const batch = await db.withTransaction(async (client) => {
       const { rows: batchRows } = await client.query(
@@ -477,6 +483,7 @@ router.get('/easebuzz/batches/:id/records', async (req, res, next) => {
 // DELETE /api/online-upload/easebuzz/batches/:id
 router.delete('/easebuzz/batches/:id', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     const { rowCount } = await db.query(`DELETE FROM bank_statement_uploads WHERE id = $1 AND source = 'EASEBUZZ'`, [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
     res.status(204).end();
@@ -507,7 +514,7 @@ router.post('/easebuzz-settlement', upload.single('file'), async (req, res, next
       });
     }
 
-    const uploadedBy = req.body.uploadedBy || null;
+    const uploadedBy = uploaderOf(req);
 
     const batch = await db.withTransaction(async (client) => {
       const { rows: batchRows } = await client.query(
@@ -594,6 +601,7 @@ router.get('/easebuzz-settlement/batches/:id/records', async (req, res, next) =>
 // DELETE /api/online-upload/easebuzz-settlement/batches/:id
 router.delete('/easebuzz-settlement/batches/:id', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     const { rowCount } = await db.query(`DELETE FROM easebuzz_settlement_upload_batches WHERE id = $1`, [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
     res.status(204).end();
@@ -648,7 +656,7 @@ const BANK_STATUS_LABEL = { MATCHED: 'Matched', AMOUNT_MISMATCH: 'Amount Mismatc
  * requested keys in this order.
  */
 const BANK_EXPORT_COLUMNS = [
-  { key: 'status', label: 'Status', mpr: true, bank: true,
+  { key: 'status', label: 'Status', mpr: true, bank: true, tone: (r) => statusTone(r.match_status),
     get: (r) => (r.match_status ? BANK_STATUS_LABEL[r.match_status] || (r.match_status === 'UNMATCHED' ? (r.source === 'PAYU_MPR' ? 'Only in PayU MPR' : 'Only in Bank Statement') : r.match_status) : 'Not Generated') },
   { key: 'txnDate', label: 'Txn Date', mpr: true, bank: true, get: (r) => (r.txn_date ? String(r.txn_date).slice(0, 10) : '') },
   { key: 'narration', label: 'Narration', mpr: true, bank: true, get: (r) => r.narration || '' },
@@ -701,13 +709,10 @@ router.get('/bank-statement/batches/:id/records/export.xlsx', async (req, res, n
     const chosen = wanted.length ? applicable.filter((c) => wanted.includes(c.key)) : applicable;
     const cols = chosen.length ? chosen : applicable;
 
-    const sheet = XLSX.utils.json_to_sheet(
-      rows.map((r) => Object.fromEntries(cols.map((c) => [c.label, c.get(r)]))),
-      { header: cols.map((c) => c.label) },
-    );
+    const sheet = columnSheet(rows, cols);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, isMpr ? 'PayU MPR' : 'Bank Statement');
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await writeXlsx(workbook);
 
     const name = `${isMpr ? 'payu-mpr' : 'bank-statement'}-${req.params.id}-${new Date().toISOString().slice(0, 10)}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -721,6 +726,7 @@ router.get('/bank-statement/batches/:id/records/export.xlsx', async (req, res, n
 // DELETE /api/online-upload/bank-statement/batches/:id
 router.delete('/bank-statement/batches/:id', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     const { rowCount } = await db.query('DELETE FROM bank_statement_uploads WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
     res.status(204).send();
@@ -732,6 +738,7 @@ router.delete('/bank-statement/batches/:id', async (req, res, next) => {
 // DELETE /api/online-upload/bank-statement/records?batchId=  (clears all transactions in a statement, keeps the batch itself)
 router.delete('/bank-statement/records', async (req, res, next) => {
   try {
+    if (!(await assertNotPastGoLive(req, res))) return;
     if (!req.query.batchId) return res.status(400).json({ error: 'batchId is required' });
     await db.withTransaction(async (client) => {
       await client.query('DELETE FROM bank_statement_records WHERE batch_id = $1', [req.query.batchId]);

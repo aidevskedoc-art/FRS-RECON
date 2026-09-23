@@ -1362,3 +1362,318 @@ INSERT INTO gateway_matching_rules (name, target, active, sort_order, gateway_co
 SELECT 'Default EaseBuzz settlement policy', 'EASEBUZZ', true, 1,
        '{"tolerance":1,"onAmbiguous":"NEAREST_AMOUNT","useNarrationTokens":true,"minTokenLength":8}'::jsonb
 WHERE NOT EXISTS (SELECT 1 FROM gateway_matching_rules WHERE target = 'EASEBUZZ');
+
+-- ---------------------------------------------------------------------------
+-- Users, locations (branches) and audit trail — the only login there is (the
+-- old hardcoded demo accounts were retired 2026-09-21). `locations` mirrors the division list already
+-- hardcoded on master_division_bank_accounts's CHECK constraint above — same
+-- 4 names, now a real add/deactivate-able master instead of a fixed enum.
+--
+-- Role model: 'Admin' | 'Auditor'. Admin always sees every location (no
+-- explicit grant needed, checked in application code the same way the
+-- reference RBAC app treats role='admin' as full-access) — user_locations
+-- rows are only meaningful for Auditors. manager_id is a self-reference so a
+-- user's reporting manager (name + id) can be shown without a separate role.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS locations (
+  id          SERIAL PRIMARY KEY,
+  name        VARCHAR(64) NOT NULL,
+  active      BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS locations_name_key ON locations(name);
+
+INSERT INTO locations (name) VALUES
+  ('Hitech City'), ('Somajiguda'), ('Secunderabad'), ('Malakpet')
+ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS users (
+  id                     SERIAL PRIMARY KEY,
+  employee_id            VARCHAR(20) NOT NULL,
+  username               VARCHAR(50) NOT NULL,
+  password_hash          TEXT NOT NULL,
+  full_name              VARCHAR(150) NOT NULL,
+  role                   VARCHAR(16) NOT NULL DEFAULT 'Auditor',
+  manager_id             INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  email                  VARCHAR(150),
+  mobile_number          VARCHAR(20),
+  is_active              BOOLEAN NOT NULL DEFAULT true,
+  must_change_password   BOOLEAN NOT NULL DEFAULT true,
+  failed_login_attempts  INTEGER NOT NULL DEFAULT 0,
+  locked_until           TIMESTAMP,
+  last_login_at          TIMESTAMP,
+  created_at             TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at             TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_key ON users(LOWER(username));
+CREATE UNIQUE INDEX IF NOT EXISTS users_employee_id_key ON users(LOWER(employee_id));
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_chk;
+ALTER TABLE users ADD CONSTRAINT users_role_chk CHECK (role IN ('Admin', 'Auditor'));
+
+CREATE TABLE IF NOT EXISTS user_locations (
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  location_id  INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+  granted_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  granted_at   TIMESTAMP NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, location_id)
+);
+
+-- target_user_id covers the original "one account acted on another account"
+-- case (login, user CRUD, branch grants). entity_type/entity_id generalise
+-- beyond users — a location deactivated, a bank account edited, a matching
+-- rule changed, a reconciliation record moved from Unmatched to Matched —
+-- so this one table can back a whole-application audit log, not just a
+-- per-user activity list. Both are nullable and independent: a row sets
+-- target_user_id, entity_type/entity_id, both, or neither (e.g. LOGIN_FAILED
+-- with a typo'd username has no resolvable target at all).
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id              SERIAL PRIMARY KEY,
+  actor_user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  entity_type     VARCHAR(50),
+  entity_id       VARCHAR(50),
+  action          VARCHAR(50) NOT NULL,
+  details         JSONB,
+  ip_address      VARCHAR(45),
+  created_at      TIMESTAMP NOT NULL DEFAULT now()
+);
+
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_type VARCHAR(50);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_id VARCHAR(50);
+
+CREATE INDEX IF NOT EXISTS audit_logs_actor_idx   ON audit_logs(actor_user_id);
+CREATE INDEX IF NOT EXISTS audit_logs_target_idx  ON audit_logs(target_user_id);
+CREATE INDEX IF NOT EXISTS audit_logs_entity_idx  ON audit_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS audit_logs_created_idx ON audit_logs(created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- Maker-checker for mismatch resolution (client mail 2026-09-21, point 2):
+-- an Auditor ("maker") proposes changing a mismatched record to Matched with
+-- a mandatory reason; their own Reporting Manager ("checker",
+-- users.manager_id) approves or rejects it. One shared table across all 5
+-- collection types (IP/DIAG/CHEQUE/CARD/UPI), same generalisation approach as
+-- audit_logs' entity_type/entity_id — a checker's pending-approval queue has
+-- to span every type in one query, the same reason online-mismatches unions
+-- IP+DIAG rather than keeping them apart.
+--
+-- locked_at/locked_by on each record table (below) is what actually protects
+-- an approved correction: every Generate re-run's bulk UPDATE must skip a
+-- locked row, or the next Generate silently overwrites what the checker just
+-- signed off on. See bulkUpdateMatchStatus / bulkUpdateChequeMatchStatus in
+-- matched-rules.routes.js and the two generate routes in ucr-matched.routes.js.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS match_change_requests (
+  id               SERIAL PRIMARY KEY,
+  entity_type      VARCHAR(10) NOT NULL,
+  entity_id        INTEGER NOT NULL,
+  previous_status  VARCHAR(20) NOT NULL,
+  proposed_status  VARCHAR(20) NOT NULL DEFAULT 'MATCHED',
+  reason           TEXT NOT NULL,
+  -- Nullable, same reasoning as audit_logs.actor_user_id: deleting the user
+  -- who made the request must anonymise the row, not cascade-delete the
+  -- request itself (and NOT NULL + ON DELETE SET NULL is a contradiction —
+  -- deleting the referenced user would try to null out a NOT NULL column).
+  requested_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  requested_at     TIMESTAMP NOT NULL DEFAULT now(),
+  status           VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  reviewed_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at      TIMESTAMP,
+  review_note      TEXT
+);
+
+-- Fixes an already-deployed version of this table created with requested_by
+-- NOT NULL (see the comment on that column above) — CREATE TABLE IF NOT
+-- EXISTS above won't touch an existing table's column constraints.
+ALTER TABLE match_change_requests ALTER COLUMN requested_by DROP NOT NULL;
+
+ALTER TABLE match_change_requests DROP CONSTRAINT IF EXISTS match_change_requests_entity_type_chk;
+ALTER TABLE match_change_requests ADD CONSTRAINT match_change_requests_entity_type_chk
+  CHECK (entity_type IN ('IP', 'DIAG', 'CHEQUE', 'CARD', 'UPI'));
+
+ALTER TABLE match_change_requests DROP CONSTRAINT IF EXISTS match_change_requests_status_chk;
+ALTER TABLE match_change_requests ADD CONSTRAINT match_change_requests_status_chk
+  CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'));
+
+-- Only one open request per record at a time — a second proposal on the same
+-- row must wait for (or replace, by rejecting first) the pending one.
+CREATE UNIQUE INDEX IF NOT EXISTS match_change_requests_one_pending
+  ON match_change_requests(entity_type, entity_id) WHERE status = 'PENDING';
+
+CREATE INDEX IF NOT EXISTS match_change_requests_requested_by_idx ON match_change_requests(requested_by);
+CREATE INDEX IF NOT EXISTS match_change_requests_status_idx       ON match_change_requests(status);
+
+ALTER TABLE ip_payment_records        ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP;
+ALTER TABLE ip_payment_records        ADD COLUMN IF NOT EXISTS locked_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE diag_op_payment_records   ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP;
+ALTER TABLE diag_op_payment_records   ADD COLUMN IF NOT EXISTS locked_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP;
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS locked_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE ucr_ip_records            ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP;
+ALTER TABLE ucr_ip_records            ADD COLUMN IF NOT EXISTS locked_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------------
+-- Shared-folder automation (client mail 2026-09-21, point 3): the client
+-- drops files into one network folder; the app checks it at a scheduled
+-- time each day, auto-detects each file (detect-file-type.js, same as the
+-- manual Upload & Run screen), ingests it through the existing upload
+-- routes, then runs the existing Generate routes for whatever came in — see
+-- backend/src/folder-watch/. One row in folder_watch_config (one folder, per
+-- the client's "a new screen" wording), a run history in folder_watch_runs,
+-- and per-file detail in folder_watch_run_files.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS folder_watch_config (
+  id                 SERIAL PRIMARY KEY,
+  folder_path        TEXT NOT NULL,
+  -- Wall-clock IST time of day, e.g. '06:00:00' — the scheduler explicitly
+  -- treats this as IST when computing the next run, never the server OS's
+  -- local timezone (see frs-date-timezone-trap; this project has been bitten
+  -- by implicit-timezone bugs before).
+  run_time           TIME NOT NULL DEFAULT '06:00:00',
+  active             BOOLEAN NOT NULL DEFAULT true,
+  uploaded_by_label  VARCHAR(255) NOT NULL DEFAULT 'Automated (Folder Watch)',
+  updated_at         TIMESTAMP NOT NULL DEFAULT now(),
+  updated_by         INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS folder_watch_runs (
+  id             SERIAL PRIMARY KEY,
+  started_at     TIMESTAMP NOT NULL DEFAULT now(),
+  finished_at    TIMESTAMP,
+  status         VARCHAR(20) NOT NULL DEFAULT 'RUNNING',
+  files_found    INTEGER NOT NULL DEFAULT 0,
+  files_ingested INTEGER NOT NULL DEFAULT 0,
+  files_skipped  INTEGER NOT NULL DEFAULT 0,
+  files_failed   INTEGER NOT NULL DEFAULT 0,
+  error_message  TEXT,
+  -- NULL = the scheduler fired it; set = a person clicked "Run Now".
+  triggered_by   INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
+ALTER TABLE folder_watch_runs DROP CONSTRAINT IF EXISTS folder_watch_runs_status_chk;
+ALTER TABLE folder_watch_runs ADD CONSTRAINT folder_watch_runs_status_chk
+  CHECK (status IN ('RUNNING', 'COMPLETED', 'FAILED'));
+
+CREATE INDEX IF NOT EXISTS folder_watch_runs_started_idx ON folder_watch_runs(started_at DESC);
+
+-- The reconciliation that ran after this scan's uploads — the same plan the
+-- manual Upload & Run screen runs (every IP, Diag, Cheque, Bank batch, then
+-- the PayU / EaseBuzz / Card / UPI passes), one entry per step.
+ALTER TABLE folder_watch_runs ADD COLUMN IF NOT EXISTS generate_summary JSONB;
+
+CREATE TABLE IF NOT EXISTS folder_watch_run_files (
+  id               SERIAL PRIMARY KEY,
+  run_id           INTEGER NOT NULL REFERENCES folder_watch_runs(id) ON DELETE CASCADE,
+  file_name        VARCHAR(255) NOT NULL,
+  detected_type    VARCHAR(30),
+  outcome          VARCHAR(30) NOT NULL,
+  batch_id         INTEGER,
+  rows_ingested    INTEGER,
+  generate_summary JSONB,
+  error_message    TEXT,
+  created_at       TIMESTAMP NOT NULL DEFAULT now()
+);
+
+ALTER TABLE folder_watch_run_files DROP CONSTRAINT IF EXISTS folder_watch_run_files_outcome_chk;
+ALTER TABLE folder_watch_run_files ADD CONSTRAINT folder_watch_run_files_outcome_chk
+  CHECK (outcome IN ('INGESTED', 'SKIPPED_DUPLICATE', 'SKIPPED_UNRECOGNIZED', 'SKIPPED_NEEDS_REVIEW', 'SKIPPED_EMPTY', 'FAILED'));
+
+-- "Already taken" lookup — a file name with a terminal non-FAILED outcome
+-- anywhere in history is skipped on sight, before even reading its bytes.
+CREATE INDEX IF NOT EXISTS folder_watch_run_files_name_idx ON folder_watch_run_files(file_name, outcome);
+CREATE INDEX IF NOT EXISTS folder_watch_run_files_run_idx  ON folder_watch_run_files(run_id);
+
+-- "Retry" on the settings screen sets this on every earlier row for a file
+-- name, so the next scan takes the file again. History is kept, not deleted:
+-- what happened before stays visible, it just no longer counts as "taken".
+ALTER TABLE folder_watch_run_files ADD COLUMN IF NOT EXISTS superseded BOOLEAN NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------------
+-- Location + department filters (client mail AC-10, 2026-09-21)
+--
+-- Location is the upload batch's unit_name (the HIS report header, e.g.
+-- "YASHODA HEALTHCARE SERVICES LIMITED, SECUNDERABAD"), matched against the
+-- location master by name — see src/scope-filters.js. Every batch table had it
+-- except the Card/UPI MIS one, whose parsers read the header but never stored it.
+ALTER TABLE ucr_ip_upload_batches ADD COLUMN IF NOT EXISTS unit_name VARCHAR(255);
+
+-- Department. IP and Card/UPI already carry it (their own table, mis_source),
+-- and a cheque's collection_kind 'OP' is the diagnostics ledger. Diag/OP online
+-- rows are the one mix: the diagnostics advances report and the doctor-fee
+-- (OPD) register land in the same table, so the row builder stamps which
+-- report each came from. 'DIAG' | 'OPD'; NULL = a legacy non-HIS upload,
+-- which only shows under "All Departments".
+ALTER TABLE diag_op_payment_records ADD COLUMN IF NOT EXISTS department VARCHAR(8);
+
+-- ---------------------------------------------------------------------------
+-- Go-Live switch (client mail items 8 & 15, 2026-09-21) — one shared gate for
+-- two invariants: from the cutoff date, every clean match locks itself (not
+-- just an auditor-approved one, see locked_at/locked_by below), and every
+-- MIS/bank delete endpoint refuses outright (backend/src/go-live.js). Until
+-- the switch is live, Generate behaves exactly as it does today — this keeps
+-- today's "tweak a rule, rerun, see updated results" workflow intact right up
+-- to go-live. One row, same single-row-config shape as folder_watch_config.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS go_live_config (
+  id           SERIAL PRIMARY KEY,
+  cutoff_date  DATE NOT NULL,
+  active       BOOLEAN NOT NULL DEFAULT true,
+  updated_at   TIMESTAMP NOT NULL DEFAULT now(),
+  updated_by   INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
+INSERT INTO go_live_config (cutoff_date)
+  SELECT '2026-10-01' WHERE NOT EXISTS (SELECT 1 FROM go_live_config);
+
+-- bank_statement_records has no lock columns yet — every other record table
+-- (ip_payment_records/diag_op_payment_records/cheque_collection_records/
+-- ucr_ip_records, above) already does. Needed so a bank row can be locked by
+-- the go-live gate the same way (bulkUpdateBankMatchStatus, matched-rules.routes.js).
+ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP;
+ALTER TABLE bank_statement_records ADD COLUMN IF NOT EXISTS locked_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------------
+-- Per-user screen access (enhancement request 2026-09-21, items 4 & 5:
+-- "give screen access to user or auditors... implement at URL level, don't
+-- block at API level"). Exact same shape as user_locations above — Admin
+-- sees every grantable screen by role (no explicit grant needed, checked in
+-- the frontend guard the same way it already treats role='Admin' as
+-- full-access for locations); rows here are only meaningful for an Auditor.
+-- The valid screen_key values are backend/src/screen-catalogue.js, not a
+-- CHECK constraint, so the catalogue can grow without a migration.
+-- ---------------------------------------------------------------------------
+--
+-- Created inside a DO block so the one-time backfill runs ONLY when the table
+-- is first created: every Auditor who already exists at that moment keeps
+-- exactly the access they had before this feature (all 12 grantable screens —
+-- nothing was per-user restricted then), so deploying changes nobody's menu
+-- until an Admin restricts someone. Re-running schema.sql never re-grants, so
+-- an Auditor an Admin later cuts back to zero screens stays at zero.
+-- Keep the key list in step with backend/src/screen-catalogue.js.
+DO $$
+BEGIN
+  IF to_regclass('public.user_screens') IS NULL THEN
+    CREATE TABLE user_screens (
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      screen_key  VARCHAR(64) NOT NULL,
+      granted_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      granted_at  TIMESTAMP NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, screen_key)
+    );
+    INSERT INTO user_screens (user_id, screen_key)
+      SELECT u.id, k.key
+        FROM users u
+       CROSS JOIN unnest(ARRAY[
+         'upload-run', 'mismatch-review', 'match-approvals', 'statements',
+         'reconciliation-results', 'manage-rules', 'division-bank-accounts', 'how-to-use',
+         'insurance-dashboard', 'insurance-upload', 'insurance-excel-export', 'insurance-history'
+       ]) AS k(key)
+       WHERE u.role = 'Auditor';
+  END IF;
+END $$;

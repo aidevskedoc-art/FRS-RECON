@@ -1,0 +1,156 @@
+<div class="locations">
+  <app-page-header
+    icon="pi pi-map-marker"
+    title="Location Master"
+    [subtitle]="masterData.locations().length + ' location' + (masterData.locations().length === 1 ? '' : 's') + ' on file'"
+  >
+    <button actions type="button" class="ai-button-primary" (click)="openAdd()">
+      <i class="pi pi-plus"></i>
+      <span>Add Location</span>
+    </button>
+  </app-page-header>
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="filter-bar">
+    <span class="filter-search">
+      <i class="pi pi-search"></i>
+      <input type="text" placeholder="Search location…" (input)="onSearchInput($event, dt)" />
+    </span>
+  </div>
+
+  <div class="locations__table-wrap glass-card glass-card--static">
+    <p-table
+      #dt
+      [value]="masterData.locations()"
+      dataKey="id"
+      [paginator]="masterData.locations().length > 10"
+      [rows]="10"
+      [globalFilterFields]="['name']"
+      styleClass="p-datatable-sm locations-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th pSortableColumn="name">Name <p-sortIcon field="name" /></th>
+          <th>Active</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-location>
+        <tr>
+          <td>{{ location.name }}</td>
+          <td>
+            <span class="status-pill" [class.status-pill--active]="location.active">
+              {{ location.active ? 'Active' : 'Inactive' }}
+            </span>
+          </td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="openEdit(location)" pTooltip="Rename" aria-label="Rename location">
+              <i class="pi pi-pencil"></i>
+            </button>
+            @if (location.active) {
+              <button
+                type="button"
+                class="action-icon action-icon--danger"
+                (click)="requestDeactivate(location)"
+                pTooltip="Delete"
+                aria-label="Delete location"
+              >
+                <i class="pi pi-trash"></i>
+              </button>
+            } @else {
+              <button type="button" class="action-icon" (click)="reactivate(location)" pTooltip="Restore" aria-label="Restore location">
+                <i class="pi pi-refresh"></i>
+              </button>
+            }
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="3">
+            <div class="empty-state">
+              <i class="pi pi-map-marker"></i>
+              <strong>No locations yet</strong>
+              <p>Add a location to make it available in the branch and department filters.</p>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  <!-- Create / edit -->
+  <p-dialog
+    [header]="editingId() ? 'Rename Location' : 'Add Location'"
+    [visible]="dialogVisible()"
+    (visibleChange)="dialogVisible.set($event)"
+    [modal]="true"
+    [style]="{ width: '24rem' }"
+  >
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+      <label class="field">
+        <span class="field-label">Name</span>
+        <input pInputText type="text" [ngModel]="draftName()" (ngModelChange)="draftName.set($event)" />
+      </label>
+    </div>
+
+    <ng-template #footer>
+      <button type="button" class="btn btn-ghost" [disabled]="saving()" (click)="dialogVisible.set(false)">Cancel</button>
+      <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+        @if (saving()) {
+          <span class="btn-spinner"></span>
+        } @else {
+          <i class="pi pi-check"></i>
+        }
+        <span>{{ editingId() ? 'Save' : 'Add Location' }}</span>
+      </button>
+    </ng-template>
+  </p-dialog>
+
+  <!--
+    Not a p-dialog, same reason as the bank account screen's own confirm —
+    a plain overlay so the copy can name the exact location. The wording
+    is the deliberate difference: this deactivates (reversible), it does
+    not delete a row, so it says that plainly instead of implying loss.
+  -->
+  @if (pendingDeactivate(); as location) {
+    <div class="modal-overlay" (click)="cancelDeactivate()">
+      <div class="modal" role="alertdialog" aria-modal="true" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h2>Delete location?</h2>
+          <button type="button" class="modal-close" (click)="cancelDeactivate()" aria-label="Close">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-copy">
+            <strong>{{ location.name }}</strong> will be removed from location pickers, so no new upload or record can be assigned to
+            it. Every existing record already tagged with it is unaffected. This can be undone any time from the restore icon.
+          </p>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" [disabled]="deactivating()" (click)="cancelDeactivate()">Cancel</button>
+          <button type="button" class="btn btn-primary confirm-delete" [disabled]="deactivating()" (click)="confirmDeactivate()">
+            @if (deactivating()) {
+              <span class="btn-spinner"></span>
+            } @else {
+              <i class="pi pi-trash"></i>
+            }
+            <span>Delete location</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

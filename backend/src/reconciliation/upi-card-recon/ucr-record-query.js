@@ -12,6 +12,8 @@
  * them into `matchedSource` and stays agnostic of which table answered.
  */
 
+const { pendingChangeColumn, auditDetailColumn } = require('../../pending-change');
+
 /** Aliased gateway columns, normalised across the three processor exports. */
 const GATEWAY_SELECT = `
        COALESCE(cm.app_code, cp.approval_code, um.rrn)                    AS msrc_reference,
@@ -45,11 +47,21 @@ const GATEWAY_JOIN = `
  *
  * @param {string} where  full WHERE clause (or '') — parameter numbering is the caller's
  * @param {string} tail   ORDER BY / LIMIT / OFFSET, appended verbatim
+ * @param {{ withPendingChange?: boolean }} [opts]  also select the row's open maker-checker request (../../pending-change.js)
  */
-function ucrRecordSelect(where = '', tail = '') {
+function ucrRecordSelect(where = '', tail = '', { withPendingChange = false } = {}) {
+  // batch_unit_name: the row's location (AC-10) — ucrIpRecordRowToApi resolves it to `division`.
+  // A UCR row's instrument_type (CARD/UPI) is its maker-checker entity type.
+  // auditDetail rides along with pendingChange — both are maker-checker
+  // metadata for the same callers (the Mismatch Review list endpoints).
+  const pending = withPendingChange
+    ? `${pendingChangeColumn('r.instrument_type')}, ${auditDetailColumn('r.instrument_type')},`
+    : '';
   return `SELECT r.*,
-       to_char(r.receipt_date, 'YYYY-MM-DD') AS receipt_date_ymd,${GATEWAY_SELECT}
-  FROM ucr_ip_records r${GATEWAY_JOIN}
+       to_char(r.receipt_date, 'YYYY-MM-DD') AS receipt_date_ymd, ${pending}
+       ub.unit_name AS batch_unit_name,${GATEWAY_SELECT}
+  FROM ucr_ip_records r
+       LEFT JOIN ucr_ip_upload_batches ub ON ub.id = r.batch_id${GATEWAY_JOIN}
  ${where}
  ${tail}`;
 }

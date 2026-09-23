@@ -16,9 +16,15 @@ export interface RouteTitle {
 }
 
 const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
-  ['/reconciliation', { title: 'Reconciliation', subtitle: 'Upload & run' }],
+  ['/dashboard', { title: 'Dashboard', subtitle: 'Overview' }],
 
-  ['/insurance-policy/dashboard', { title: 'Dashboard', subtitle: 'Overview' }],
+  ['/reconciliation', { title: 'Reconciliation', subtitle: 'Upload & run' }],
+  ['/reconciliation/mismatches', { title: 'Mismatch Review', subtitle: 'Reconciliation' }],
+  ['/reconciliation/approvals', { title: 'Match Approvals', subtitle: 'Reconciliation' }],
+  ['/reconciliation/folder-watch', { title: 'Shared Folder Automation', subtitle: 'Reconciliation' }],
+  ['/reconciliation/go-live-settings', { title: 'Go-Live Settings', subtitle: 'Reconciliation' }],
+
+  ['/insurance-policy/dashboard', { title: 'Insurance Dashboard', subtitle: 'Automation Insurance' }],
   ['/insurance-policy/upload', { title: 'Upload', subtitle: 'Policy documents' }],
   ['/insurance-policy/processing', { title: 'Processing', subtitle: 'AI extraction' }],
   ['/insurance-policy/excel-preview', { title: 'Excel Export', subtitle: 'Preview' }],
@@ -36,11 +42,15 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/matched-rules/manage-rules', { title: 'Manage Rules', subtitle: 'Reconciliation' }],
 
   ['/master-data/division-bank-accounts', { title: 'Division & Bank A/C', subtitle: 'Master data' }],
+  ['/master-data/locations', { title: 'Location Master', subtitle: 'Master data' }],
+  ['/master-data/users', { title: 'User Management', subtitle: 'Master data' }],
+
+  ['/change-password', { title: 'Change Password', subtitle: 'Account' }],
 
   ['/how-to-use', { title: 'How to Use', subtitle: 'Reconciliation guide' }],
 ];
 
-const FALLBACK: RouteTitle = { title: 'FRS Recon', subtitle: 'Workspace' };
+const FALLBACK: RouteTitle = { title: 'Reconciliation', subtitle: 'Workspace' };
 
 /** Longest matching prefix wins; query strings and fragments are ignored. */
 export function resolveRouteTitle(url: string): RouteTitle {

@@ -1,0 +1,145 @@
+<div class="audit-log" [class.audit-log--embedded]="embedded()">
+  @if (!embedded()) {
+    <app-page-header
+      icon="pi pi-history"
+      title="Audit Log"
+      subtitle="Every tracked action across the application — who did what, and when."
+    />
+  }
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="audit-log__filters glass-card glass-card--static">
+    <span class="filter-search">
+      <i class="pi pi-search"></i>
+      <input
+        type="text"
+        placeholder="Search by name, action, or entity…"
+        [ngModel]="filters().search"
+        (ngModelChange)="updateFilters({ search: $event })"
+      />
+    </span>
+
+    <p-select
+      [options]="auditLog.actions()"
+      [ngModel]="filters().action"
+      (ngModelChange)="updateFilters({ action: $event })"
+      placeholder="Any action"
+      [showClear]="true"
+      appendTo="body"
+      styleClass="audit-log__filter-select"
+    />
+
+    <p-select
+      [options]="entityTypes"
+      [ngModel]="filters().entityType"
+      (ngModelChange)="updateFilters({ entityType: $event })"
+      placeholder="Any entity type"
+      [showClear]="true"
+      appendTo="body"
+      styleClass="audit-log__filter-select"
+    />
+
+    <p-datepicker
+      [ngModel]="filters().dateFrom"
+      (ngModelChange)="updateFilters({ dateFrom: $event })"
+      placeholder="From date"
+      dateFormat="d M yy"
+      [showIcon]="true"
+      appendTo="body"
+      styleClass="audit-log__filter-date"
+    />
+
+    <p-datepicker
+      [ngModel]="filters().dateTo"
+      (ngModelChange)="updateFilters({ dateTo: $event })"
+      placeholder="To date"
+      dateFormat="d M yy"
+      [showIcon]="true"
+      appendTo="body"
+      styleClass="audit-log__filter-date"
+    />
+
+    <button type="button" class="btn btn-ghost" (click)="clearFilters()">
+      <i class="pi pi-filter-slash"></i>
+      <span>Clear</span>
+    </button>
+  </div>
+
+  <div class="audit-log__table-wrap glass-card glass-card--static">
+    <p-table
+      [value]="rows()"
+      dataKey="id"
+      [lazy]="true"
+      [paginator]="true"
+      [rows]="limit()"
+      [first]="(page() - 1) * limit()"
+      [totalRecords]="total()"
+      [loading]="auditLog.loading()"
+      (onLazyLoad)="onPageChange($event)"
+      styleClass="p-datatable-sm audit-log-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th>When</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Subject</th>
+          <th>IP Address</th>
+          <th class="actions-col">Detail</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-entry>
+        <tr>
+          <td class="nowrap">{{ entry.createdAt | date: 'd MMM y, h:mm:ss a' }}</td>
+          <td>{{ entry.actorName || '—' }}</td>
+          <td><span class="action-badge">{{ entry.action }}</span></td>
+          <td>{{ subjectLabel(entry) }}</td>
+          <td class="ref">{{ entry.ipAddress || '—' }}</td>
+          <td class="actions-col">
+            @if (entry.details) {
+              <button type="button" class="action-icon" (click)="openDetail(entry)" pTooltip="View details" aria-label="View details">
+                <i class="pi pi-info-circle"></i>
+              </button>
+            }
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="6">
+            <div class="empty-state">
+              <i class="pi pi-history"></i>
+              <strong>No activity found</strong>
+              <p>Nothing matches these filters yet.</p>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  @if (detailEntry(); as entry) {
+    <div class="modal-overlay" (click)="detailEntry.set(null)">
+      <div class="modal" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h2>{{ entry.action }}</h2>
+          <button type="button" class="modal-close" (click)="detailEntry.set(null)" aria-label="Close">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="detail-meta">{{ entry.createdAt | date: 'd MMM y, h:mm:ss a' }} · {{ entry.actorName || 'System' }}</p>
+          <pre class="detail-json">{{ entry.details | json }}</pre>
+        </div>
+      </div>
+    </div>
+  }
+</div>

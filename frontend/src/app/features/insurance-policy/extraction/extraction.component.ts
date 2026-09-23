@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { NgTemplateOutlet } from '@angular/common';
 import { Router } from '@angular/router';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -33,6 +34,7 @@ export class ExtractionComponent {
 
   private readonly router = inject(Router);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly http = inject(HttpClient);
   protected readonly policyDocuments = inject(PolicyDocumentService);
   protected readonly extractionService = inject(ExtractionService);
 
@@ -90,8 +92,17 @@ export class ExtractionComponent {
 
   protected readonly currentPage = signal(1);
 
+  /**
+   * The PDF as an in-memory blob URL. /uploads needs a signed-in user and an
+   * <iframe> can't send the Authorization header, so the file is fetched
+   * through HttpClient (whose interceptor adds the token) and handed to the
+   * iframe as a blob: URL instead of the raw server path.
+   */
+  private readonly pdfBlobUrl = signal<string | null>(null);
+  private loadedPdfPath: string | null = null;
+
   protected readonly safePdfUrl = computed(() => {
-    const url = this.document()?.fileUrl;
+    const url = this.pdfBlobUrl();
     if (!url) return null;
     return this.sanitizer.bypassSecurityTrustResourceUrl(`${url}#page=${this.currentPage()}&view=FitH`);
   });
@@ -177,6 +188,22 @@ export class ExtractionComponent {
   });
 
   constructor() {
+    // Load the preview whenever the document's file changes; free the previous blob.
+    effect(() => {
+      const path = this.document()?.fileUrl ?? null;
+      if (!path || path === this.loadedPdfPath) return;
+      this.loadedPdfPath = path;
+      this.http.get(path, { responseType: 'blob' }).subscribe({
+        next: (blob) => {
+          if (this.loadedPdfPath !== path) return; // a newer document replaced this one meanwhile
+          this.revokePdfUrl();
+          this.pdfBlobUrl.set(URL.createObjectURL(blob));
+        },
+        error: () => this.pdfBlobUrl.set(null),
+      });
+    });
+    inject(DestroyRef).onDestroy(() => this.revokePdfUrl());
+
     effect(() => {
       const documentId = this.id();
       if (!this.policyDocuments.documentById(documentId)) {
@@ -260,5 +287,10 @@ export class ExtractionComponent {
 
   protected goToValidation(): void {
     this.router.navigate(['/insurance-policy/documents', this.id(), 'validation']);
+  }
+
+  private revokePdfUrl(): void {
+    const url = this.pdfBlobUrl();
+    if (url) URL.revokeObjectURL(url);
   }
 }

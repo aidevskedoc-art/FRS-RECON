@@ -9,6 +9,8 @@
  * cheque collection is tagged explicitly rather than left open, so a cheque
  * export offers only columns that can actually hold a value.
  */
+const { statusTone } = require('../reconciliation/status-tone');
+
 const STATUS_LABEL = {
   MATCHED: 'Matched',
   EASEBUZZ_MATCHED: 'Easebuzz Matched',
@@ -52,7 +54,13 @@ const PAYMENT_EXPORT_COLUMNS = [
   { key: 'userId', label: 'User ID', get: (r) => r.userId ?? '' },
   { key: 'userName', label: 'User Name', get: (r) => r.userName ?? '' },
   { key: 'division', label: 'Division (unit)', get: (r) => r.division ?? '' },
-  { key: 'matchStatus', label: 'Match Status', get: (r) => (r.matchStatus ? STATUS_LABEL[r.matchStatus] || r.matchStatus : 'Not Generated') },
+  {
+    key: 'matchStatus',
+    label: 'Match Status',
+    get: (r) => (r.matchedByAuditor ? 'Matched by Auditor' : r.matchStatus ? STATUS_LABEL[r.matchStatus] || r.matchStatus : 'Not Generated'),
+    // AC-17 colour code, painted by excel/write-xlsx.js.
+    tone: (r) => statusTone(r.matchStatus, { matchedByAuditor: !!r.matchedByAuditor }),
+  },
   { key: 'matchAppliedRule', label: 'Rule Applied', get: (r) => r.matchAppliedRule ?? '' },
   { key: 'matchReason', label: 'Match Reason', get: (r) => r.matchReason ?? '' },
   { key: 'bankRef', label: 'Bank Ref', get: (r) => (r.matchedBank ? r.matchedBank.chqRefNo ?? '' : '') },

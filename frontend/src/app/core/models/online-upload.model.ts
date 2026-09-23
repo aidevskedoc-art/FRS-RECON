@@ -98,8 +98,13 @@ export interface OnlinePaymentRecordsQuery {
   patType?: string;
   dateFrom?: string;
   dateTo?: string;
-  /** Filters to records with this persisted match status (see batch-detail components' filter tabs). */
-  matchStatus?: MatchStatus;
+  /**
+   * Filters to records with this persisted match status (see batch-detail
+   * components' filter tabs). Also accepts a comma-separated list of
+   * statuses ("any of these") — the Mismatch Review screen passes every
+   * non-clean-match status at once.
+   */
+  matchStatus?: MatchStatus | string;
   /** Exact winning-rule name (from RecordFilterOptions.appliedRules), or '__NONE__' for rows no rule caught. */
   matchAppliedRule?: string;
   /** Every row aggregated into this unit — how the expandable audit view fetches a unit's members. */

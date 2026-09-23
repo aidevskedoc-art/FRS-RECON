@@ -1,0 +1,293 @@
+@use 'styles/mixins';
+
+.folder-watch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-xl);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--status-danger-border);
+}
+
+// ---------------------------------------------------------------------
+// Settings form
+// ---------------------------------------------------------------------
+.folder-watch__settings {
+  padding: var(--space-5);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 32rem;
+
+  input {
+    width: 100%;
+  }
+}
+
+.field--switch {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 16rem;
+}
+
+.field-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.time-input {
+  max-width: 10rem;
+}
+
+.folder-watch__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.saved-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--success);
+  font-size: var(--text-sm);
+}
+
+// ---------------------------------------------------------------------
+// Run history table
+// ---------------------------------------------------------------------
+.folder-watch__table-wrap {
+  @include mixins.scrollbar-thin;
+  overflow: auto;
+}
+
+.clickable-row {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+
+  &:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.num {
+  text-align: right;
+}
+
+.has-failures {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.actions-col {
+  width: 1%;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.status-pill {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+}
+
+.status-pill--completed {
+  @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+
+.status-pill--failed {
+  @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
+}
+
+.status-pill--running {
+  @include mixins.status-chip(var(--status-warning-fg), var(--status-warning-bg), var(--status-warning-border));
+}
+
+// ---------------------------------------------------------------------
+// Run detail dialog
+// ---------------------------------------------------------------------
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 26rem;
+  overflow: auto;
+}
+
+.file-list li {
+  padding: var(--space-3);
+  border-radius: var(--r-md);
+  background: var(--surface-soft);
+}
+
+.file-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.file-list__name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.file-list__item--superseded {
+  opacity: 0.6;
+}
+
+.file-list__retried {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.btn-sm {
+  padding: 2px var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.detail-heading {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.notice--info {
+  color: var(--status-info-fg);
+  background: var(--status-info-bg);
+  border: 1px solid var(--status-info-border);
+  margin-bottom: var(--space-3);
+}
+
+// One row per report found in the file — several for a combined workbook.
+.report-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.report-list__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.report-list__type {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text);
+  min-width: 9rem;
+}
+
+.report-list__rows {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.report-list__reason {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.report-list__reason--error {
+  color: var(--danger);
+}
+
+// The reconciliation plan that ran after the uploads.
+.step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.step-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--r-md);
+  font-size: var(--text-xs);
+}
+
+.step-list li:nth-child(odd) {
+  background: var(--surface-soft);
+}
+
+.step-list__name {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.step-list__batch {
+  color: var(--text-muted);
+}
+
+.step-list__counts {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.step-list__item--error .step-list__counts {
+  color: var(--danger);
+}
+
+.activity-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+}
+
+.btn-spinner--dark {
+  border-color: rgba(0, 0, 0, 0.15);
+  border-top-color: var(--text-muted);
+}

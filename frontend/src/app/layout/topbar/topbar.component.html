@@ -14,9 +14,11 @@
     <div class="masthead">
       <img class="masthead__logo" src="logo.svg" alt="Yashoda" width="34" height="34" />
       <span class="masthead__rule" aria-hidden="true"></span>
+      <!-- The client's name for the application (core/config/app-name.ts): the
+           short mark, with the full name in small type beneath it. -->
       <span class="masthead__wordmark">
-        <span class="masthead__name">FRS</span>
-        <span class="masthead__expansion">Financial Reconciliation System</span>
+        <span class="masthead__name">{{ appShortName }}</span>
+        <span class="masthead__expansion">{{ appName }}</span>
       </span>
     </div>
   </div>
@@ -35,25 +37,35 @@
 
   <!-- Right — action cluster. -->
   <div class="topbar__actions">
-    <a
-      class="pill-btn pill-btn--gradient"
-      routerLink="/insurance-policy/upload"
-      appMagnetic
-      [magneticStrength]="0.2"
-      pTooltip="Upload policy documents"
-    >
-      <i class="pi pi-sparkles"></i>
-      <span class="pill-btn__label">Upload</span>
-    </a>
-
-    <app-ai-status
-      [state]="policyDocuments.counts().inProgress > 0 ? 'active' : 'idle'"
-      [label]="
-        policyDocuments.counts().inProgress > 0
-          ? policyDocuments.counts().inProgress + ' processing'
-          : 'AI Engine Ready'
-      "
-    />
+    <!-- Client mail AC-9: logged-in user + reporting manager, ID and name. -->
+    @if (authService.token()) {
+      <dl class="identity">
+        <dt class="identity__label">Logged in</dt>
+        <dd class="identity__value">
+          @if (authService.profile(); as p) {
+            <span class="identity__id" [pTooltip]="p.fullName">{{ p.employeeId }}</span>
+            <span class="identity__name">{{ p.fullName }}</span>
+          } @else {
+            <span class="identity__muted">…</span>
+          }
+        </dd>
+        <dt class="identity__label">Reporting Manager</dt>
+        <dd class="identity__value">
+          @if (authService.profile(); as p) {
+            @if (p.managerEmployeeId) {
+              <span class="identity__id" [pTooltip]="p.managerName">{{ p.managerEmployeeId }}</span>
+              <span class="identity__name">{{ p.managerName }}</span>
+            } @else if (p.role === 'Admin') {
+              <span class="identity__muted">Not applicable</span>
+            } @else {
+              <span class="identity__muted" pTooltip="An Admin sets this in User Management">Not assigned</span>
+            }
+          } @else {
+            <span class="identity__muted">…</span>
+          }
+        </dd>
+      </dl>
+    }
 
     <button
       type="button"
@@ -102,6 +114,12 @@
             <span class="user-menu__name">{{ authService.userId() }}</span>
             <span class="user-menu__role">{{ role() }}</span>
           </div>
+          @if (authService.isFrsAdmin()) {
+            <a routerLink="/master-data/users" class="user-menu__item" role="menuitem" (click)="menuOpen.set(false)">
+              <i class="pi pi-users"></i>
+              <span>User Management</span>
+            </a>
+          }
           <button type="button" class="user-menu__item" role="menuitem" (click)="logout()">
             <i class="pi pi-sign-out"></i>
             <span>Sign out</span>

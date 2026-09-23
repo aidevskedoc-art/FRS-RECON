@@ -53,6 +53,7 @@
   line-height: 1.1;
 }
 
+// The short mark (CBDR) over the full name in small italic.
 .masthead__name {
   font-family: var(--font-serif);
   font-size: 1.5rem;
@@ -97,32 +98,61 @@
   min-width: 0;
 }
 
-.pill-btn {
-  display: inline-flex;
+// AC-9 identity — pale green panel, label/value grid so the two IDs line up.
+.identity {
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: center;
-  gap: var(--space-2);
-  padding: 8px 16px;
-  border: 1px solid transparent;
-  border-radius: var(--r-pill);
-  background: var(--surface-hover);
-  color: var(--text);
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 150ms var(--ease), color 150ms var(--ease);
+  column-gap: var(--space-3);
+  row-gap: 3px;
+  margin: 0 var(--space-2) 0 0;
+  padding: 6px var(--space-3);
+  border-radius: var(--r-lg, var(--r-md));
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+  min-width: 0;
 }
 
-.pill-btn--gradient {
-  background: var(--ai-gradient);
-  background-size: 200% 200%;
-  color: #fff;
-  box-shadow: 0 10px 24px -12px rgba(79, 70, 229, 0.55);
+.identity__label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--status-success-fg);
+  white-space: nowrap;
+}
 
-  &:hover {
-    animation: gradient-pan 3s ease infinite;
-  }
+.identity__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.identity__id {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success-fg);
+}
+
+.identity__name {
+  font-weight: 600;
+  color: var(--text);
+  @include mixins.truncate;
+}
+
+.identity__muted {
+  color: var(--text-muted);
 }
 
 // ---------------------------------------------------------------------
@@ -252,10 +282,19 @@
   display: none;
 }
 
+// On a laptop-width screen the identity panel keeps just the two IDs so the
+// centre title isn't squeezed.
+@media (max-width: 1440px) {
+  .identity__name {
+    display: none;
+  }
+}
+
 // Below 960px the masthead is the first thing to go — the route title in
 // the centre is what the user actually navigates by.
 @media (max-width: 960px) {
-  .masthead {
+  .masthead,
+  .identity {
     display: none;
   }
 
@@ -276,14 +315,9 @@
 
 // Below 860px labels drop and buttons become icon-only.
 @media (max-width: 860px) {
-  .pill-btn__label,
   .user-menu__text,
   .user-menu__chevron {
     display: none;
-  }
-
-  .pill-btn {
-    padding: 8px;
   }
 
   .user-menu__trigger {

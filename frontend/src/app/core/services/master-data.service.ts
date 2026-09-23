@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
-import { DivisionBankAccount, DivisionBankAccountDraft } from '../models';
+import { DivisionBankAccount, DivisionBankAccountDraft, FrsLocation } from '../models';
 import { API_BASE_URL } from '../config/api.config';
 
 @Injectable({ providedIn: 'root' })
@@ -13,6 +13,11 @@ export class MasterDataService {
 
   private readonly _loading = signal(false);
   readonly loading = this._loading.asReadonly();
+
+  private readonly _locations = signal<FrsLocation[]>([]);
+  readonly locations = this._locations.asReadonly();
+  /** Names only, active branches — what a location picker actually offers. */
+  readonly activeLocationNames = () => this._locations().filter((l) => l.active).map((l) => l.name);
 
   /** GET /api/master/division-bank-accounts */
   refresh(): Observable<DivisionBankAccount[]> {
@@ -43,6 +48,40 @@ export class MasterDataService {
   remove(id: string): Observable<void> {
     return this.http.delete<void>(`${API_BASE_URL}/master/division-bank-accounts/${id}`).pipe(
       tap(() => this._accounts.update((accounts) => accounts.filter((a) => a.id !== id))),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Locations (branches) — AC-2. Simple list-and-toggle, no dialog: the
+  // Users screen's branch picker is the actual day-to-day surface for this;
+  // this is just where the master list itself is maintained.
+  // -------------------------------------------------------------------------
+
+  /** GET /api/master/locations */
+  refreshLocations(): Observable<FrsLocation[]> {
+    return this.http.get<FrsLocation[]>(`${API_BASE_URL}/master/locations`).pipe(
+      tap((locations) => this._locations.set(locations)),
+    );
+  }
+
+  /** POST /api/master/locations */
+  addLocation(name: string): Observable<FrsLocation> {
+    return this.http
+      .post<FrsLocation>(`${API_BASE_URL}/master/locations`, { name })
+      .pipe(tap((created) => this._locations.update((locs) => [...locs, created])));
+  }
+
+  /** PATCH /api/master/locations/:id */
+  updateLocation(id: string, patch: { name?: string; active?: boolean }): Observable<FrsLocation> {
+    return this.http.patch<FrsLocation>(`${API_BASE_URL}/master/locations/${id}`, patch).pipe(
+      tap((updated) => this._locations.update((locs) => locs.map((l) => (l.id === id ? updated : l)))),
+    );
+  }
+
+  /** DELETE /api/master/locations/:id — deactivates, does not remove (see route comment). */
+  deactivateLocation(id: string): Observable<FrsLocation> {
+    return this.http.delete<FrsLocation>(`${API_BASE_URL}/master/locations/${id}`).pipe(
+      tap((updated) => this._locations.update((locs) => locs.map((l) => (l.id === id ? updated : l)))),
     );
   }
 }

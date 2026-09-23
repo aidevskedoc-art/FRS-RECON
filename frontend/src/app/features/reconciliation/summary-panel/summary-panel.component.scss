@@ -81,6 +81,11 @@
   background: var(--ai-purple-soft);
   color: var(--ai-purple);
 }
+// Brand accent orange (--ai-orange) — a category colour, never a status one.
+.summary-card--orange .summary-card__icon {
+  background: var(--ai-orange-soft);
+  color: var(--ai-orange);
+}
 .summary-card--cyan .summary-card__icon {
   background: var(--ai-cyan-soft);
   color: var(--ai-cyan);

@@ -21,26 +21,46 @@
     "test-card-matcher": "node scripts/test-card-matcher.js",
     "test-upi-matcher": "node scripts/test-upi-matcher.js",
     "test-detect-file-type": "node scripts/test-detect-file-type.js",
-    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js && node scripts/test-payu-settlement.js && node scripts/test-easebuzz-rule.js && node scripts/test-contra-pass.js && node scripts/test-cheque-parsers.js && node scripts/test-audit-report.js && node scripts/test-card-matcher.js && node scripts/test-upi-matcher.js && node scripts/test-detect-file-type.js && node scripts/test-gateway-policy.js && node scripts/test-easebuzz-window.js",
+    "test-his-report-reader": "node scripts/test-his-report-reader.js",
+    "test-ucr-upload-route": "node scripts/test-ucr-upload-route.js",
+    "test-his-mis-rows": "node scripts/test-his-mis-rows.js",
+    "test-his-upload-routes": "node scripts/test-his-upload-routes.js",
+    "verify-his-mis-parity": "node --env-file=.env scripts/verify-his-mis-parity.js",
+    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js && node scripts/test-payu-settlement.js && node scripts/test-easebuzz-rule.js && node scripts/test-contra-pass.js && node scripts/test-cheque-parsers.js && node scripts/test-audit-report.js && node scripts/test-card-matcher.js && node scripts/test-upi-matcher.js && node scripts/test-detect-file-type.js && node scripts/test-his-report-reader.js && node scripts/test-ucr-upload-route.js && node scripts/test-his-mis-rows.js && node scripts/test-his-upload-routes.js && node scripts/test-gateway-policy.js && node scripts/test-easebuzz-window.js && node scripts/test-status-colours.js",
     "test-gateway-policy": "node scripts/test-gateway-policy.js",
     "test-easebuzz-window": "node scripts/test-easebuzz-window.js",
     "verify-easebuzz-windows": "node scripts/verify-easebuzz-windows.js",
-    "verify-easebuzz-division-windows": "node scripts/verify-easebuzz-division-windows.js"
+    "verify-easebuzz-division-windows": "node scripts/verify-easebuzz-division-windows.js",
+    "test-auth-routes": "node scripts/test-auth-routes.js",
+    "test-users-routes": "node scripts/test-users-routes.js",
+    "test-audit-logs-route": "node scripts/test-audit-logs-route.js",
+    "test-mismatch-filter": "node scripts/test-mismatch-filter.js",
+    "test-online-mismatches-route": "node scripts/test-online-mismatches-route.js",
+    "test-match-approvals-route": "node scripts/test-match-approvals-route.js",
+    "test-folder-watch": "node scripts/test-folder-watch.js",
+    "test-scope-filters": "node scripts/test-scope-filters.js",
+    "test-status-colours": "node scripts/test-status-colours.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
-    "multer": "^2.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.4.0",
     "pdfjs-dist": "^4.2.67",
     "pg": "^8.13.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "pdfkit": "^0.19.1"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

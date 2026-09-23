@@ -12,10 +12,19 @@
  * That keeps this feature entirely additive — no existing upload route,
  * parser or table is touched by it. The cost is uploading the bytes twice,
  * which for a ~7 MB weekly bundle is not worth trading statelessness for.
+ *
+ * The instrument-level HIS reports (UCR IP / OP / DIAG), and the older MIS,
+ * cheque and refund uploads rebuilt from them, additionally get a `preview`: a
+ * full dry run that verifies every section against the report's own printed
+ * totals and says what will be stored. The client's combined "All Collections"
+ * workbook feeds all seven — identifying the sheets is not enough to know the
+ * data can be trusted, so the screen is told before Run, not after. Still
+ * read-only: the only database access is SELECTs for rows already stored.
  */
 const express = require('express');
 const multer = require('multer');
 const { detectFileType, SIGNATURES } = require('../online-upload/detect-file-type');
+const { attachHisPreviews, allPreviewsClean } = require('../online-upload/his-preview');
 
 const router = express.Router();
 
@@ -61,24 +70,32 @@ router.post('/detect', upload.array('files', MAX_FILES), async (req, res, next) 
       return res.status(400).json({ error: 'No files uploaded (expected multipart field "files")' });
     }
 
-    const results = files.map((file) => {
+    // Sequential on purpose: a combined workbook reaches 27 MB and parsing
+    // several at once would hold them all in memory together.
+    const results = [];
+    for (const file of files) {
       const base = { fileName: file.originalname, fileSizeBytes: file.size };
       try {
         const { matches, sheetNames, certain } = detectFileType(file.buffer);
-        return {
+        const withPreviews = await attachHisPreviews(file.buffer, matches);
+        const hasPreview = withPreviews.some((m) => m.preview);
+        results.push({
           ...base,
-          certain,
+          // Where a preview exists it decides: a sheet that failed its totals,
+          // or whose rows are already stored, is never "certain", however
+          // confidently its sheet name was recognised.
+          certain: hasPreview ? allPreviewsClean(withPreviews) : certain,
           // Best match, or null when nothing recognised it. `certain` is false
           // in both the nothing-matched and several-matched cases, and the
           // screen asks the user in either.
-          detected: matches[0] || null,
-          alternatives: matches.slice(1),
+          detected: withPreviews[0] || null,
+          alternatives: withPreviews.slice(1),
           sheetNames,
-        };
+        });
       } catch (err) {
-        return { ...base, certain: false, detected: null, alternatives: [], sheetNames: [], error: err.message };
+        results.push({ ...base, certain: false, detected: null, alternatives: [], sheetNames: [], error: err.message });
       }
-    });
+    }
 
     res.json({ results });
   } catch (err) {

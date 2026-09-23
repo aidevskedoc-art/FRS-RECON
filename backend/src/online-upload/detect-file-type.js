@@ -56,9 +56,29 @@ function rowWithAll(ctx, markers) {
   return ctx.rows.some((cells) => wanted.every((w) => cells.includes(w)));
 }
 
+/** True when one row within the scan window contains every marker and none of the excluded ones. */
+function rowWithAllExcept(ctx, markers, excluded) {
+  const wanted = markers.map(norm);
+  const banned = excluded.map(norm);
+  return ctx.rows.some((cells) => wanted.every((w) => cells.includes(w)) && !banned.some((b) => cells.includes(b)));
+}
+
 /** True when a sheet name matches (case-insensitive, whitespace-collapsed). */
 function sheetNamed(ctx, name) {
   return ctx.sheetNames.some((s) => norm(s) === norm(name));
+}
+
+/**
+ * The instrument-level HIS reports also carry what the older MIS, cheque and
+ * refund exports did (his-mis-rows.js rebuilds those rows from them), so a
+ * workbook holding them — above all the client's combined "All Collections"
+ * workbook — is ALSO each of those types. 95 rather than 100 keeps the report
+ * itself (UCR_*) as the primary identification.
+ */
+function hisSheets(ctx, names, what) {
+  const found = names.filter((n) => sheetNamed(ctx, n));
+  if (!found.length) return null;
+  return { confidence: 95, reason: `${what}, from the HIS report ${found.join(' + ')}` };
 }
 
 /**
@@ -83,7 +103,7 @@ const SIGNATURES = [
       if (bySheet && byHeader) return { confidence: 100, reason: 'sheet ONLINE_PAYMENTS_IP.RPT + IPNO/Online Amount headers' };
       if (bySheet) return { confidence: 85, reason: 'sheet named ONLINE_PAYMENTS_IP.RPT' };
       if (byHeader) return { confidence: 80, reason: 'Slno + IPNO + Online Amount headers' };
-      return null;
+      return hisSheets(ctx, ['ADVANCES_YH.RPT'], 'IP Online / UPI / ManualUPI receipts');
     },
   },
   {
@@ -100,7 +120,7 @@ const SIGNATURES = [
       if (bySheet && byHeader) return { confidence: 100, reason: 'sheet UPI_TRANSACTIONS_OPD.RPT + Diag Number/UPI Reference Number headers' };
       if (bySheet) return { confidence: 85, reason: 'sheet named UPI_TRANSACTIONS_OPD.RPT' };
       if (byHeader) return { confidence: 80, reason: 'Slno + Diag Number + UPI Reference Number headers' };
-      return null;
+      return hisSheets(ctx, ['DOCTOR_FEE_REG_YH.RPT', 'ADVANCES_OP_YH.RPT'], 'Diagnostics / OP Online & UPI receipts');
     },
   },
 
@@ -171,7 +191,7 @@ const SIGNATURES = [
       }
       if (ipSheet || opSheet) return { confidence: 85, reason: `sheet named ${ipSheet ? 'CHEQUE_DETAILS_YH.RPT' : 'CHQ_DETAILS_OP.RPT'}` };
       if (ipHeader || opHeader) return { confidence: 80, reason: 'cheque ledger headers' };
-      return null;
+      return hisSheets(ctx, ['ADVANCES_YH.RPT', 'ADVANCES_OP_YH.RPT'], 'cheque collections');
     },
   },
   {
@@ -186,8 +206,12 @@ const SIGNATURES = [
       if (rowWithAll(ctx, ['cheque date', 'refund no', 'cheque no'])) {
         return { confidence: 100, reason: 'Cheque Date + Refund No + Cheque No headers' };
       }
-      if (rowWithAll(ctx, ['refund no'])) return { confidence: 75, reason: 'Refund No header' };
-      return null;
+      // The IP collections report (ADVANCES_YH.RPT) opens its refunds section
+      // with its own "SNO | REFUND NO | … | Reference ID" header. In a short or
+      // small-unit export that header falls inside the scan window, and must
+      // not make the report look like a refund document too.
+      if (rowWithAllExcept(ctx, ['refund no'], ['reference id'])) return { confidence: 75, reason: 'Refund No header' };
+      return hisSheets(ctx, ['ADVANCES_YH.RPT', 'ADVANCES_OP_YH.RPT'], 'cheque refunds');
     },
   },
 

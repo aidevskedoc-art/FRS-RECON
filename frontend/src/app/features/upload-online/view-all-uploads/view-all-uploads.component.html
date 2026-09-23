@@ -1,0 +1,124 @@
+<div class="all-uploads">
+  <div class="page-header">
+    <h2>All Uploads</h2>
+    <p>Every uploaded batch, of every kind, in one place — {{ totalCount() }} total. Select several to delete them together.</p>
+  </div>
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i> {{ err }}
+    </div>
+  }
+
+  @if (selected().length > 0) {
+    <div class="bulk-bar">
+      <span class="bulk-bar__count"><span class="num">{{ selected().length }}</span> selected</span>
+      <div class="bulk-bar__actions">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="selected.set([])">
+          <i class="pi pi-times"></i><span>Clear</span>
+        </button>
+        <button type="button" class="btn btn-danger btn-sm" (click)="openBulkDelete()">
+          <i class="pi pi-trash"></i><span>Delete Selected</span>
+        </button>
+      </div>
+    </div>
+  }
+
+  <div class="all-uploads__table-wrap">
+    <p-table
+      [value]="rows()"
+      dataKey="key"
+      [loading]="loading()"
+      [selection]="selected()"
+      (selectionChange)="selected.set($event)"
+      styleClass="p-datatable-sm"
+    >
+      <ng-template #header>
+        <tr>
+          <th style="width:3rem;"><p-tableHeaderCheckbox /></th>
+          <th>Type</th>
+          <th>File</th>
+          <th class="num">Rows</th>
+          <th>Uploaded By</th>
+          <th>Uploaded</th>
+          <th style="width:4rem;"></th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-row>
+        <tr>
+          <td><p-tableCheckbox [value]="row" /></td>
+          <td><span class="type-chip">{{ row.type }}</span></td>
+          <td class="file-cell" [pTooltip]="row.fileName">{{ row.fileName }}</td>
+          <td class="num">{{ row.rowCount }}</td>
+          <td>{{ row.uploadedBy || '—' }}</td>
+          <td>{{ row.uploadedAt ? (row.uploadedAt | date: 'medium') : '—' }}</td>
+          <td>
+            <button
+              type="button"
+              class="action-icon action-icon--danger"
+              [disabled]="deletingKey() === row.key"
+              (click)="deleteOne(row)"
+              pTooltip="Delete"
+            >
+              <i class="pi pi-trash"></i>
+            </button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="7" class="empty">Nothing uploaded yet.</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  @if (bulkOpen()) {
+    <p-dialog
+      [visible]="true"
+      (visibleChange)="closeBulkDelete()"
+      [modal]="true"
+      [dismissableMask]="!bulkProgress()"
+      [closable]="!bulkProgress()"
+      [style]="{ width: '28rem' }"
+      header="Delete Selected Uploads"
+    >
+      @if (bulkResultMessage(); as message) {
+        <div class="confirm confirm--done">
+          <div class="confirm__head">
+            <span class="confirm__icon"><i class="pi pi-check"></i></span>
+            <div class="confirm__text"><strong>Done</strong><span>{{ message }}</span></div>
+          </div>
+        </div>
+        <div class="confirm__footer">
+          <button type="button" class="btn btn-primary" (click)="closeBulkDelete()">
+            <span>Close</span>
+          </button>
+        </div>
+      } @else {
+        <div class="confirm">
+          <p>
+            <strong>{{ selected().length }}</strong> selected upload{{ selected().length === 1 ? '' : 's' }}
+            will be permanently deleted, along with every record in each batch. This cannot be undone.
+          </p>
+          <ul class="confirm__list">
+            @for (row of selected(); track row.key) {
+              <li><span class="type-chip">{{ row.type }}</span> {{ row.fileName }}</li>
+            }
+          </ul>
+          @if (bulkProgress(); as progress) {
+            <div class="confirm__progress">
+              <i class="pi pi-spin pi-spinner"></i>
+              <span>Deleting… {{ progress.done }} / {{ progress.total }}</span>
+            </div>
+          } @else {
+            <button type="button" class="btn btn-danger confirm__submit" (click)="confirmBulkDelete()">
+              <i class="pi pi-trash"></i>
+              <span>Delete {{ selected().length }} Uploads</span>
+            </button>
+          }
+        </div>
+      }
+    </p-dialog>
+  }
+</div>

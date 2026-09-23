@@ -1,0 +1,68 @@
+<div class="go-live-settings">
+  <app-page-header
+    icon="pi pi-lock"
+    title="Go-Live Settings"
+    subtitle="From this date, every clean match locks itself and MIS/bank data can no longer be deleted or edited."
+  />
+
+  @if (loadError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="go-live-settings__panel glass-card glass-card--static">
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+
+      <label class="field">
+        <span class="field-label">Go-Live Date</span>
+        <p-datepicker
+          [ngModel]="draft().cutoffDate"
+          (ngModelChange)="updateDraft({ cutoffDate: $event })"
+          dateFormat="d M yy"
+          [showIcon]="true"
+          iconDisplay="input"
+          appendTo="body"
+        />
+        <span class="field-hint">IST calendar date. From this date onward, a clean match locks the moment Generate writes it, and every MIS/bank delete is refused.</span>
+      </label>
+
+      <label class="field field--switch">
+        <span class="field-label">Switch Enabled</span>
+        <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
+      </label>
+      <span class="field-hint">Turn this off to push the date back or pause the whole mechanism without touching code — nothing locks or blocks while it's off.</span>
+
+      @if (isPastCutoff() && draft().active) {
+        <div class="notice notice--warn">
+          <i class="pi pi-exclamation-triangle"></i>
+          This date has already passed — locking and the delete freeze are in effect right now.
+        </div>
+      }
+
+      <div class="go-live-settings__actions">
+        <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+          @if (saving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-check"></i>
+          }
+          <span>Save</span>
+        </button>
+        @if (saved()) {
+          <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
+        }
+      </div>
+
+      @if (goLive.config(); as config) {
+        @if (config.updatedByName) {
+          <span class="field-hint">Last changed by {{ config.updatedByName }}, {{ config.updatedAt | date: 'd MMM y, h:mm a' }}.</span>
+        }
+      }
+    </div>
+  </div>
+</div>

@@ -12,34 +12,43 @@
 
 export type ResolvedTheme = 'light' | 'dark';
 
-/** Particle colours for the ambient aurora field. */
+/** Particle colours for the ambient aurora field. Light mode leads with the brand purple + accent orange. */
 export const AURORA_PARTICLE_COLORS: Record<ResolvedTheme, readonly string[]> = {
-  light: ['#4f46e5', '#7c3aed', '#06b6d4'],
+  light: ['#7c3aed', '#a855f7', '#ea580c'],
   dark: ['#4f46e5', '#8b5cf6', '#00d9ff', '#6c5ce7', '#00f5ff'],
 };
 
 /** Chart palettes — series ramp plus the grid/axis/tooltip chrome. */
 export const CHART_PALETTES: Record<ResolvedTheme, ChartPalette> = {
   light: {
+    // Brand pair first (purple, then the accent orange --ai-orange — not the
+    // status/"matched by auditor" #f97316), then supporting hues.
     series: [
-      '#4f46e5',
-      '#0ea5e9',
-      '#f59e0b',
-      '#ef4444',
       '#7c3aed',
-      '#ec4899',
-      '#10b981',
-      '#f97316',
-      '#94a3b8',
+      '#ea580c',
+      '#a855f7',
+      '#fb923c',
+      '#0ea5e9',
       '#14b8a6',
+      '#ec4899',
+      '#6366f1',
+      '#94a3b8',
+      '#10b981',
     ],
     grid: 'rgba(15, 23, 42, 0.08)',
     axis: '#64748b',
     tooltipBg: '#ffffff',
     tooltipBorder: '#e6e8ee',
     tooltipText: '#0f172a',
-    bar1: '#4f46e5',
-    bar2: '#f59e0b',
+    bar1: '#7c3aed',
+    bar2: '#ea580c',
+    // The client's own colour code (green matched / amber partial-mismatch /
+    // red unmatched) — status charts use these, never the brand pair, so a
+    // chart can't contradict the status pills. Mirrors --success/--warning/--danger.
+    matched: '#10b981',
+    mismatch: '#f59e0b',
+    unmatched: '#ef4444',
+    neutral: '#94a3b8',
   },
   dark: {
     series: [
@@ -61,6 +70,10 @@ export const CHART_PALETTES: Record<ResolvedTheme, ChartPalette> = {
     tooltipText: '#e2e8f0',
     bar1: '#6366f1',
     bar2: '#fbbf24',
+    matched: '#34d399',
+    mismatch: '#fbbf24',
+    unmatched: '#f87171',
+    neutral: '#94a3b8',
   },
 };
 
@@ -73,6 +86,11 @@ export interface ChartPalette {
   readonly tooltipText: string;
   readonly bar1: string;
   readonly bar2: string;
+  /** Status colours — the client's green/amber/red code, for charts that plot verdicts. */
+  readonly matched: string;
+  readonly mismatch: string;
+  readonly unmatched: string;
+  readonly neutral: string;
 }
 
 /**

@@ -16,7 +16,7 @@
       <div class="login__hero-content">
         <div class="ai-badge login__hero-badge">
           <span class="ai-spark"><i class="pi pi-sparkles"></i></span>
-          <span>Financial Reconciliation System</span>
+          <span>{{ appName }}</span>
         </div>
 
         <h1 class="login__hero-title ai-display">
@@ -37,7 +37,7 @@
           }
         </ul>
 
-        <!-- Module strip — FRS is the platform; Insurance is one tab of several. -->
+        <!-- Module strip — reconciliation is the platform; Insurance is one tab of several. -->
         <div class="login__modules anim-fade-up" [style.animation-delay.ms]="600">
           <span class="login__modules-label">Platform modules</span>
           <ul class="login__modules-list">
@@ -54,7 +54,10 @@
       <div class="login__card glass-card glass-card--static" [class.login__card--shake]="shake()">
         <div class="login__brand">
           <img class="login__logo" src="logo.svg" alt="Yashoda" width="38" height="38" />
-          <span class="login__brand-text">FRS · Recon</span>
+          <span class="login__brand-text">
+            <span class="login__brand-name">{{ appShortName }}</span>
+            <span class="login__brand-full">{{ appName }}</span>
+          </span>
         </div>
 
         <div class="login__intro">

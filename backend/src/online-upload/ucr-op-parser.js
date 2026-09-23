@@ -1,57 +1,37 @@
 /**
- * UPI & Card Reconciliation (UCR) — OP MIS parser.
+ * UPI & Card Reconciliation (UCR) — OP MIS parser (doctor-fee register,
+ * DOCTOR_FEE_REG_YH.RPT).
  *
- * Unlike ucr-ip-parser.js's file, this raw HIS export's header text is
- * DECEPTIVE — the header labels "PmtType"/"PatType"/"Payment" don't describe
- * the columns they sit above. Confirmed by content, across the full 8,257-row
- * file (`sed -n` style direct verification, not a guess):
+ * This raw HIS export's header text is DECEPTIVE — the labels
+ * "PmtType"/"PatType"/"Payment" don't describe the columns they sit above.
+ * Confirmed by content (SMJ, all 8,257 rows):
  *
  *   header position  label       what's REALLY there
  *   ----------------------------------------------------------
  *   7                Speciality  (blank — genuinely unused)
  *   8                PmtType     the real Speciality ("NEUROLOGY" etc.)
- *   9                PatType     the real payment mode — confirmed enum
- *                                {"Cash":2293,"UPI":2459,"Card":866,
- *                                 "":2400,"Online":239} across all 8257 rows,
- *                                the exact same vocabulary as IP's Type column
+ *   9                PatType     the real payment mode — {Cash, UPI, Card, Online, blank},
+ *                                the same vocabulary as IP's Type column
  *   10               Payment     the real Pat Type ("Self Paying", "CGHS", ...)
  *
- * Every other column (SNO, BILL NO, YHNO, DATE, Tot Amt, Net Amt, UserID,
- * Diag No.) is correctly aligned with its header label — this file is
- * therefore parsed by POSITION, not by header-text matching (the deceptive
- * labels would defeat a synonym table), following the same
- * `resolveFormat1Columns`-style precedent as mis-column-map.js.
+ * The export is ALSO laid out differently per unit: SBD's carries a "User
+ * Name" column that SMJ's does not, which moves Net Amt, User ID and the
+ * reference columns one place right. The old fixed positions read SBD's Net Amt
+ * as the User ID and stored a full batch of zero-amount rows without an error.
+ * Both layouts are now variants in his-report-layouts.js, and the one used is
+ * whichever reconciles with the report's own printed totals — so the unit is
+ * never configured by hand, and a third layout fails loudly instead of quietly.
  *
- * Reference ID (position 17, "Reference ID") is reliable for UPI rows
- * (confirmed: matches a real UPI MPR RRN) but is BLANK for Card rows — for
- * those, the real approval code instead lands in position 19 (one past
- * "Diag No." in the header, in the trailing unlabeled zone — an OP export
- * has no real diag number, so that slot was reused). Confirmed on real Card
- * rows programmatically, not by eye — e.g. "025472"/"025477"/"151167",
- * 5-6 digit approval-code-shaped values, always at position 19, never 18.
- * So referenceId = column 17 if non-blank, else column 19.
+ * Reference ID is reliable for UPI rows (a real UPI MPR RRN) but blank for Card
+ * rows, whose approval code lands in the next unlabelled slot — so
+ * referenceId = primary column if non-blank, else the fallback column.
  */
 const { toText, toAmount } = require('./parse-helpers');
+const { readHisReport, verificationError, verificationSummary } = require('./his-report-reader');
+const { layoutFor } = require('./his-report-layouts');
 
+const FAMILY = 'UCR_OP';
 const INSTRUMENT_TYPES = new Set(['CARD', 'UPI']);
-
-// Positional map, confirmed against real data (see header comment above).
-const POS = {
-  billNo: 1,
-  yhNo: 2,
-  receiptDate: 3,
-  patientName: 5, // the header cell here is banner text, not a real column
-  paymentMode: 9, // mislabeled "PatType" in the header
-  netAmt: 15,
-  userId: 16,
-  referenceIdPrimary: 17,
-  referenceIdFallback: 19, // Card approval codes land here when 17 is blank
-};
-
-/** A row is a real data row if it has a Bill No and something in the payment-mode slot. */
-function looksLikeDataRow(row) {
-  return toText(row[POS.billNo]) !== null;
-}
 
 /** 'DD-Mon-YYYY' (e.g. "01-Sep-2026") -> 'YYYY-MM-DD'. */
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
@@ -79,75 +59,61 @@ function parseLooseDate(value) {
   return null;
 }
 
-/** Finds the real header row: the first row whose cell 0 reads "SNO" (case-insensitive). */
-function findHeaderRowIndex(grid) {
-  for (let i = 0; i < Math.min(grid.length, 10); i++) {
-    if (toText(grid[i][0])?.toUpperCase() === 'SNO') return i;
-  }
-  return -1;
-}
-
-function parseUcrOpGrid(grid) {
-  const headerIndex = findHeaderRowIndex(grid);
-  if (headerIndex === -1) return null;
-
+function ucrOpRowsFrom(report) {
   const rows = [];
-  for (const cells of grid.slice(headerIndex + 1)) {
-    if (!looksLikeDataRow(cells)) continue;
-
-    const rawType = toText(cells[POS.paymentMode]);
-    if (!rawType) continue;
-    const instrumentType = rawType.toUpperCase();
-    if (!INSTRUMENT_TYPES.has(instrumentType)) continue; // Cash/Online/blank — out of scope
-
-    const referenceId = toText(cells[POS.referenceIdPrimary]) ?? toText(cells[POS.referenceIdFallback]);
-
-    rows.push({
-      billNo: toText(cells[POS.billNo]),
-      yhNo: toText(cells[POS.yhNo]),
-      receiptDate: parseLooseDate(cells[POS.receiptDate]),
-      patientName: toText(cells[POS.patientName]),
-      instrumentType,
-      amount: toAmount(cells[POS.netAmt]),
-      userId: toText(cells[POS.userId]),
-      referenceId,
-    });
-  }
-
-  return { rows, mappedColumns: Object.keys(POS), fileHeaders: grid[headerIndex].map((c) => toText(c)).filter(Boolean) };
-}
-
-function parseUcrOpWorkbook(buffer) {
-  const XLSX = require('xlsx');
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-
-  const rows = [];
-  const mappedColumns = new Set();
-  const fileHeaders = new Set();
-  const sheetsParsed = [];
-  const sheetsSkipped = [];
-
-  for (const sheetName of workbook.SheetNames) {
-    const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' });
-    const parsed = parseUcrOpGrid(grid);
-    if (!parsed || parsed.rows.length === 0) {
-      sheetsSkipped.push(sheetName);
-      continue;
+  const notUsed = new Map();
+  for (const sheet of report.sheets) {
+    for (const r of sheet.rows) {
+      const f = r.fields;
+      const instrumentType = (f.paymentMode || '').toUpperCase();
+      if (!INSTRUMENT_TYPES.has(instrumentType)) {
+        const label = f.paymentMode || 'No payment mode (credit bill)';
+        const t = notUsed.get(label) || { label, rows: 0, amount: 0 };
+        t.rows += 1;
+        t.amount = Math.round((t.amount + (toAmount(f.netAmt) || 0)) * 100) / 100;
+        notUsed.set(label, t);
+        continue;
+      }
+      rows.push({
+        billNo: f.billNo,
+        yhNo: f.yhNo,
+        receiptDate: parseLooseDate(f.receiptDate),
+        patientName: f.patientName,
+        instrumentType,
+        amount: toAmount(f.netAmt),
+        userId: f.userId,
+        referenceId: f.referenceIdPrimary ?? f.referenceIdFallback,
+      });
     }
-    sheetsParsed.push(sheetName);
-    for (const r of parsed.rows) rows.push(r);
-    for (const c of parsed.mappedColumns) mappedColumns.add(c);
-    for (const h of parsed.fileHeaders) fileHeaders.add(h);
   }
-
-  if (rows.length === 0) {
-    throw new Error(
-      'Could not find any Card/UPI rows in this OP file — expected a header row starting with "SNO". ' +
-        'Send the file and I will add its column layout.',
-    );
-  }
-
-  return { rows, mappedColumns: [...mappedColumns], fileHeaders: [...fileHeaders], sheetsParsed, sheetsSkipped };
+  return { rows, notUsed: [...notUsed.values()] };
 }
 
-module.exports = { parseUcrOpWorkbook, parseUcrOpGrid };
+function parseUcrOpWorkbook(bufferOrWorkbook) {
+  const report = readHisReport(bufferOrWorkbook, FAMILY);
+  if (report.status === 'FAILED') throw verificationError(report);
+
+  const { rows } = ucrOpRowsFrom(report);
+  if (rows.length === 0) {
+    const err = new Error(
+      'Could not find any Card/UPI rows in this OP file — expected an "OP Consultations … Collection and Refunds" report ' +
+        '(sheet DOCTOR_FEE_REG_YH.RPT). Send the file and I will add its column layout.',
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const variant = report.sheets[0].variantId;
+  return {
+    rows,
+    mappedColumns: Object.keys(layoutFor(FAMILY).variants.find((v) => v.id === variant).columns),
+    fileHeaders: [...new Set(report.sheets.flatMap((s) => s.fileHeaders))],
+    sheetsParsed: report.sheets.map((s) => s.sheetName),
+    // The HIS report header, e.g. "YASHODA HEALTHCARE SERVICES LIMITED, SECUNDERABAD" (AC-10 location).
+    unitName: report.sheets.map((s) => s.unitName).find(Boolean) ?? null,
+    sheetsSkipped: report.skippedSheets,
+    verification: verificationSummary(report),
+  };
+}
+
+module.exports = { parseUcrOpWorkbook, ucrOpRowsFrom };

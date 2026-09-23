@@ -1,0 +1,528 @@
+@use 'styles/mixins';
+
+.dash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dash__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+// The top-right Upload & Run — the one call to action on the landing page.
+.dash__upload {
+  text-decoration: none;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-xl);
+  font-size: var(--text-sm);
+}
+
+.notice--danger {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--status-danger-border);
+}
+
+// ---------------------------------------------------------------------
+// Hero tiles
+// ---------------------------------------------------------------------
+.hero {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.hero__tile {
+  @include mixins.glass-card;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: var(--space-4);
+  color: var(--text);
+  text-decoration: none;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+
+  &[href]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px -14px var(--brand);
+  }
+}
+
+// The lead tile wears the brand gradient — purple running into the accent orange.
+.hero__tile--lead {
+  background: var(--stat-gradient);
+  border-color: transparent;
+  color: #fff;
+
+  .hero__label,
+  .hero__sub {
+    color: rgba(255, 255, 255, 0.86);
+  }
+}
+
+.hero__tile--alert .hero__value {
+  color: var(--status-danger-fg);
+}
+
+.hero__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.hero__value {
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  @include mixins.truncate;
+}
+
+.hero__value--date {
+  font-size: 1.35rem;
+}
+
+.hero__sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  @include mixins.truncate;
+}
+
+.hero__bar {
+  height: 6px;
+  margin: 2px 0;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.28);
+  overflow: hidden;
+}
+
+.hero__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #fff;
+  transition: width 600ms var(--ease);
+}
+
+// ---------------------------------------------------------------------
+// Panels (shared shell for flow, charts, tables)
+// ---------------------------------------------------------------------
+.panel {
+  @include mixins.glass-card;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+.panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 700;
+    color: var(--text);
+
+    i {
+      color: var(--brand);
+      font-size: 0.95rem;
+    }
+  }
+}
+
+.panel__hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.panel__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--brand);
+  text-decoration: none;
+
+  &:hover {
+    color: var(--ai-orange);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Reconciliation flow — one lane per collection type
+// ---------------------------------------------------------------------
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.flow__lane {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.flow__type {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text);
+
+  i {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--r-md);
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 0.85rem;
+  }
+}
+
+.flow__steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow__step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.flow__dot {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+// Step states: done (file present) and ok read green; warn amber; missing grey.
+.flow__step--done .flow__dot,
+.flow__step--ok .flow__dot {
+  background: var(--status-success-bg);
+  border-color: var(--status-success-border);
+  color: var(--status-success-fg);
+}
+
+.flow__step--warn .flow__dot {
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+  color: var(--status-warning-fg);
+}
+
+.flow__step--missing .flow__value {
+  color: var(--text-muted);
+}
+
+.flow__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.flow__label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  @include mixins.truncate;
+}
+
+.flow__value {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text);
+  @include mixins.truncate;
+}
+
+.flow__sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  @include mixins.truncate;
+}
+
+.flow__arrow {
+  margin-left: auto;
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+}
+
+.flow__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  background: var(--brand-soft);
+  color: var(--brand);
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--brand);
+    color: #fff;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Charts
+// ---------------------------------------------------------------------
+.charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.chart-card__body {
+  position: relative;
+  height: 230px;
+}
+
+// The big number in the doughnut's hole. Offset left because the legend sits on the right.
+.chart-card__center {
+  position: absolute;
+  top: 50%;
+  left: 32%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.chart-card__center-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.chart-card__center-value--sm {
+  font-size: 0.95rem;
+}
+
+.chart-card__center-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.chart-card__empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 80px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+// ---------------------------------------------------------------------
+// Bank & gateway table + recent automation
+// ---------------------------------------------------------------------
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.split--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+
+  th,
+  td {
+    padding: 6px var(--space-2);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.num--ok {
+  color: var(--status-success-fg) !important;
+  font-weight: 600;
+}
+
+.num--warn {
+  color: var(--status-warning-fg) !important;
+  font-weight: 600;
+}
+
+.num--bad {
+  color: var(--status-danger-fg) !important;
+  font-weight: 600;
+}
+
+.num--muted {
+  color: var(--text-muted) !important;
+}
+
+.runs {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runs__row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.runs__when {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.runs__counts {
+  color: var(--text-muted);
+  @include mixins.truncate;
+}
+
+.runs__by {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.run-pill {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.run-pill--ok {
+  @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+  font-size: 0.65rem;
+}
+
+.run-pill--bad {
+  @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
+  font-size: 0.65rem;
+}
+
+.run-pill--busy {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+  font-size: 0.65rem;
+}
+
+// ---------------------------------------------------------------------
+// Responsive
+// ---------------------------------------------------------------------
+@media (max-width: 1280px) {
+  .hero {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .charts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chart-card--wide {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+}
+
+@media (max-width: 960px) {
+  .hero,
+  .charts,
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .flow__lane {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .flow__steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
