@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { DatePickerModule } from 'primeng/datepicker';
+import { TooltipModule } from 'primeng/tooltip';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import { ReconciliationSummary } from '../../../core/models';
@@ -28,7 +29,7 @@ function toDateOnly(d: Date | null): string | undefined {
 @Component({
   selector: 'app-reconciliation-summary',
   standalone: true,
-  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, DatePickerModule, SummaryPanelComponent],
+  imports: [DatePipe, RouterLink, FormsModule, ButtonModule, TableModule, DatePickerModule, TooltipModule, SummaryPanelComponent],
   templateUrl: './reconciliation-summary.component.html',
   styleUrl: './reconciliation-summary.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

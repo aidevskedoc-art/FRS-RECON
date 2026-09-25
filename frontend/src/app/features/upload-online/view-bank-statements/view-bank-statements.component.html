@@ -14,7 +14,16 @@
   }
 
   <div class="view-statements__table-wrap">
-    <p-table [value]="bankStatements.batches()" dataKey="id" styleClass="p-datatable-sm statements-table">
+    <p-table
+      [value]="bankStatements.batches()"
+      dataKey="id"
+      styleClass="p-datatable-sm statements-table"
+      [paginator]="true"
+      [rows]="25"
+      [rowsPerPageOptions]="[10, 25, 50, 100]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="{first} – {last} of {totalRecords}"
+    >
       <ng-template #header>
         <tr>
           <th></th>

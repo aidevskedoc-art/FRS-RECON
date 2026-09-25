@@ -7,7 +7,7 @@ const db = require('../db');
 const { uploaderOf } = require('../uploader');
 const { parseMisWorkbook } = require('../online-upload/mis-parser');
 const { isHisWorkbook, hisDiagMisUpload } = require('../online-upload/his-mis-rows');
-const { assertNewFile, filterNewRows } = require('../online-upload/dedupe');
+const { sha256, filterNewRows } = require('../online-upload/dedupe');
 const { diagOpBatchRowToApi, diagOpRecordRowToApi } = require('../mappers');
 const { columnSheet, writeXlsx } = require('../excel/write-xlsx');
 const { assertNotPastGoLive } = require('../go-live');
@@ -76,7 +76,11 @@ router.post('/', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
 
-    const fileHash = await assertNewFile('diag_op_upload_batches', req.file.buffer);
+    // Fingerprint recorded, but NOT used to refuse the file: the row-level
+    // check below is the real guard (an all-duplicate file is still refused,
+    // 409). Refusing on the hash blocked legitimate new rows from a file taken
+    // before — 2026-09-25, the split UPI receipts a newer reader now stores.
+    const fileHash = sha256(req.file.buffer);
     // The client's combined HIS workbook carries the same receipts as the
     // Diagnostics/OP Online Collection MIS; his-mis-rows.js rebuilds them in its shape.
     const his = isHisWorkbook(req.file.buffer) ? hisDiagMisUpload(req.file.buffer) : null;
@@ -126,7 +130,7 @@ router.post('/', upload.single('file'), async (req, res, next) => {
       rowsInFile: tagged.length,
       rowsStored: newRows.length,
       rowsSkipped: skipped,
-      ...(his ? { heldBack: his.heldBack, verification: his.verification } : {}),
+      ...(his ? { heldBack: his.heldBack, splitPaid: his.splitPaid, verification: his.verification } : {}),
     };
     if (batches.length === 1) return res.status(201).json({ ...diagOpBatchRowToApi(batches[0]), ...counts });
     res.status(201).json({ batches: batches.map(diagOpBatchRowToApi), ...counts });

@@ -21,6 +21,8 @@ export interface UploadedBatch {
   rowsSkipped: number;
   /** Receipts read but deliberately not stored (see the file's preview). */
   heldBack: number;
+  /** Receipts paid in two UPI parts — stored, but Unmatched until someone checks the split. */
+  splitPaid: number;
   /** How the stored rows were checked against the report's own totals, where the route says. */
   verification: ReportStatus | null;
 }
@@ -31,6 +33,7 @@ interface UploadResponse {
   rowsSkipped?: number;
   batches?: { rowCount: number }[];
   heldBack?: unknown[];
+  splitPaid?: unknown[];
   verification?: { status: ReportStatus } | { status: ReportStatus }[];
 }
 
@@ -40,6 +43,7 @@ function normaliseUpload(body: UploadResponse): UploadedBatch {
     rowCount: body.rowCount ?? body.rowsStored ?? (body.batches ?? []).reduce((n, b) => n + (b.rowCount || 0), 0),
     rowsSkipped: body.rowsSkipped ?? 0,
     heldBack: body.heldBack?.length ?? 0,
+    splitPaid: body.splitPaid?.length ?? 0,
     verification: statuses.length ? (statuses.includes('FAILED') ? 'FAILED' : statuses.includes('UNVERIFIED') ? 'UNVERIFIED' : 'VERIFIED') : null,
   };
 }

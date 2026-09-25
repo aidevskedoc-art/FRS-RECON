@@ -175,7 +175,7 @@ const twinB = refund(91, '123456', '119459', 52000, { chequeDate: '2026-07-23', 
 out = run([chq(1, '123456', '119459', 52000, { receiptDate: '2026-07-23' })], [twinA, twinB], [verdict(1, 'UNMATCHED')]);
 p = out.patches.get('1');
 ok('two indistinguishable refunds -> no status change', p && p.status === undefined, p && p.status);
-ok('...but the reason explains it', /Ambiguous contra/.test(p.matchReason), p.matchReason);
+ok('...but the reason explains it', /Multiple matches found/.test(p.matchReason), p.matchReason);
 ok('...and reports the candidate count', p.contraCandidateCount === 2, p.contraCandidateCount);
 ok('...and consumes neither refund', out.contraResults[0].refundRecordId === null);
 

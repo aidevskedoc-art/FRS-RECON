@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import { ReconciliationSummary } from '../../../core/models';
+import { PaymentTypeSummary, ReconciliationSummary } from '../../../core/models';
 
 interface SummaryCard {
   label: string;
@@ -57,15 +57,31 @@ export class SummaryPanelComponent {
   /** The per-payment-type rows, built once so the template stays declarative. */
   protected readonly rows = computed(() => {
     const s = this.summary();
+    // Each type keeps one colour (the row's dot) — category colours, not status.
     return [
-      { name: 'IP Payments', d: s.ipPayments },
-      { name: 'Diagnostics / OP Payments', d: s.diagPayments },
-      { name: 'UPI Payments', d: s.upiPayments },
-      { name: 'Cheque Collections', d: s.chequePayments },
-      { name: 'Card (gateway-verified)', d: s.cardPayments },
-      { name: 'UPI (gateway-verified)', d: s.upiGatewayPayments },
+      { name: 'IP Payments', d: s.ipPayments, color: 'var(--ai-purple)' },
+      { name: 'Diagnostics / OP Payments', d: s.diagPayments, color: 'var(--ai-orange)' },
+      { name: 'UPI Payments', d: s.upiPayments, color: 'var(--ai-cyan)' },
+      { name: 'Cheque Collections', d: s.chequePayments, color: '#db2777' },
+      { name: 'Card (gateway-verified)', d: s.cardPayments, color: '#2563eb' },
+      { name: 'UPI (gateway-verified)', d: s.upiGatewayPayments, color: '#0d9488' },
     ];
   });
+
+  /** Share of receipts accounted for — matched, gateway-matched or contra — as a whole percent. */
+  protected rate(d: PaymentTypeSummary): number {
+    return reconciledRate(d.matched + d.easebuzzMatched + d.contra, d.total);
+  }
+
+  protected readonly combinedRate = computed(() => {
+    const c = this.summary().combined;
+    return reconciledRate(c.totalMatched + c.totalEasebuzzMatched + c.totalContra, c.totalTransactions);
+  });
+
+  /** Meter colour: green 95%+, amber 80–95%, red below. */
+  protected tone(pct: number): 'good' | 'warn' | 'bad' {
+    return pct >= 95 ? 'good' : pct >= 80 ? 'warn' : 'bad';
+  }
 
   protected money(value: number | null | undefined): string {
     return money(value);
@@ -74,6 +90,11 @@ export class SummaryPanelComponent {
   protected count(value: number | null | undefined): string {
     return count(value);
   }
+}
+
+function reconciledRate(done: number, total: number): number {
+  if (!total) return 0;
+  return Math.min(100, Math.floor((done / total) * 100)); // floor: 99.6% is not "100%"
 }
 
 function money(value: number | null | undefined): string {

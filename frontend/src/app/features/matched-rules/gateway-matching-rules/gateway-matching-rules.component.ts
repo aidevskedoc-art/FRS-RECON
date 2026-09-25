@@ -12,6 +12,7 @@ import { GatewayRulesService } from '../../../core/services/gateway-rules.servic
 import { errorMessage } from '../../../core/services/policy-document.service';
 import {
   GATEWAY_AMBIGUITY_OPTIONS,
+  GATEWAY_GROUP_MISMATCH_OPTIONS,
   GATEWAY_FIELDS_BY_TARGET,
   GATEWAY_TARGET_OPTIONS,
   GatewayRule,
@@ -44,6 +45,7 @@ export class GatewayMatchingRulesComponent {
 
   protected readonly targetOptions = GATEWAY_TARGET_OPTIONS;
   protected readonly ambiguityOptions = GATEWAY_AMBIGUITY_OPTIONS;
+  protected readonly groupMismatchOptions = GATEWAY_GROUP_MISMATCH_OPTIONS;
   protected readonly payuAmountOptions = PAYU_AMOUNT_OPTIONS;
   protected readonly minTokenFloor = MIN_TOKEN_LENGTH_FLOOR;
   protected readonly minTokenCeiling = MIN_TOKEN_LENGTH_CEILING;

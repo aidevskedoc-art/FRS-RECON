@@ -71,16 +71,47 @@ async function findStoredOverlap(misSource, allKeys) {
   };
 }
 
-/** Throws 409 naming the batch(es) already holding these transactions. */
-function assertNoOverlap(overlap, label) {
-  if (!overlap.rows) return;
-  const where = overlap.batches.map((b) => `batch #${b.id} "${b.fileName}" (${b.rows} rows)`).join(', ');
-  const err = new Error(
-    `${overlap.rows} of the ${label} rows in this file are already stored — ${where}. ` +
-      'This usually means the periods overlap. Delete that batch first if this file replaces it; nothing was saved.',
+const keyString = (k) => JSON.stringify([k.receiptNo, k.instrumentType, k.amount === null || k.amount === undefined ? null : Number(k.amount), k.referenceId || '']);
+
+/**
+ * Splits a file's rows into the ones not stored yet and the ones already
+ * stored (by the identity above) — an overlapping period stores only its new
+ * transactions, the way the MIS uploads (dedupe.js filterNewRows) always have.
+ * A key repeated within the file stays repeated (real rows, see top).
+ *
+ * @returns {Promise<{ newRows: any[], skipped: number, overlap: { rows, batches } }>}
+ *   overlap = which earlier batches hold the skipped rows, for the message.
+ */
+async function splitStoredRows(misSource, rows, keyOf) {
+  if (!rows.length) return { newRows: [], skipped: 0, overlap: { rows: 0, batches: [] } };
+  const keys = rows.map(keyOf);
+  const overlap = await findStoredOverlap(misSource, keys);
+  if (!overlap.rows) return { newRows: rows, skipped: 0, overlap };
+
+  const distinct = new Map(keys.map((k) => [keyString(k), k]));
+  const list = [...distinct.values()];
+  const { rows: stored } = await db.query(
+    `WITH n AS (
+       SELECT * FROM unnest($2::text[], $3::text[], $4::numeric[], $5::text[])
+         AS n(receipt_no, instrument_type, amount, reference_id)
+     )
+     SELECT DISTINCT n.receipt_no, n.instrument_type, n.amount::float8 AS amount, n.reference_id
+       FROM n
+       JOIN ucr_ip_records r ON r.receipt_no = n.receipt_no
+                            AND r.instrument_type = n.instrument_type
+                            AND r.amount IS NOT DISTINCT FROM n.amount
+                            AND COALESCE(r.reference_id, '') = COALESCE(n.reference_id, '')
+      WHERE r.mis_source = $1`,
+    [misSource, list.map((k) => k.receiptNo), list.map((k) => k.instrumentType), list.map((k) => k.amount), list.map((k) => k.referenceId)],
   );
-  err.status = 409;
-  throw err;
+  const storedKeys = new Set(stored.map((s) => keyString({ receiptNo: s.receipt_no, instrumentType: s.instrument_type, amount: s.amount, referenceId: s.reference_id })));
+  const newRows = rows.filter((r, i) => !storedKeys.has(keyString(keys[i])));
+  return { newRows, skipped: rows.length - newRows.length, overlap };
 }
 
-module.exports = { findStoredOverlap, assertNoOverlap, OVERLAP_KEYS };
+/** Where the already-stored rows live, in words: 'batch #12 "file.xls" (40 rows)'. */
+function overlapWhere(overlap) {
+  return overlap.batches.map((b) => `batch #${b.id} "${b.fileName}" (${b.rows} rows)`).join(', ');
+}
+
+module.exports = { findStoredOverlap, splitStoredRows, overlapWhere, OVERLAP_KEYS };

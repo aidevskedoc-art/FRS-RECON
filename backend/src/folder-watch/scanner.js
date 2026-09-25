@@ -15,6 +15,7 @@ const path = require('path');
 const db = require('../db');
 const { logAction } = require('../audit-log');
 const { ingestOneFile, runReconciliationPlan } = require('./ingest');
+const { connectShare } = require('./share-credentials');
 
 const SPREADSHEET_EXT = /\.(xlsx|xls)$/i;
 // A file whose mtime is inside this window might still be mid-copy —
@@ -89,6 +90,7 @@ async function runScan(opts = {}) {
   let reportsIngested = 0;
 
   try {
+    await connectShare(config); // no-op unless a share user ID is saved
     const candidates = await listCandidateFiles(config.folder_path);
     counts.found = candidates.length;
 

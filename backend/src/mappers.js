@@ -706,6 +706,9 @@ function folderWatchConfigRowToApi(row) {
     runTime: row.run_time, // 'HH:MM:SS', IST — see folder-watch/scheduler.js
     active: row.active,
     uploadedByLabel: row.uploaded_by_label,
+    // The password itself never leaves the backend — only whether one is saved.
+    shareUsername: row.share_username ?? null,
+    hasSharePassword: !!row.share_password_enc,
     updatedAt: toIso(row.updated_at),
     updatedBy: row.updated_by != null ? String(row.updated_by) : null,
     updatedByName: row.updated_by_name ?? undefined,

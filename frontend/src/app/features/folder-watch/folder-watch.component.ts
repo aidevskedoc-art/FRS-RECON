@@ -8,7 +8,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { FolderWatchService } from '../../core/services/folder-watch.service';
 import { errorMessage } from '../../core/services/policy-document.service';
-import { FolderWatchConfig, FolderWatchConfigDraft, FolderWatchReconcileStep, FolderWatchRun, FolderWatchRunFile } from '../../core/models';
+import { FolderWatchConfig, FolderWatchConfigDraft, FolderWatchConnectionTest, FolderWatchReconcileStep, FolderWatchRun, FolderWatchRunFile } from '../../core/models';
 import { PageHeaderComponent } from '../../shared/ui/page-header.component';
 
 const OUTCOME_LABELS: Record<string, string> = {
@@ -25,12 +25,16 @@ interface FileGroup {
   fileName: string;
   reports: FolderWatchRunFile[];
   superseded: boolean;
-  /** Retry only helps a file where nothing was stored — re-reading a stored one just finds duplicates. */
+  /**
+   * Any file can be read again: rows already stored are always skipped, so a
+   * re-read only adds what is new — e.g. receipts a newer version of the app
+   * now stores (split UPI payments, 2026-09-25) from a file taken before.
+   */
   canRetry: boolean;
 }
 
 function emptyDraft(): FolderWatchConfigDraft {
-  return { folderPath: '', runTime: '06:00', active: true, uploadedByLabel: 'Automated (Folder Watch)' };
+  return { folderPath: '', runTime: '06:00', active: true, uploadedByLabel: 'Automated (Folder Watch)', shareUsername: '', sharePassword: '' };
 }
 
 /**
@@ -54,6 +58,9 @@ export class FolderWatchComponent {
   protected readonly formError = signal<string | null>(null);
   protected readonly saving = signal(false);
   protected readonly saved = signal(false);
+
+  protected readonly testing = signal(false);
+  protected readonly testResult = signal<FolderWatchConnectionTest | null>(null);
 
   protected readonly runningNow = signal(false);
   protected readonly runNowError = signal<string | null>(null);
@@ -79,7 +86,7 @@ export class FolderWatchComponent {
         fileName,
         reports,
         superseded,
-        canRetry: !superseded && !reports.some((r) => r.outcome === 'INGESTED'),
+        canRetry: !superseded,
       };
     });
   });
@@ -98,6 +105,8 @@ export class FolderWatchComponent {
       runTime: config.runTime.slice(0, 5), // 'HH:MM:SS' -> 'HH:MM' for the time input
       active: config.active,
       uploadedByLabel: config.uploadedByLabel,
+      shareUsername: config.shareUsername ?? '',
+      sharePassword: '', // never sent to the browser; blank on save = keep the saved one
     };
   }
 
@@ -114,13 +123,29 @@ export class FolderWatchComponent {
     this.saving.set(true);
     this.formError.set(null);
     this.folderWatch.saveConfig({ ...d, folderPath: d.folderPath.trim() }).subscribe({
-      next: () => {
+      next: (config) => {
         this.saving.set(false);
         this.saved.set(true);
+        this.draft.set(this.toDraft(config)); // clears the typed password out of the form
       },
       error: (err) => {
         this.saving.set(false);
         this.formError.set(errorMessage(err));
+      },
+    });
+  }
+
+  protected testConnection(): void {
+    this.testing.set(true);
+    this.testResult.set(null);
+    this.folderWatch.testConnection().subscribe({
+      next: (result) => {
+        this.testing.set(false);
+        this.testResult.set(result);
+      },
+      error: (err) => {
+        this.testing.set(false);
+        this.testResult.set({ ok: false, error: errorMessage(err) });
       },
     });
   }

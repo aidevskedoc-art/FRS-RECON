@@ -31,6 +31,34 @@
       </label>
 
       <label class="field">
+        <span class="field-label">Share User ID</span>
+        <input
+          pInputText
+          type="text"
+          autocomplete="off"
+          placeholder="DOMAIN\userid"
+          [ngModel]="draft().shareUsername"
+          (ngModelChange)="updateDraft({ shareUsername: $event })"
+        />
+        <span class="field-hint">Only if the share needs its own login. Leave blank to use the backend server's own Windows account.</span>
+      </label>
+
+      @if (draft().shareUsername.trim()) {
+        <label class="field">
+          <span class="field-label">Share Password</span>
+          <input
+            pInputText
+            type="password"
+            autocomplete="new-password"
+            [placeholder]="folderWatch.config()?.hasSharePassword ? '•••••••• saved — leave blank to keep' : 'Enter the share password'"
+            [ngModel]="draft().sharePassword"
+            (ngModelChange)="updateDraft({ sharePassword: $event })"
+          />
+          <span class="field-hint">Stored encrypted. It is never shown again, even to admins.</span>
+        </label>
+      }
+
+      <label class="field">
         <span class="field-label">Check Time (IST, daily)</span>
         <input
           pInputText
@@ -70,6 +98,15 @@
           <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
         }
 
+        <button type="button" class="btn btn-ghost" [disabled]="testing() || !folderWatch.config()" (click)="testConnection()" pTooltip="Log in to the share and list the folder with the saved settings — reads and stores nothing">
+          @if (testing()) {
+            <span class="btn-spinner btn-spinner--dark"></span>
+          } @else {
+            <i class="pi pi-link"></i>
+          }
+          <span>Test Connection</span>
+        </button>
+
         <button type="button" class="btn btn-ghost" [disabled]="runningNow()" (click)="runNow()" pTooltip="Check the folder right now, without waiting for the scheduled time">
           @if (runningNow()) {
             <span class="btn-spinner btn-spinner--dark"></span>
@@ -79,6 +116,20 @@
           <span>Run Now</span>
         </button>
       </div>
+
+      @if (testResult(); as t) {
+        @if (t.ok) {
+          <div class="notice notice--info">
+            <i class="pi pi-check-circle"></i>
+            Connected{{ t.usedLogin ? ' with the saved user ID' : '' }} — {{ t.spreadsheets }} spreadsheet(s) in the folder ({{ t.filesInFolder }} item(s) in total).
+          </div>
+        } @else {
+          <div class="notice notice--danger">
+            <i class="pi pi-times-circle"></i>
+            {{ t.error }}
+          </div>
+        }
+      }
 
       @if (runNowError(); as err) {
         <div class="modal-error">{{ err }}</div>
@@ -175,7 +226,7 @@
                   <span class="file-list__retried">Will be read again</span>
                 } @else if (g.canRetry) {
                   <button type="button" class="btn btn-ghost btn-sm" [disabled]="retrying() === g.fileName" (click)="retry(g)"
-                    pTooltip="Read this file again on the next check (e.g. after it was fixed)">
+                    pTooltip="Read this file again on the next check — rows already stored are skipped, only new ones are added">
                     <i class="pi pi-refresh"></i>
                     <span>Retry</span>
                   </button>

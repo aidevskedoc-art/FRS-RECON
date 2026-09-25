@@ -1,9 +1,13 @@
 <div style="display:flex;flex-direction:column;gap:1rem;">
-  <div>
-    <h2 style="margin:0;">EaseBuzz Batches</h2>
-    <p style="margin:.25rem 0 0;color:var(--text-secondary);font-size:.9rem;">
-      EaseBuzz gateway report (successful transactions only). An IP online receipt matches by its Easebuzz ID.
-    </p>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <h2 style="margin:0;font-size:1.05rem;line-height:normal;">EaseBuzz Batches</h2>
+    <i
+      class="pi pi-info-circle page-info"
+      style="font-size:0.85rem;color:var(--text-subtle);cursor:help;"
+      pTooltip="EaseBuzz gateway report (successful transactions only). An IP online receipt matches by its Easebuzz ID."
+      tooltipPosition="bottom"
+      tabindex="0"
+    ></i>
   </div>
 
   @if (error(); as err) {
@@ -12,7 +16,16 @@
     </div>
   }
 
-  <p-table [value]="bankStatements.easebuzzBatches()" styleClass="p-datatable-sm" [scrollable]="true">
+  <p-table
+    [value]="bankStatements.easebuzzBatches()"
+    styleClass="p-datatable-sm"
+    [scrollable]="true"
+    [paginator]="true"
+    [rows]="25"
+    [rowsPerPageOptions]="[10, 25, 50, 100]"
+    [showCurrentPageReport]="true"
+    currentPageReportTemplate="{first} – {last} of {totalRecords}"
+  >
     <ng-template #header>
       <tr>
         <th>File</th>

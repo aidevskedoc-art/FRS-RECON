@@ -267,7 +267,8 @@ function runContraPass({ groupResults, records, refundRecords, rule }) {
         status: onAmbiguous === AMBIGUOUS_MATCH ? AMBIGUOUS_MATCH : undefined,
         appliedRuleName: onAmbiguous === AMBIGUOUS_MATCH ? rule.name : undefined,
         matchReason:
-          `Ambiguous contra — ${candidates.length} refund rows (${candidates.map((c) => c.refundNo).join(', ')}) ` +
+          // Same wording as the verdict it produces — see STATUS_LABEL.
+          `Multiple matches found — ${candidates.length} refund rows (${candidates.map((c) => c.refundNo).join(', ')}) ` +
           `carry ${describe} for ${inr(record[amountField])} and none is nearer in date; none selected automatically.`,
         contraCandidateCount: candidates.length,
       });

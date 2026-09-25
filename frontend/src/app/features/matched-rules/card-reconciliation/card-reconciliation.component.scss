@@ -8,22 +8,28 @@
 
 .card-reconciliation__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
   flex-wrap: wrap;
 
   h1 {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.05rem;
+    line-height: normal;
   }
 }
 
-.card-reconciliation__sub {
-  margin: var(--space-1) 0 0;
-  color: var(--text-tertiary);
+.card-reconciliation__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-info {
   font-size: 0.85rem;
-  max-width: 72ch;
+  color: var(--text-subtle);
+  cursor: help;
 }
 
 .card-reconciliation__filters {
@@ -42,6 +48,7 @@
 }
 
 .tally--matched { color: var(--status-success-fg); }
+.tally--grouped-matched { color: var(--status-info-fg); }
 .tally--mismatch { color: var(--status-warning-fg); }
 .tally--unmatched { color: var(--status-danger-fg); }
 .tally--sep { color: var(--border); }
@@ -97,6 +104,13 @@
 
 .status-pill--matched {
   @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+
+// A split payment (2+ MIS rows summed to match one gateway row) — still a
+// clean match, kept visually distinct so a reviewer knows the MIS amount
+// shown is a group total, not this row's own amount.
+.status-pill--grouped-matched {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
 }
 
 .status-pill--mismatch {

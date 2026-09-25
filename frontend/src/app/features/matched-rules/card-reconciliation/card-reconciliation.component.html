@@ -1,11 +1,17 @@
+@if (generating()) {
+  <app-ai-loader label="Reconciling Card Payments" caption="Matching MIS rows against CARD MPR and Pine Labs · Applying rules" icon="pi pi-credit-card" />
+}
+
 <div class="card-reconciliation">
   <header class="card-reconciliation__head">
-    <div>
+    <div class="card-reconciliation__title">
       <h1>Card Reconciliation</h1>
-      <p class="card-reconciliation__sub">
-        Every uploaded Card MIS row tied to the CARD MPR or Pine Labs row carrying the same approval code.
-        Run Generate after uploading or re-uploading the MIS (IP), CARD MPR or Pine Labs feeds.
-      </p>
+      <i
+        class="pi pi-info-circle page-info"
+        pTooltip="Every uploaded Card MIS row tied to the CARD MPR or Pine Labs row carrying the same approval code. Run Generate after uploading or re-uploading the MIS (IP), CARD MPR or Pine Labs feeds."
+        tooltipPosition="bottom"
+        tabindex="0"
+      ></i>
     </div>
     <div class="head-actions">
       <p-button
@@ -45,6 +51,7 @@
     <div class="card-reconciliation__tally">
       <span>{{ total() }} Card rows</span>
       <span class="tally--matched">{{ matchedCount() }} matched</span>
+      <span class="tally--grouped-matched">{{ groupedMatchedCount() }} grouped matched</span>
       <span class="tally--mismatch">{{ mismatchCount() }} amount mismatch</span>
       <span class="tally--unmatched">{{ unmatchedCount() }} no gateway row</span>
       <span class="tally--sep">·</span>
@@ -76,6 +83,7 @@
             <span
               class="status-pill"
               [class.status-pill--matched]="row.matchStatus === 'MATCHED'"
+              [class.status-pill--grouped-matched]="row.matchStatus === 'GROUPED_MATCHED'"
               [class.status-pill--mismatch]="row.matchStatus === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="row.matchStatus === 'UNMATCHED' || !row.matchStatus"
             >{{ statusLabel(row.matchStatus) }}</span>

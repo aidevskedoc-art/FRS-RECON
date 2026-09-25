@@ -9,7 +9,7 @@
  * then checks:
  *   - every report in the combined workbook is decided on its own dry run,
  *     exactly as the manual Upload & Run screen does (clean -> stored; held
- *     back -> left for a person; empty -> skipped);
+ *     back receipts -> the rest stored, those receipts left for a person; empty -> skipped);
  *   - reconciliation runs ONCE, after every file is in, and not at all when
  *     nothing new arrived;
  *   - "already taken" files are skipped and counted; Retry makes a file be
@@ -141,7 +141,7 @@ async function main() {
     for (const t of ['UCR_IP', 'UCR_OP', 'MIS_IP', 'CHEQUE_COLLECTION', 'REFUND']) {
       check(`combined workbook: ${t} stored (clean dry run)`, combined[t]?.outcome === 'INGESTED' && combined[t]?.batch_id != null);
     }
-    check('combined workbook: MIS_DIAG left for a person (held-back receipt)', combined.MIS_DIAG?.outcome === 'SKIPPED_NEEDS_REVIEW' && /held back/.test(combined.MIS_DIAG?.error_message || ''));
+    check('combined workbook: MIS_DIAG stored, the split-paid receipt stored too and named in the run (same as manual screen)', combined.MIS_DIAG?.outcome === 'INGESTED' && combined.MIS_DIAG?.batch_id != null && /two UPI parts/.test(combined.MIS_DIAG?.error_message || ''));
     check('combined workbook: UCR_DIAG skipped as empty', combined.UCR_DIAG?.outcome === 'SKIPPED_EMPTY');
 
     const garbage = files1.find((f) => f.file_name === GARBAGE_FILE);

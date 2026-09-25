@@ -9,17 +9,10 @@
  * cheque collection is tagged explicitly rather than left open, so a cheque
  * export offers only columns that can actually hold a value.
  */
-const { statusTone } = require('../reconciliation/status-tone');
-
-const STATUS_LABEL = {
-  MATCHED: 'Matched',
-  EASEBUZZ_MATCHED: 'Easebuzz Matched',
-  CONTRA_ENTRY: 'Contra Entry',
-  PARTIAL_MATCH: 'Partially Matched',
-  AMOUNT_MISMATCH: 'Amount Mismatch',
-  UNMATCHED: 'Unmatched',
-  AMBIGUOUS_MATCH: 'Ambiguous Match',
-};
+// Labels come from status-tone.js so this export, the audit report and the
+// screen all call a verdict the same thing — they used to each keep their own
+// map and had drifted apart.
+const { statusTone, STATUS_LABEL } = require('../reconciliation/status-tone');
 
 const MIS = ['ip', 'diag'];
 

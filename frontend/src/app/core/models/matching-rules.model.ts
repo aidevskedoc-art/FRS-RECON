@@ -137,7 +137,7 @@ export const CONTRA_SCOPE_OPTIONS = [
 
 export const CONTRA_AMBIGUITY_OPTIONS = [
   { label: 'Leave unmatched, explain why', value: 'UNMATCHED' as const },
-  { label: 'Flag as Ambiguous Match', value: 'AMBIGUOUS_MATCH' as const },
+  { label: 'Flag as Multiple Matches Found', value: 'AMBIGUOUS_MATCH' as const },
   { label: 'Take the first candidate', value: 'CLAIM_FIRST' as const },
 ];
 

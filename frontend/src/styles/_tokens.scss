@@ -153,7 +153,10 @@
 
   --sidebar-width: 276px;
   --sidebar-width-collapsed: 84px;
-  --topbar-height: 84px;
+  // Was 84px — client (2026-09-25): the header took too much of a laptop
+  // screen. Compact = while the page is scrolled (shell.component.ts).
+  --topbar-height: 52px;
+  --topbar-height-compact: 40px;
   --shell-gap: 10px; // was 14px — tightened with the shell content padding
 
   // Native <select> chevron, recoloured per theme so selects match the

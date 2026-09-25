@@ -195,7 +195,10 @@ function runUnitPass({ groupResults, records, bankRecords, rule }) {
     const accountsIncluded = memberRefs.length ? ` [${[...new Set(memberRefs)].join(', ')}]` : '';
     let reason;
     if (group.status === AMBIGUOUS_MATCH) {
-      reason = `Ambiguous: unit "${group.unitKey}" totals ${group.total} across ${group.count} transactions and ${group.ambiguousCandidates.length} candidates match — none selected automatically`;
+      // Client-facing wording (STATUS_LABEL in status-tone.js): the verdict is
+      // "Multiple Matches Found", so the reason must not open with a different
+      // word for the same thing.
+      reason = `Multiple matches found: reference "${group.unitKey}" totals ${group.total} across ${group.count} transactions, and ${group.ambiguousCandidates.length} bank entries match it — none selected automatically. Pick the right one, or check whether the same statement has been uploaded more than once.`;
     } else if (group.status === PARTIAL_MATCH) {
       reason = `Partially matched by rule "${rule.name}": base "${group.unitKey}"${accountsIncluded} totals ${group.total} across ${group.count} transactions; expected ${group.counterpartyAmount}; balance amount ${group.unmatchedBalance}`;
     } else if (group.status === AMOUNT_MISMATCH) {

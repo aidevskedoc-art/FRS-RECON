@@ -13,15 +13,22 @@
     }
   </div>
 
-  <div class="panel__section">
-    <h4>By Payment Type</h4>
+  <div class="panel__section breakdown">
+    <div class="breakdown__head">
+      <h4>By Payment Type</h4>
+      <div class="breakdown__legend">
+        <span class="legend-chip legend-chip--good"><i class="pi pi-arrow-up-right"></i> Fully reconciled</span>
+        <span class="legend-chip legend-chip--bad"><i class="pi pi-arrow-down-right"></i> Balance pending</span>
+      </div>
+    </div>
+
     <div class="table-wrap">
       <table class="breakdown-table">
         <thead>
           <tr>
-            <th>Statement</th>
+            <th>Payment Type</th>
             <th class="num">Total</th>
-            <th class="num">Amount</th>
+            <th class="num">Σ Amount</th>
             <th class="num">Matched</th>
             <th class="num">Gateway</th>
             <th class="num">Contra</th>
@@ -29,39 +36,84 @@
             <th class="num">Mismatch</th>
             <th class="num">Unmatched</th>
             <th class="num">Balance Amount</th>
+            <th>Reconciled</th>
           </tr>
         </thead>
         <tbody>
           @for (row of rows(); track row.name) {
             <tr>
-              <td>{{ row.name }}</td>
-              <td class="num">{{ count(row.d.total) }}</td>
-              <td class="num amount">{{ money(row.d.totalAmount) }}</td>
-              <td class="num">{{ count(row.d.matched) }}</td>
-              <td class="num">{{ count(row.d.easebuzzMatched) }}</td>
-              <td class="num">{{ count(row.d.contra) }}</td>
-              <td class="num">{{ count(row.d.partialMatch) }}</td>
-              <td class="num">{{ count(row.d.mismatched) }}</td>
-              <td class="num">{{ count(row.d.unmatched) }}</td>
-              <td class="num amount" [class.amount--flag]="row.d.balanceAmount > 0">{{ money(row.d.balanceAmount) }}</td>
+              <td class="type">
+                <span class="type__dot" [style.background]="row.color"></span>
+                <span class="type__name">{{ row.name }}</span>
+              </td>
+              <td class="num mono">{{ count(row.d.total) }}</td>
+              <td class="num mono">{{ money(row.d.totalAmount) }}</td>
+              <td class="num mono" [class.zero]="!row.d.matched">{{ count(row.d.matched) }}</td>
+              <td class="num mono" [class.zero]="!row.d.easebuzzMatched">{{ count(row.d.easebuzzMatched) }}</td>
+              <td class="num mono" [class.zero]="!row.d.contra">{{ count(row.d.contra) }}</td>
+              <td class="num mono" [class.zero]="!row.d.partialMatch">{{ count(row.d.partialMatch) }}</td>
+              <td class="num mono" [class.zero]="!row.d.mismatched">{{ count(row.d.mismatched) }}</td>
+              <td class="num">
+                <span class="badge" [class.badge--none]="!row.d.unmatched">{{ count(row.d.unmatched) }}</span>
+              </td>
+              <td class="num">
+                <span class="pill" [class.pill--bad]="row.d.balanceAmount > 0" [class.pill--good]="!(row.d.balanceAmount > 0)">
+                  <i class="pi" [class.pi-arrow-down-right]="row.d.balanceAmount > 0" [class.pi-check]="!(row.d.balanceAmount > 0)"></i>
+                  {{ money(row.d.balanceAmount) }}
+                </span>
+              </td>
+              <td>
+                <div class="meter" [title]="rate(row.d) + '% of receipts reconciled (matched + gateway + contra)'">
+                  <div class="meter__track">
+                    <div class="meter__fill" [style.width.%]="rate(row.d)" [class]="'meter__fill meter__fill--' + tone(rate(row.d))"></div>
+                  </div>
+                  <span class="meter__pct">{{ row.d.total ? rate(row.d) + '%' : '—' }}</span>
+                </div>
+              </td>
             </tr>
           }
         </tbody>
         <tfoot>
           <tr>
-            <td>Combined</td>
-            <td class="num">{{ count(summary().combined.totalTransactions) }}</td>
-            <td class="num amount">{{ money(summary().combined.totalAmount) }}</td>
-            <td class="num">{{ count(summary().combined.totalMatched) }}</td>
-            <td class="num">{{ count(summary().combined.totalEasebuzzMatched) }}</td>
-            <td class="num">{{ count(summary().combined.totalContra) }}</td>
-            <td class="num">{{ count(summary().combined.totalPartialMatch) }}</td>
-            <td class="num">{{ count(summary().combined.totalMismatched) }}</td>
-            <td class="num">{{ count(summary().combined.totalUnmatched) }}</td>
-            <td class="num amount" [class.amount--flag]="summary().combined.balanceAmount > 0">{{ money(summary().combined.balanceAmount) }}</td>
+            <td class="type"><span class="type__name">Combined</span></td>
+            <td class="num mono">{{ count(summary().combined.totalTransactions) }}</td>
+            <td class="num mono">{{ money(summary().combined.totalAmount) }}</td>
+            <td class="num mono">{{ count(summary().combined.totalMatched) }}</td>
+            <td class="num mono">{{ count(summary().combined.totalEasebuzzMatched) }}</td>
+            <td class="num mono">{{ count(summary().combined.totalContra) }}</td>
+            <td class="num mono">{{ count(summary().combined.totalPartialMatch) }}</td>
+            <td class="num mono">{{ count(summary().combined.totalMismatched) }}</td>
+            <td class="num">
+              <span class="badge" [class.badge--none]="!summary().combined.totalUnmatched">{{ count(summary().combined.totalUnmatched) }}</span>
+            </td>
+            <td class="num">
+              <span class="pill" [class.pill--bad]="summary().combined.balanceAmount > 0" [class.pill--good]="!(summary().combined.balanceAmount > 0)">
+                <i class="pi" [class.pi-arrow-down-right]="summary().combined.balanceAmount > 0" [class.pi-check]="!(summary().combined.balanceAmount > 0)"></i>
+                {{ money(summary().combined.balanceAmount) }}
+              </span>
+            </td>
+            <td>
+              <div class="meter">
+                <div class="meter__track">
+                  <div class="meter__fill" [style.width.%]="combinedRate()" [class]="'meter__fill meter__fill--' + tone(combinedRate())"></div>
+                </div>
+                <span class="meter__pct">{{ summary().combined.totalTransactions ? combinedRate() + '%' : '—' }}</span>
+              </div>
+            </td>
           </tr>
         </tfoot>
       </table>
     </div>
+
+    <details class="how-to">
+      <summary><i class="pi pi-info-circle"></i> How to read this table</summary>
+      <ul>
+        <li><b>Total / Σ Amount</b> — receipts of that payment type in the MIS, and their rupee value.</li>
+        <li><b>Matched</b> — found in the bank statement / MPR by the matching rules. <b>Gateway</b> — matched through the EaseBuzz gateway ID. <b>Contra</b> — cheques accounted for by the refund document.</li>
+        <li><b>Partial</b> — part of a grouped match; <b>Mismatch</b> — reference found but the amount differs; <b>Unmatched</b> — no counterpart found yet (often because the bank / MPR file for those dates is not uploaded yet).</li>
+        <li><b>Balance Amount</b> — shortfall where a grouped match came up short of its bank credit. <span class="pill pill--good"><i class="pi pi-check"></i> 0.00</span> means nothing pending; <span class="pill pill--bad"><i class="pi pi-arrow-down-right"></i></span> means money still to be accounted for.</li>
+        <li><b>Reconciled</b> — (Matched + Gateway + Contra) ÷ Total. Green 95%+, amber 80–95%, red below 80%.</li>
+      </ul>
+    </details>
   </div>
 </div>

@@ -47,7 +47,8 @@ interface NavGroup {
   owns?: readonly string[];
 }
 
-const NAV_GROUPS: NavGroup[] = [
+/** Also used by ShellComponent to caption the page loader with the destination's own nav label. */
+export const NAV_GROUPS: NavGroup[] = [
   {
     // The landing page — every signed-in user sees it, whatever they're granted.
     label: 'Overview',

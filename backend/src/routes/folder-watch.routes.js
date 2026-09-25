@@ -9,6 +9,8 @@ const {
 } = require('../mappers');
 const { runScan } = require('../folder-watch/scanner');
 const { arm } = require('../folder-watch/scheduler');
+const { encryptSecret, connectShare } = require('../folder-watch/share-credentials');
+const fs = require('fs/promises');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -30,40 +32,73 @@ router.get('/config', async (req, res, next) => {
 // PUT /api/folder-watch/config — creates the single row on first save, updates it after.
 router.put('/config', async (req, res, next) => {
   try {
-    const { folderPath, runTime, active, uploadedByLabel } = req.body || {};
+    const { folderPath, runTime, active, uploadedByLabel, shareUsername, sharePassword } = req.body || {};
     if (!folderPath || !String(folderPath).trim()) return res.status(400).json({ error: 'folderPath is required' });
     if (!runTime || !/^\d{1,2}:\d{2}(:\d{2})?$/.test(runTime)) {
       return res.status(400).json({ error: 'runTime must be HH:MM (24-hour, IST)' });
     }
 
-    const { rows: existing } = await db.query('SELECT id FROM folder_watch_config ORDER BY id LIMIT 1');
+    const { rows: existing } = await db.query('SELECT id, share_password_enc FROM folder_watch_config ORDER BY id LIMIT 1');
+
+    // Share login: a blank user ID clears the login (password too). A blank
+    // password keeps the one already saved — the screen never receives it,
+    // so it can't send it back.
+    const username = shareUsername ? String(shareUsername).trim() : '';
+    let passwordEnc = existing[0]?.share_password_enc ?? null;
+    const passwordChanged = !!(username && sharePassword);
+    if (!username) passwordEnc = null;
+    else if (sharePassword) passwordEnc = encryptSecret(sharePassword);
 
     let row;
     if (existing.length === 0) {
       const { rows } = await db.query(
-        `INSERT INTO folder_watch_config (folder_path, run_time, active, uploaded_by_label, updated_by)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [String(folderPath).trim(), runTime, active ?? true, uploadedByLabel || 'Automated (Folder Watch)', req.user.sub],
+        `INSERT INTO folder_watch_config (folder_path, run_time, active, uploaded_by_label, share_username, share_password_enc, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [String(folderPath).trim(), runTime, active ?? true, uploadedByLabel || 'Automated (Folder Watch)', username || null, passwordEnc, req.user.sub],
       );
       row = rows[0];
     } else {
       const { rows } = await db.query(
         `UPDATE folder_watch_config
-            SET folder_path = $2, run_time = $3, active = $4, uploaded_by_label = $5, updated_at = now(), updated_by = $6
+            SET folder_path = $2, run_time = $3, active = $4, uploaded_by_label = $5,
+                share_username = $6, share_password_enc = $7, updated_at = now(), updated_by = $8
           WHERE id = $1 RETURNING *`,
-        [existing[0].id, String(folderPath).trim(), runTime, active ?? true, uploadedByLabel || 'Automated (Folder Watch)', req.user.sub],
+        [existing[0].id, String(folderPath).trim(), runTime, active ?? true, uploadedByLabel || 'Automated (Folder Watch)', username || null, passwordEnc, req.user.sub],
       );
       row = rows[0];
     }
 
     await logAction({
       actorUserId: req.user.sub, entityType: 'folder_watch_config', entityId: row.id,
-      action: 'FOLDER_WATCH_CONFIG_UPDATED', details: { folderPath: row.folder_path, runTime: row.run_time, active: row.active }, req,
+      action: 'FOLDER_WATCH_CONFIG_UPDATED',
+      details: { folderPath: row.folder_path, runTime: row.run_time, active: row.active, shareUsername: row.share_username, passwordChanged },
+      req,
     });
 
     await arm(); // a changed time/enabled-state takes effect immediately, no server restart
 
     res.json(folderWatchConfigRowToApi(row));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/folder-watch/test-connection — with the SAVED settings, logs in
+// to the share (if a user ID is saved) and lists the folder. Reads nothing,
+// ingests nothing, runs nothing.
+router.post('/test-connection', async (req, res, next) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM folder_watch_config ORDER BY id LIMIT 1');
+    const config = rows[0];
+    if (!config) return res.status(400).json({ error: 'Save the settings first.' });
+    try {
+      const login = await connectShare(config);
+      const entries = await fs.readdir(config.folder_path, { withFileTypes: true });
+      const spreadsheets = entries.filter((e) => e.isFile() && /\.(xlsx|xls)$/i.test(e.name)).length;
+      res.json({ ok: true, usedLogin: login.connected, filesInFolder: entries.length, spreadsheets });
+    } catch (err) {
+      res.json({ ok: false, error: err.message });
+    }
   } catch (err) {
     next(err);
   }

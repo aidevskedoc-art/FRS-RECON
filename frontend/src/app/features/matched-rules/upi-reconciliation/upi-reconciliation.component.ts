@@ -8,9 +8,11 @@ import { TooltipModule } from 'primeng/tooltip';
 import { UcrMatchedService } from '../../../core/services/ucr-matched.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import { UcrIpRecord, UcrMatchStatus } from '../../../core/models';
+import { AiLoaderComponent } from '../../../shared/ui/ai-loader.component';
 
 const STATUS_LABELS: Record<UcrMatchStatus, string> = {
   MATCHED: 'Matched',
+  GROUPED_MATCHED: 'Grouped Matched',
   AMOUNT_MISMATCH: 'Amount Mismatch',
   UNMATCHED: 'No UPI MPR Row',
 };
@@ -29,7 +31,7 @@ const STATUS_LABELS: Record<UcrMatchStatus, string> = {
 @Component({
   selector: 'app-upi-reconciliation',
   standalone: true,
-  imports: [RouterLink, FormsModule, ButtonModule, TableModule, SelectModule, TooltipModule],
+  imports: [RouterLink, FormsModule, ButtonModule, TableModule, SelectModule, TooltipModule, AiLoaderComponent],
   templateUrl: './upi-reconciliation.component.html',
   styleUrl: './upi-reconciliation.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -47,11 +49,13 @@ export class UpiReconciliationComponent {
   protected readonly statusOptions = [
     { label: 'All statuses', value: 'ALL' as const },
     { label: 'Matched', value: 'MATCHED' as const },
+    { label: 'Grouped Matched', value: 'GROUPED_MATCHED' as const },
     { label: 'Amount Mismatch', value: 'AMOUNT_MISMATCH' as const },
     { label: 'No UPI MPR Row', value: 'UNMATCHED' as const },
   ];
 
   protected readonly matchedCount = computed(() => this.rows().filter((r) => r.matchStatus === 'MATCHED').length);
+  protected readonly groupedMatchedCount = computed(() => this.rows().filter((r) => r.matchStatus === 'GROUPED_MATCHED').length);
   protected readonly mismatchCount = computed(() => this.rows().filter((r) => r.matchStatus === 'AMOUNT_MISMATCH').length);
   protected readonly unmatchedCount = computed(() => this.rows().filter((r) => r.matchStatus === 'UNMATCHED' || !r.matchStatus).length);
   protected readonly misTotal = computed(() => this.rows().reduce((s, r) => s + (r.amount ?? 0), 0));

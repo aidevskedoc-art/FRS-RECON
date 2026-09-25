@@ -1,8 +1,13 @@
 <div class="recon-summary">
   <div class="recon-summary__header">
-    <div>
+    <div class="recon-summary__title">
       <h2>Reconciliation Summary</h2>
-      <p>Bank Statement vs IP, Diag OP &amp; UPI Payment Statement reconciliation, across every configured matching rule.</p>
+      <i
+        class="pi pi-info-circle page-info"
+        pTooltip="Bank Statement vs IP, Diag OP &amp; UPI Payment Statement reconciliation, across every configured matching rule."
+        tooltipPosition="bottom"
+        tabindex="0"
+      ></i>
     </div>
     @if (summary(); as s) {
       <p class="recon-summary__generated">Updated {{ s.generatedAt | date: 'medium' }}</p>

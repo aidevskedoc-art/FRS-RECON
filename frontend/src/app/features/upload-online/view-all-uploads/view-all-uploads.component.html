@@ -32,6 +32,11 @@
       [selection]="selected()"
       (selectionChange)="selected.set($event)"
       styleClass="p-datatable-sm"
+      [paginator]="true"
+      [rows]="25"
+      [rowsPerPageOptions]="[10, 25, 50, 100]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="{first} – {last} of {totalRecords}"
     >
       <ng-template #header>
         <tr>

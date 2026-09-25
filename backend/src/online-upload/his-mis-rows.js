@@ -168,12 +168,16 @@ function unitOf(families) {
   return null;
 }
 
+/** Why a split-paid receipt shows as Unmatched — the same words wherever it is reported. */
+const SPLIT_UPI_REASON =
+  'paid in two UPI parts (UPI + ManualUPI); the report gives only the combined amount, not the amount per reference';
+
 /**
  * The non-cash parts of one Diagnostics-sheet receipt, each with the reference
  * from its own column. A receipt paid partly by UPI and partly by transfer
  * yields two parts.
  */
-function diagParts(f, heldBack) {
+function diagParts(f, heldBack, splitPaid = []) {
   const parts = [];
   const upi = f.number('upiAmt');
   if (upi) {
@@ -182,13 +186,14 @@ function diagParts(f, heldBack) {
     if (upiRef && manualRef) {
       // Paid partly by UPI and partly by ManualUPI: the export stored two rows
       // (e.g. 70 + 630), but this report gives only their combined amount in
-      // one column. Any split would be invented, so the receipt is held back.
-      heldBack.push({
-        receiptNo: f.text('receiptNo'),
-        amount: upi,
-        references: [upiRef, manualRef],
-        reason: 'paid partly by UPI and partly by ManualUPI; the report gives only the combined amount, so the split per reference is unknown',
-      });
+      // one column. Inventing a split would be wrong — but so is leaving the
+      // receipt out (2026-09-25: 3 receipts, Rs 3,517, silently missing from
+      // every list and total). So it is stored ONCE, at the combined amount,
+      // with BOTH references, the way the OP register already stores a bill
+      // paid through two references — and it shows in the Unmatched list until
+      // checked. Reported in splitPaid so the upload says so.
+      parts.push({ mode: 'SPLIT_UPI', amount: upi, ref: upiRef, manualRef });
+      splitPaid.push({ receiptNo: f.text('receiptNo'), amount: upi, references: [upiRef, manualRef], reason: SPLIT_UPI_REASON });
     } else if (upiRef || !manualRef) parts.push({ mode: 'UPI', amount: upi, ref: upiRef });
     else parts.push({ mode: 'MANUALUPI', amount: upi, ref: manualRef });
   }
@@ -209,7 +214,7 @@ const IP_MODE_CONSTANTS = {
   Online: { payType: null, remarks: null, paymentRemarks: null },
 };
 
-function ipRow({ receiptNumber, receiptDate, yhno, ipNo, patientName, mode, ref, amount, userId, userName }) {
+function ipRow({ receiptNumber, receiptDate, yhno, ipNo, patientName, mode, ref, manualRef = null, amount, userId, userName }) {
   const k = IP_MODE_CONSTANTS[mode];
   return {
     receiptNumber,
@@ -218,7 +223,8 @@ function ipRow({ receiptNumber, receiptDate, yhno, ipNo, patientName, mode, ref,
     ipNo,
     patientName,
     // UPI's RRN sat in the second transaction column; transfers and ManualUPI in the first.
-    transactionRef1: mode === 'UPI' ? null : ref,
+    // A split-paid receipt (diagParts SPLIT_UPI) keeps its ManualUPI reference here too.
+    transactionRef1: mode === 'UPI' ? manualRef : ref,
     transactionRef2: mode === 'UPI' ? ref : null,
     paymentMode: mode,
     payType: k.payType,
@@ -235,9 +241,9 @@ function ipRow({ receiptNumber, receiptDate, yhno, ipNo, patientName, mode, ref,
   };
 }
 
-const DIAG_TO_IP_MODE = { UPI: 'UPI', MANUALUPI: 'ManualUPI', ONLINE: 'Online' };
+const DIAG_TO_IP_MODE = { UPI: 'UPI', MANUALUPI: 'ManualUPI', ONLINE: 'Online', SPLIT_UPI: 'UPI' };
 
-function misIpRows(families, heldBack = []) {
+function misIpRows(families, heldBack = [], splitPaid = []) {
   const rows = [];
   for (const sheet of families.UCR_IP.sheets) {
     requireMisColumns(sheet, 'Online Collection MIS — IP');
@@ -271,7 +277,7 @@ function misIpRows(families, heldBack = []) {
       const no = f.text('receiptNo');
       if (!isOdeSeries(no)) continue;
       const receiptDate = f.dateTime('receiptDate');
-      for (const part of diagParts(f, heldBack)) {
+      for (const part of diagParts(f, heldBack, splitPaid)) {
         rows.push(
           ipRow({
             receiptNumber: `${monthOf(receiptDate)}/${no}/${yearOf(receiptDate)}`,
@@ -281,6 +287,7 @@ function misIpRows(families, heldBack = []) {
             patientName: singleSpaced(f.text('patientName')),
             mode: DIAG_TO_IP_MODE[part.mode],
             ref: part.ref,
+            manualRef: part.manualRef ?? null,
             amount: part.amount,
             userId: f.text('userId'),
             userName: f.text('userName'),
@@ -294,7 +301,7 @@ function misIpRows(families, heldBack = []) {
 
 // ---- Online Collection MIS — Diagnostics / OP (diag_op_payment_records) -----
 
-function misDiagRows(families, heldBack = []) {
+function misDiagRows(families, heldBack = [], splitPaid = []) {
   const rows = [];
 
   // Doctor-fee register: one MIS row per BILL. A bill is several register
@@ -374,19 +381,22 @@ function misDiagRows(families, heldBack = []) {
       const cash = f.number('cashAmt');
       const card = f.number('cardAmt');
       const chequePart = f.number('chequeAmt');
-      for (const part of diagParts(f, heldBack)) {
+      for (const part of diagParts(f, heldBack, splitPaid)) {
         const amount = f.number('amount');
+        const split = part.mode === 'SPLIT_UPI';
         rows.push({
           receiptNumber: `${no}/${yearOf(receiptDate)}`,
           receiptDate,
           yhno: f.text('yhNo'),
           diagNo: ors || refund ? null : f.text('diagNo'),
           patientName: f.text('patientName'),
-          transactionRef1: null,
+          // Split-paid: ManualUPI reference first, UPI second, pay mode blank —
+          // how the OP register stores a bill paid through two references.
+          transactionRef1: split ? part.manualRef : null,
           transactionRef2: part.ref,
           transactionRef3: ors && part.mode === 'UPI' ? part.ref : null,
-          payType: part.mode === 'ONLINE' ? 'ONL' : part.mode,
-          payMode: part.mode,
+          payType: part.mode === 'ONLINE' ? 'ONL' : split ? 'UPI' : part.mode,
+          payMode: split ? null : part.mode,
           patType: ors ? null : f.text('patType') ? f.text('patType').toUpperCase() : null,
           // Not the Diagnostics bill total (the export's figure), which this
           // report does not carry: the receipt's own amount.
@@ -567,18 +577,20 @@ function verificationOf(families) {
 function hisIpMisUpload(bufferOrWorkbook) {
   const families = readFamilies(toWorkbook(bufferOrWorkbook), ['UCR_IP', 'UCR_DIAG']);
   const heldBack = [];
-  const rows = misIpRows(families, heldBack);
+  const splitPaid = [];
+  const rows = misIpRows(families, heldBack, splitPaid);
   const unitName = unitOf(families);
-  return { sheets: rows.length ? [{ sheetName: 'ADVANCES_YH.RPT', unitName, rows }] : [], heldBack, verification: verificationOf(families) };
+  return { sheets: rows.length ? [{ sheetName: 'ADVANCES_YH.RPT', unitName, rows }] : [], heldBack, splitPaid, verification: verificationOf(families) };
 }
 
 /** For POST /api/diag-op-payments. */
 function hisDiagMisUpload(bufferOrWorkbook) {
   const families = readFamilies(toWorkbook(bufferOrWorkbook), ['UCR_OP', 'UCR_DIAG']);
   const heldBack = [];
-  const rows = misDiagRows(families, heldBack);
+  const splitPaid = [];
+  const rows = misDiagRows(families, heldBack, splitPaid);
   const unitName = unitOf(families);
-  return { sheets: rows.length ? [{ sheetName: 'ADVANCES_OP_YH.RPT', unitName, rows }] : [], heldBack, verification: verificationOf(families) };
+  return { sheets: rows.length ? [{ sheetName: 'ADVANCES_OP_YH.RPT', unitName, rows }] : [], heldBack, splitPaid, verification: verificationOf(families) };
 }
 
 /** For POST /api/cheque-collections: one sheet per collection kind, as the ledger's parser returns them. */

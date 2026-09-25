@@ -1,0 +1,64 @@
+// =====================================================================
+// Laptop & desktop fit — 1280 to 1920 wide (2026-09-25, client machines).
+//
+// The CSS widths that actually occur on the client's machines:
+//   1280 x 720/800   small laptops
+//   1366 x 768       the most common office laptop
+//   1536 x 864       a 1920 x 1080 screen at Windows' default 125% scaling
+//   1920 x 1080      desktop monitors at 100%
+// So "1920 laptop" usually means 1536 here, and height is as tight as width.
+//
+// Layout-only overrides of tokens; colours and components stay where they
+// are. Loaded last of the AI Glass partials so these win at equal
+// specificity. The sidebar's automatic collapse below 1440 lives in
+// sidebar.store.ts (it is state, not style — the user can still toggle it).
+// =====================================================================
+
+// ---- width ------------------------------------------------------------
+
+@media (max-width: 1535.98px) {
+  :root {
+    --sidebar-width: 248px;
+  }
+}
+
+@media (max-width: 1439.98px) {
+  :root {
+    --shell-gap: 8px;
+  }
+
+  // Denser table cells: ~10 more columns' worth of room across a wide table.
+  .p-datatable {
+    .p-datatable-thead > tr > th {
+      padding: 10px 12px;
+    }
+
+    .p-datatable-tbody > tr > td {
+      padding: 9px 12px;
+    }
+  }
+
+  .data-table {
+    th {
+      padding: 10px 12px;
+    }
+
+    td {
+      padding: 9px 12px;
+    }
+  }
+}
+
+// ---- height -----------------------------------------------------------
+// The top bar is 52px everywhere and 40px while a page is scrolled
+// (_tokens.scss, shell.component.ts) — no separate short-screen rule needed.
+
+// ---- tables never push the page wider than the screen ----------------
+
+// A non-scrollable p-table's container has no overflow of its own, so a
+// table wider than its card spilled past it (or squeezed every column).
+// Scrollable tables already scroll inside PrimeNG's own container.
+.p-datatable:not(.p-datatable-scrollable) > .p-datatable-table-container {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}

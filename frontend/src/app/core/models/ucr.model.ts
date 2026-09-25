@@ -21,7 +21,8 @@ export interface UcrBatch {
   matchedAt: string | null;
 }
 
-export type UcrMatchStatus = 'MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED';
+/** GROUPED_MATCHED: 2+ MIS rows shared one reference and their SUMMED amount matched the gateway row (a split payment) — see card-matcher.js/upi-matcher.js. */
+export type UcrMatchStatus = 'MATCHED' | 'GROUPED_MATCHED' | 'AMOUNT_MISMATCH' | 'UNMATCHED';
 export type UcrMatchSourceType = 'CARD_MPR' | 'CARD_PINELABS' | 'UPI_MPR';
 
 /** The MIS-side row — one payment instrument (Card or UPI) from the IP export. */

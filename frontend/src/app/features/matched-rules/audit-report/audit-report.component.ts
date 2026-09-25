@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
+import { TooltipModule } from 'primeng/tooltip';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
 import { MasterDataService } from '../../../core/services/master-data.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
@@ -22,7 +23,7 @@ import { AuditDateBasis, AuditPeriodType, AuditReportPreview, AuditReportQuery }
 @Component({
   selector: 'app-audit-report',
   standalone: true,
-  imports: [FormsModule, ButtonModule, SelectModule, TableModule],
+  imports: [FormsModule, ButtonModule, SelectModule, TableModule, TooltipModule],
   templateUrl: './audit-report.component.html',
   styleUrl: './audit-report.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

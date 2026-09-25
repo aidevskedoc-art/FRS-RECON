@@ -18,6 +18,7 @@ const chequeCollectionsRouter = require('./routes/cheque-collections.routes');
 const refundsRouter = require('./routes/refunds.routes');
 const ucrUploadRouter = require('./routes/ucr-upload.routes');
 const ucrMatchedRouter = require('./routes/ucr-matched.routes');
+const mismatchExportRouter = require('./routes/mismatch-export.routes');
 const gatewayRulesRouter = require('./routes/gateway-rules.routes');
 const uploadsDetectRouter = require('./routes/uploads-detect.routes');
 const authRouter = require('./routes/auth.routes');
@@ -82,6 +83,8 @@ app.use('/api/cheque-collections', chequeCollectionsRouter);
 app.use('/api/refunds', refundsRouter);
 app.use('/api/ucr-upload', ucrUploadRouter);
 app.use('/api/ucr-matched', ucrMatchedRouter);
+// Spans all four collection streams, so it is mounted at /api rather than under one of them.
+app.use('/api', mismatchExportRouter);
 // Matching policy for the four gateway/settlement matchers. Deliberately its own
 // router rather than a fifth mountRuleCrud — see gateway-rules.routes.js.
 app.use('/api/gateway-rules', gatewayRulesRouter);

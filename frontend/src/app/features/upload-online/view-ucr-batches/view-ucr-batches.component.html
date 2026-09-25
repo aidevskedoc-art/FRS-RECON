@@ -1,7 +1,12 @@
 <div class="ucr-batches">
   <div class="page-header">
     <h2>UPI &amp; Card Uploads</h2>
-    <p>Every file uploaded for the UPI &amp; Card Reconciliation module — pick a source to see its upload history.</p>
+    <i
+      class="pi pi-info-circle page-info"
+      pTooltip="Every file uploaded for the UPI &amp; Card Reconciliation module — pick a source to see its upload history."
+      tooltipPosition="bottom"
+      tabindex="0"
+    ></i>
   </div>
 
   @if (error(); as err) {
@@ -26,7 +31,16 @@
   </div>
 
   <div class="ucr-batches__table-wrap">
-    <p-table [value]="batches()" dataKey="id" styleClass="p-datatable-sm">
+    <p-table
+      [value]="batches()"
+      dataKey="id"
+      styleClass="p-datatable-sm"
+      [paginator]="true"
+      [rows]="25"
+      [rowsPerPageOptions]="[10, 25, 50, 100]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="{first} – {last} of {totalRecords}"
+    >
       <ng-template #header>
         <tr>
           <th>File</th>

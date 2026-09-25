@@ -23,7 +23,7 @@ const { parseCardMprWorkbook } = require('../online-upload/card-mpr-parser');
 const { parseCardPinelabsWorkbook } = require('../online-upload/card-pinelabs-parser');
 const { parseUpiMprWorkbook } = require('../online-upload/upi-mpr-parser');
 const { assertNewFile } = require('../online-upload/dedupe');
-const { findStoredOverlap, assertNoOverlap, OVERLAP_KEYS } = require('../online-upload/ucr-overlap');
+const { splitStoredRows, overlapWhere, OVERLAP_KEYS } = require('../online-upload/ucr-overlap');
 const {
   ucrIpBatchRowToApi,
   ucrIpRecordRowToApi,
@@ -68,14 +68,19 @@ const upload = multer({
  *   registered path (both are 'ucr_ip_upload_batches'/'ucr_ip_records') — the batch row is tagged with this value
  *   and every list/detail/delete query is scoped to it, so 'ucr-op' and 'ucr-diag' never see each other's (or IP's) batches.
  * @param {{ source: 'IP'|'OP'|'DIAG', keyOf: (r: any) => {receiptNo, instrumentType, amount, referenceId} }} [overlap]
- *   the MIS sources only: refuse a file whose transactions are already stored (overlapping periods), and scope the
+ *   the MIS sources only: store only the transactions not already stored (overlapping periods — a file with
+ *   nothing new is refused 409), and scope the
  *   same-file hash check to this source. IP needs the explicit scope because its batches carry the column's
  *   default 'IP' without `misSource` — unscoped, the combined workbook's IP upload would collide with its own
  *   OP/DIAG uploads of the same bytes.
  * @param {boolean} [storesUnitName] the three Card/UPI MIS sources: keep the parser's `unitName` (the HIS report
  *   header) on the batch, which is where the Mismatch Review location filter (AC-10) reads a row's location from.
+ * @param {(client: any, req: any, parsed: any) => Promise<any>} [beforeRecords] runs once, inside the same
+ *   transaction, after the batch row is inserted but before the per-row loop — for a source that also needs a
+ *   sibling row created first (upi-mpr's bank_statement_uploads mirror). Its return value is passed to
+ *   `insertRecord` as a 4th argument; omitted sources get `undefined`.
  */
-function registerUcrUploadQuintet({ path, batchTable, recordTable, parseWorkbook, batchRowToApi, recordRowToApi, insertRecord, recordIdentityLabel, misSource, overlap, storesUnitName = false }) {
+function registerUcrUploadQuintet({ path, batchTable, recordTable, parseWorkbook, batchRowToApi, recordRowToApi, insertRecord, recordIdentityLabel, misSource, overlap, storesUnitName = false, beforeRecords }) {
   const scopeClause = misSource ? ` WHERE mis_source = '${misSource}'` : '';
   const scopeAnd = misSource ? ` AND mis_source = '${misSource}'` : '';
   const hashScopeValue = overlap ? overlap.source : misSource;
@@ -86,14 +91,27 @@ function registerUcrUploadQuintet({ path, batchTable, recordTable, parseWorkbook
       if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected multipart field "file")' });
 
       const fileHash = await assertNewFile(batchTable, req.file.buffer, hashScopeValue ? { column: 'mis_source', value: hashScopeValue } : undefined);
-      const { rows, mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped, verification, unitName } = parseWorkbook(req.file.buffer);
+      const parsed = parseWorkbook(req.file.buffer);
+      const { mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped, verification, unitName } = parsed;
+      let rows = parsed.rows;
       if (rows.length === 0) {
         return res.status(400).json({
           error: `No ${recordIdentityLabel} rows recognised in this file. Columns seen: ${fileHeaders.join(', ') || '(none)'}`,
         });
       }
+      // An overlapping period (e.g. a 1-15 Sep file after a 1-6 Sep one):
+      // the transactions already stored are skipped and only the new ones
+      // stored — same as the MIS uploads. Only a file with NOTHING new is refused.
+      let rowsSkipped = 0;
       if (overlap) {
-        assertNoOverlap(await findStoredOverlap(overlap.source, rows.map(overlap.keyOf)), recordIdentityLabel);
+        const split = await splitStoredRows(overlap.source, rows, overlap.keyOf);
+        if (!split.newRows.length) {
+          const err = new Error(`All ${rows.length} ${recordIdentityLabel} rows in this file are already stored — ${overlapWhere(split.overlap)}. Nothing was saved.`);
+          err.status = 409;
+          throw err;
+        }
+        rows = split.newRows;
+        rowsSkipped = split.skipped;
       }
 
       const uploadedBy = uploaderOf(req);
@@ -115,11 +133,15 @@ function registerUcrUploadQuintet({ path, batchTable, recordTable, parseWorkbook
           vals,
         );
         const created = batchRows[0];
-        for (const r of rows) await insertRecord(created.id, r, client);
+        const extra = beforeRecords ? await beforeRecords(client, req, { rows, unitName, batch: created }) : undefined;
+        for (const r of rows) await insertRecord(created.id, r, client, extra);
         return created;
       });
 
-      res.status(201).json({ ...batchRowToApi(batch), mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped, ...(verification ? { verification } : {}) });
+      res.status(201).json({
+        ...batchRowToApi(batch), rowsStored: rows.length, rowsSkipped, mappedColumns, fileHeaders, sheetsParsed, sheetsSkipped,
+        ...(verification ? { verification } : {}),
+      });
     } catch (err) {
       next(err);
     }
@@ -180,8 +202,18 @@ function registerUcrUploadQuintet({ path, batchTable, recordTable, parseWorkbook
   router.delete(`/${path}/batches/:id`, async (req, res, next) => {
     try {
       if (!(await assertNotPastGoLive(req, res))) return;
-      const { rowCount } = await db.query(`DELETE FROM ${batchTable} WHERE id = $1${scopeAnd}`, [req.params.id]);
-      if (rowCount === 0) return res.status(404).json({ error: 'Batch not found' });
+      const found = await db.withTransaction(async (client) => {
+        const { rows } = await client.query(`DELETE FROM ${batchTable} WHERE id = $1${scopeAnd} RETURNING *`, [req.params.id]);
+        if (rows.length === 0) return false;
+        // A batch mirrored into bank_statement_records (UPI MPR) takes its
+        // mirror with it — left behind, the copy stayed in the matching pool
+        // and every re-upload added another identical set of candidates.
+        if (rows[0].bank_batch_id) {
+          await client.query('DELETE FROM bank_statement_uploads WHERE id = $1', [rows[0].bank_batch_id]);
+        }
+        return true;
+      });
+      if (!found) return res.status(404).json({ error: 'Batch not found' });
       res.status(204).end();
     } catch (err) {
       next(err);
@@ -300,8 +332,34 @@ registerUcrUploadQuintet({
   batchRowToApi: ucrUpiMprBatchRowToApi,
   recordRowToApi: ucrUpiMprRecordRowToApi,
   recordIdentityLabel: 'UPI MPR',
-  insertRecord: (batchId, r, client) =>
-    client.query(
+  // A UPI MPR row is the real settlement counterpart for an IP/Diag/OP MIS
+  // receipt paid by UPI — but the main CNF engine's candidate pool
+  // (matched-rules.routes.js's loadBankRecords) only ever reads
+  // bank_statement_records, and IP/Diag's match_bank_record_id is a hard FK
+  // into that table (ucr_upi_mpr_records has its own unrelated id sequence,
+  // so writing its id there would either violate the FK or, worse, silently
+  // point at an unrelated bank row that happens to share the id). So every
+  // row is mirrored into bank_statement_records too, source='UPI_MPR' — the
+  // same pattern PayU MPR already uses to ride on this table. rrn -> chq_ref_no
+  // (and into narration, so a CONTAINS leaf also finds it) and
+  // transaction_amount -> deposit_amt are the only fields the existing "UPI —
+  // reference in bank ref / narration" rules read. ucr_upi_mpr_records itself
+  // is untouched, so the Card/UPI reconciliation screen keeps working exactly
+  // as it does today.
+  beforeRecords: async (client, req, { rows, batch }) => {
+    const dates = rows.map((r) => r.settlementDate).filter(Boolean).sort();
+    const { rows: bankBatchRows } = await client.query(
+      `INSERT INTO bank_statement_uploads
+         (bank_name, account_no, account_branch, statement_from, statement_to, file_name, file_size_bytes, row_count, uploaded_by, source)
+       VALUES ('UPI MPR', NULL, NULL, $1, $2, $3, $4, $5, $6, 'UPI_MPR') RETURNING id`,
+      [dates[0] || null, dates[dates.length - 1] || null, req.file.originalname, req.file.size, rows.length, uploaderOf(req)],
+    );
+    // Linked so deleting this UPI batch also deletes its mirror (see the DELETE route).
+    await client.query('UPDATE ucr_upi_mpr_upload_batches SET bank_batch_id = $1 WHERE id = $2', [bankBatchRows[0].id, batch.id]);
+    return { bankBatchId: bankBatchRows[0].id };
+  },
+  insertRecord: async (batchId, r, client, extra) => {
+    await client.query(
       `INSERT INTO ucr_upi_mpr_records
          (batch_id, external_mid, external_tid, merchant_vpa, payer_vpa, upi_trxn_id, order_id, rrn,
           transaction_req_date, settlement_date, transaction_amount, msf_amount, net_amount, trans_type, pay_type, cr_dr)
@@ -310,7 +368,14 @@ registerUcrUploadQuintet({
         batchId, r.externalMid, r.externalTid, r.merchantVpa, r.payerVpa, r.upiTrxnId, r.orderId, r.rrn,
         r.transactionReqDate, r.settlementDate, r.transactionAmount, r.msfAmount, r.netAmount, r.transType, r.payType, r.crDr,
       ],
-    ),
+    );
+    if (!r.rrn || r.transactionAmount === null || r.transactionAmount === undefined) return; // no reference or amount to match on
+    await client.query(
+      `INSERT INTO bank_statement_records (batch_id, txn_date, narration, chq_ref_no, deposit_amt, source)
+       VALUES ($1, $2, $3, $4, $5, 'UPI_MPR')`,
+      [extra.bankBatchId, r.settlementDate, `UPI MPR ${r.orderId || ''} ${r.rrn}`.trim(), r.rrn, r.transactionAmount],
+    );
+  },
 });
 
 module.exports = router;

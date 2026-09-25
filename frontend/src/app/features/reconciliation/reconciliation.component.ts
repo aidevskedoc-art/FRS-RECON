@@ -82,7 +82,7 @@ const GROUPS: readonly { id: UploadZone | 'UNKNOWN'; title: string }[] = [
 
 const PREVIEW_STATUS_LABEL: Record<string, string> = {
   VERIFIED: 'Verified against the report’s own totals',
-  UNVERIFIED: 'Could not be checked — review before running',
+  UNVERIFIED: 'Stored — its totals could not be checked',
   FAILED: 'Failed its check — will not be uploaded',
 };
 
@@ -94,6 +94,7 @@ function uploadSummary(batch: UploadedBatch | null): string {
   const parts = [`${batch.rowCount.toLocaleString('en-IN')} rows saved`];
   if (batch.rowsSkipped) parts.push(`${batch.rowsSkipped.toLocaleString('en-IN')} already stored, skipped`);
   if (batch.heldBack) parts.push(`${batch.heldBack} held back for review`);
+  if (batch.splitPaid) parts.push(`${batch.splitPaid} paid in two UPI parts — in the Unmatched list`);
   if (batch.verification === 'VERIFIED') parts.push('verified against report totals');
   if (batch.verification === 'UNVERIFIED') parts.push('not checkable against report totals');
   return parts.join(' · ');
@@ -121,10 +122,11 @@ async function fileHash(file: File): Promise<string> {
  * files are saved through the same upload endpoints that exist today, chosen by
  * detection, and the same reconciliation passes run afterwards.
  *
- * Nothing is written until the user presses Run, and Run stays disabled while
- * anything is unresolved: a file with no type, a report that failed its check
- * against its own printed totals, transactions already stored from an earlier
- * file, or warnings nobody has looked at yet.
+ * Nothing is written until the user presses Run. What is stored follows the
+ * backend's shared rule (upload-decision.js) — the same one the folder
+ * scheduler follows: a report is skipped only when storing it would be wrong
+ * (unreadable, nothing new, would double-count); warnings are shown, not
+ * asked about. Run waits only for a file whose type a person must pick.
  */
 @Component({
   selector: 'app-reconciliation',
@@ -181,13 +183,11 @@ export class ReconciliationComponent {
   /** Every reason Run cannot start yet, in words — shown beside the button. */
   protected readonly blockers = computed(() => {
     const pending = this.staged().filter((f) => f.status !== 'uploaded');
-    const noType = pending.filter((f) => f.status !== 'detecting' && f.chosenTypes.length === 0).length;
+    const noType = pending.filter((f) => f.status !== 'detecting' && f.chosenTypes.length === 0 && !this.nothingToStore(f)).length;
     const blocked = pending.filter((f) => f.chosenTypes.some((t) => this.blockReason(f, t))).length;
-    const review = pending.filter((f) => this.needsReview(f) && !f.acknowledged).length;
     const out: string[] = [];
     if (noType) out.push(`${noType} file(s) have nothing selected to upload — pick a type or remove the file`);
     if (blocked) out.push(`${blocked} file(s) include a report that cannot be uploaded — untick it or remove the file`);
-    if (review) out.push(`${review} file(s) have warnings to review`);
     return out;
   });
 
@@ -316,7 +316,6 @@ export class ReconciliationComponent {
         alternatives: [],
         certain: false,
         chosenTypes: [],
-        acknowledged: false,
         rowCount: null,
         error: null,
       });
@@ -345,10 +344,10 @@ export class ReconciliationComponent {
               detected: result.detected,
               alternatives: result.alternatives,
               certain: result.certain,
-              // Every type that matched is pre-ticked — the detector reads all
-              // sheets, so several matches mean several reports are present —
-              // EXCEPT one whose dry run says it must not be stored.
-              chosenTypes: matched.filter((m) => !this.previewBlock(m.preview)).map((m) => m.type),
+              // Pre-ticked = what the backend's shared rule (upload-decision.js,
+              // the same one the folder scheduler follows) says to store. When
+              // a person must pick the type, the best guess is offered.
+              chosenTypes: this.preTicked(matched, result.certain),
               error: result.error ?? null,
             };
             return { ...next, status: this.settledStatus(next) };
@@ -375,17 +374,6 @@ export class ReconciliationComponent {
       list.map((f) => {
         if (f.id !== id) return f;
         const next = { ...f, chosenTypes: types ?? [], certain: true, error: null };
-        return { ...next, status: this.settledStatus(next) };
-      }),
-    );
-  }
-
-  /** The person has read this file's warnings and accepts them — which also confirms what it is. */
-  protected acknowledge(id: string): void {
-    this.staged.update((list) =>
-      list.map((f) => {
-        if (f.id !== id) return f;
-        const next = { ...f, acknowledged: true, certain: true };
         return { ...next, status: this.settledStatus(next) };
       }),
     );
@@ -538,37 +526,36 @@ export class ReconciliationComponent {
     return this.matchesOf(entry).filter((m) => !!m.preview);
   }
 
-  /** Why a preview says this report must not be stored, or null. */
-  protected previewBlock(p: UploadPreview | undefined): string | null {
-    if (!p) return null;
-    if (p.status === 'FAILED') return 'it could not be read safely — see the reason below';
-    if (p.overlap?.rows) return `${p.overlap.rows.toLocaleString('en-IN')} of its rows are already stored from an earlier upload`;
-    if (p.ingest.rows === 0 && p.alreadyStored?.rows) return 'all of its rows are already stored from an earlier upload';
-    if (p.ingest.rows === 0) return 'it holds nothing for this upload';
-    return null;
+  /**
+   * Why this report will not be stored, or null — straight from the backend's
+   * shared rule (upload-decision.js), which the folder scheduler also follows,
+   * so the screen and the scheduler can't disagree about the same file.
+   */
+  protected skipReason(m: DetectedType | undefined): string | null {
+    return m?.decision?.action === 'SKIP' ? m.decision.message : null;
   }
 
   /** Why a chosen type cannot be uploaded from this file, or null. */
   protected blockReason(entry: StagedFile, type: string): string | null {
-    return this.previewBlock(this.matchesOf(entry).find((m) => m.type === type)?.preview);
+    return this.skipReason(this.matchesOf(entry).find((m) => m.type === type));
   }
 
-  /** True when a chosen report can be stored but has warnings or could not be checked. */
-  protected needsReview(entry: StagedFile): boolean {
-    return this.matchesOf(entry).some(
-      (m) =>
-        !!m.preview &&
-        entry.chosenTypes.includes(m.type) &&
-        (m.preview.status === 'UNVERIFIED' ||
-          (m.preview.heldBack?.length ?? 0) > 0 ||
-          m.preview.sheets.some((s) => s.problems.some((p) => p.severity === 'warning'))),
-    );
+  /** What to tick on arrival: what the shared rule stores; the best guess when a person must pick the type. */
+  private preTicked(matched: DetectedType[], certain: boolean): string[] {
+    const stored = matched.filter((m) => m.decision?.action === 'STORE').map((m) => m.type);
+    if (stored.length || certain || !matched.length) return stored;
+    return [matched[0].type];
+  }
+
+  /** Recognised, but every report in it is skipped (already stored, empty…) — nothing to do, and nothing to ask. */
+  protected nothingToStore(entry: StagedFile): boolean {
+    const matches = this.matchesOf(entry);
+    return entry.certain && matches.length > 0 && matches.every((m) => this.skipReason(m) !== null);
   }
 
   private settledStatus(entry: StagedFile): StagedFile['status'] {
-    if (!entry.chosenTypes.length) return 'needs-input';
+    if (!entry.chosenTypes.length) return this.nothingToStore(entry) ? 'ready' : 'needs-input';
     if (entry.chosenTypes.some((t) => this.blockReason(entry, t))) return 'needs-input';
-    if (this.needsReview(entry) && !entry.acknowledged) return 'needs-input';
     return entry.certain ? 'ready' : 'needs-input';
   }
 
@@ -605,12 +592,11 @@ export class ReconciliationComponent {
     if (entry.status !== 'needs-input') return null;
     if (!this.matchesOf(entry).length) return 'Not recognised — pick a type';
     if (entry.chosenTypes.some((t) => this.blockReason(entry, t))) return 'A selected report cannot be uploaded — untick it';
-    if (!entry.chosenTypes.length && this.matchesOf(entry).every((m) => this.previewBlock(m.preview))) {
+    if (!entry.chosenTypes.length && this.matchesOf(entry).every((m) => this.skipReason(m))) {
       return 'Nothing in this file can be uploaded (see below) — remove it';
     }
     if (!entry.chosenTypes.length) return 'Nothing selected to upload';
-    if (this.needsReview(entry) && !entry.acknowledged) return 'Review the warnings below';
-    if (this.matchesOf(entry).some((m) => !entry.chosenTypes.includes(m.type) && this.previewBlock(m.preview))) {
+    if (this.matchesOf(entry).some((m) => !entry.chosenTypes.includes(m.type) && this.skipReason(m))) {
       return 'Some reports in this file will not be uploaded — confirm the selection';
     }
     return `Contains ${this.matchesOf(entry).length} types — confirm`;

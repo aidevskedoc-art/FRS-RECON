@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ButtonModule } from 'primeng/button';
 import { ViewAllUploadsComponent } from '../view-all-uploads/view-all-uploads.component';
 import { ViewBankStatementsComponent } from '../view-bank-statements/view-bank-statements.component';
 import { ViewPayuMprComponent } from '../view-payu-mpr/view-payu-mpr.component';
@@ -51,6 +52,8 @@ const TABS: readonly StatementsTab[] = [
   selector: 'app-statements',
   standalone: true,
   imports: [
+    RouterLink,
+    ButtonModule,
     ViewAllUploadsComponent,
     ViewBankStatementsComponent,
     ViewPayuMprComponent,

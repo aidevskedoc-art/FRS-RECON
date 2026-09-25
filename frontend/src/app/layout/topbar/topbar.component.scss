@@ -8,7 +8,10 @@
 // A detached floating glass panel, like the sidebar.
 .topbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  // Sides take what they need; the title in the middle is the one thing that
+  // gives way (ellipsis) — the fixed 1fr/auto/1fr split let the identity
+  // strip run into the title on laptops.
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-4);
   height: 100%;
@@ -35,14 +38,15 @@
 
 .masthead__logo {
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
+  transition: width 200ms var(--ease), height 200ms var(--ease);
 }
 
 .masthead__rule {
   width: 1px;
-  height: 28px;
+  height: 22px;
   background: var(--ai-divider);
 }
 
@@ -53,20 +57,14 @@
   line-height: 1.1;
 }
 
-// The short mark (CBDR) over the full name in small italic.
+// The short mark (CBDR); the full name is its tooltip.
 .masthead__name {
   font-family: var(--font-serif);
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: 700;
   color: var(--brand-ink);
-}
-
-.masthead__expansion {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 0.68rem;
-  color: var(--brand-sub-ink);
-  @include mixins.truncate;
+  cursor: default;
+  transition: font-size 200ms var(--ease);
 }
 
 // ---------------------------------------------------------------------
@@ -80,7 +78,11 @@
 
 .topbar__route {
   margin: 0;
-  font-size: 1.3rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 1.1rem;
+  transition: font-size 200ms var(--ease);
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--text);
@@ -98,19 +100,111 @@
   min-width: 0;
 }
 
-// AC-9 identity — pale green panel, label/value grid so the two IDs line up.
-.identity {
-  display: grid;
-  grid-template-columns: auto auto;
+// AC-9 identity strip — logged-in user + reporting manager, always visible
+// in the bar, one line (client: it is a tracked requirement, must be seen).
+.identity-strip {
+  display: flex;
   align-items: center;
-  column-gap: var(--space-3);
-  row-gap: 3px;
-  margin: 0 var(--space-2) 0 0;
-  padding: 6px var(--space-3);
-  border-radius: var(--r-lg, var(--r-md));
+  gap: var(--space-2);
+  min-width: 0;
+  height: 30px;
+  margin-right: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--r-pill);
   background: var(--status-success-bg);
   border: 1px solid var(--status-success-border);
+  white-space: nowrap;
+  transition: height 200ms var(--ease);
+}
+
+.identity-strip__part {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
+}
+
+.identity-strip__icon {
+  font-size: 0.75rem;
+  color: var(--status-success-fg);
+}
+
+
+.identity-strip__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--status-success-fg);
+}
+
+.identity-strip__id {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success-fg);
+}
+
+.identity-strip__name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  max-width: 150px;
+  @include mixins.truncate;
+}
+
+.identity-strip__muted {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.identity-strip__divider {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  background: var(--status-success-border);
+}
+
+// Below 1536 (laptops, and 1920 screens at 125%) the strip leaves the bar;
+// the same Logged in / Reporting Manager details are in the user dropdown
+// (sriram's call, 2026-09-25). The user button keeps name + ID visible.
+@media (max-width: 1535.98px) {
+  .identity-strip {
+    display: none;
+  }
+}
+
+// 1536 and wider: the strip already names who is logged in, so the user
+// button is just the avatar and chevron.
+@media (min-width: 1536px) {
+  .user-menu__text {
+    display: none;
+  }
+}
+
+// Below 1440 the section suffix ("· Reconciliation") gives the title room.
+@media (max-width: 1439.98px) {
+  .topbar__route-section {
+    display: none;
+  }
+}
+
+// AC-9 reporting manager — in the user menu, under the name/ID header.
+// Stacked (label over value) and wrapping, so any name length fits the panel.
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-md);
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
 }
 
 .identity__label {
@@ -119,18 +213,15 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--status-success-fg);
-  white-space: nowrap;
 }
 
 .identity__value {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  margin: 0;
-  min-width: 0;
   font-size: 0.8rem;
   line-height: 1.3;
-  white-space: nowrap;
 }
 
 .identity__id {
@@ -148,11 +239,39 @@
 .identity__name {
   font-weight: 600;
   color: var(--text);
-  @include mixins.truncate;
+  overflow-wrap: anywhere;
 }
 
 .identity__muted {
+  font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+// ---------------------------------------------------------------------
+// Notification bell — match approvals waiting on you, automation runs
+// that need a look. Reuses the user-menu dropdown's own look (panel,
+// scrim, item styles) so the two menus read as one system.
+// ---------------------------------------------------------------------
+.notif-menu {
+  position: relative;
+}
+
+.notif-menu__panel {
+  min-width: 280px;
+  max-width: 22rem;
+}
+
+.notif-menu__empty {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+}
+
+.notif-menu__when {
+  display: block;
+  font-size: var(--text-2xs);
+  color: var(--text-subtle);
 }
 
 // ---------------------------------------------------------------------
@@ -185,8 +304,8 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--ai-gradient);
   color: #fff;
@@ -231,7 +350,8 @@
   top: calc(100% + 10px);
   right: 0;
   z-index: calc(var(--z-dropdown) + 1);
-  min-width: 220px;
+  width: 260px;
+  max-width: calc(100vw - 24px);
   padding: var(--space-2);
   border: 1px solid var(--ai-glass-border);
   border-radius: var(--r-xl);
@@ -241,6 +361,22 @@
   // makes the backdrop blur redundant.
   background: var(--surface-overlay);
   box-shadow: var(--ai-glass-shadow);
+}
+
+.user-menu__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--status-success-fg);
+}
+
+// The full name may be long ("Mrs. Radhika K…") — it wraps, never overflows.
+.user-menu__fullname {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .user-menu__header {
@@ -276,30 +412,64 @@
 }
 
 // ---------------------------------------------------------------------
+// Compact — the page is scrolled (shell.component.ts): 40px bar, the
+// essentials only. Back to normal at the top of the page.
+// ---------------------------------------------------------------------
+:host-context(.shell--compact) {
+  .identity-strip {
+    height: 26px;
+  }
+
+  .masthead__logo {
+    width: 24px;
+    height: 24px;
+  }
+
+  .masthead__rule {
+    height: 16px;
+  }
+
+  .masthead__name {
+    font-size: 1.05rem;
+  }
+
+  .topbar__route {
+    font-size: 0.95rem;
+  }
+
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .user-menu__trigger {
+    padding: 2px;
+  }
+
+  .user-menu__text,
+  .user-menu__chevron {
+    display: none;
+  }
+
+  .user-menu__avatar {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+// ---------------------------------------------------------------------
 // Responsive
 // ---------------------------------------------------------------------
 .topbar__hamburger {
   display: none;
 }
 
-// On a laptop-width screen the identity panel keeps just the two IDs so the
-// centre title isn't squeezed.
-@media (max-width: 1440px) {
-  .identity__name {
-    display: none;
-  }
-}
-
 // Below 960px the masthead is the first thing to go — the route title in
 // the centre is what the user actually navigates by.
 @media (max-width: 960px) {
   .masthead,
-  .identity {
+  .identity-strip {
     display: none;
-  }
-
-  .topbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .topbar__center {

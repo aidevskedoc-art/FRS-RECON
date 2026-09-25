@@ -12,11 +12,15 @@
   <nav class="guide__jump" aria-label="Jump to section">
     <a href="#pipeline">The pipeline</a>
     <a href="#steps">The five steps</a>
-    <a href="#upload">Upload sources</a>
-    <a href="#generate">Generate</a>
+    <a href="#upload">Upload &amp; Run</a>
+    <a href="#results">Review the results</a>
+    <a href="#mismatch">Handle mismatches</a>
     <a href="#report">Audit Working Report</a>
-    <a href="#twostage">Two-stage matching</a>
+    <a href="#matching">How matching works</a>
     <a href="#statuses">Match statuses</a>
+    <a href="#rules">Manage Rules</a>
+    <a href="#automation">Automation &amp; Go-Live</a>
+    <a href="#masters">Master Data</a>
     <a href="#trouble">Troubleshooting</a>
   </nav>
 
@@ -25,8 +29,9 @@
       <section id="pipeline" class="card guide__card">
         <h2>The pipeline</h2>
         <p class="guide__lead">
-          Every upload screen loads one of three input families. The
-          <strong>Reconciliation</strong> menu runs the match and produces the workbook you submit.
+          Every upload lands on one screen. The <strong>Upload &amp; Run</strong> button reconciles
+          everything in one go, and the <strong>Reconciliation</strong> menu is where you check the
+          result and produce the workbook you submit.
         </p>
 
         <div class="figure">
@@ -40,7 +45,7 @@
             <g class="svg-box">
               <rect x="8" y="117" width="228" height="66" rx="10" />
               <text x="24" y="143" class="svg-h">BANK &amp; GATEWAY</text>
-              <text x="24" y="165" class="svg-t">Bank statements · PayU MPR · EaseBuzz</text>
+              <text x="24" y="165" class="svg-t">Bank statements · PayU, EaseBuzz, CARD, UPI MPRs</text>
             </g>
             <g class="svg-box">
               <rect x="8" y="216" width="228" height="66" rx="10" />
@@ -57,8 +62,8 @@
             <g class="svg-box svg-box--accent">
               <rect x="360" y="112" width="176" height="76" rx="10" />
               <text x="448" y="140" class="svg-h" text-anchor="middle">RECONCILE</text>
-              <text x="448" y="162" class="svg-t" text-anchor="middle">press Generate</text>
-              <text x="448" y="178" class="svg-t" text-anchor="middle">on every batch</text>
+              <text x="448" y="162" class="svg-t" text-anchor="middle">one button —</text>
+              <text x="448" y="178" class="svg-t" text-anchor="middle">Run Reconciliation</text>
             </g>
 
             <path class="svg-arrow" d="M536 150 H600 M592 145 L600 150 L592 155" />
@@ -72,6 +77,12 @@
             </g>
           </svg>
         </div>
+        <p>
+          Anything the engine can't decide on its own waits in <span class="loc">Mismatch Review</span>
+          for a person to look at, and any change an Auditor proposes there waits again in
+          <span class="loc">Match Approvals</span> for sign-off. <span class="loc">Dashboard</span>
+          gives an at-a-glance check of where things stand at any point, without opening a single tab.
+        </p>
       </section>
 
       <!-- ============ five steps ============ -->
@@ -81,22 +92,22 @@
           <li>
             <span class="stepstrip__n">1</span>
             <span class="stepstrip__h">Confirm Master Data</span>
-            <span class="stepstrip__d">Bank account &rarr; division mapping</span>
+            <span class="stepstrip__d">Bank accounts, divisions, locations</span>
           </li>
           <li>
             <span class="stepstrip__n">2</span>
-            <span class="stepstrip__h">Upload the sources</span>
-            <span class="stepstrip__d">MIS, bank, gateway, cheque, refunds</span>
+            <span class="stepstrip__h">Upload &amp; Run</span>
+            <span class="stepstrip__d">One drop zone, one button</span>
           </li>
           <li>
             <span class="stepstrip__n">3</span>
-            <span class="stepstrip__h">Generate</span>
-            <span class="stepstrip__d">On every batch + PayU Settlements</span>
+            <span class="stepstrip__h">Review the results</span>
+            <span class="stepstrip__d">Dashboard &amp; Reconciliation Results</span>
           </li>
           <li>
             <span class="stepstrip__n">4</span>
-            <span class="stepstrip__h">Review</span>
-            <span class="stepstrip__d">Reconciliation Summary for the period</span>
+            <span class="stepstrip__h">Handle mismatches</span>
+            <span class="stepstrip__d">Mismatch Review &amp; Match Approvals</span>
           </li>
           <li>
             <span class="stepstrip__n">5</span>
@@ -120,76 +131,155 @@
           Open <span class="loc">Master Data &rsaquo; Division &amp; Bank A/C</span>. It maps each
           hospital bank account number to one of
           <span class="chip">Hitech City</span> <span class="chip">Somajiguda</span>
-          <span class="chip">Secunderabad</span> <span class="chip">Malakpet</span>.
-          It is pre-loaded. Add a row whenever an account opens or closes, then re-generate any
-          affected bank statement. The division drives the report's <strong>LOCATION</strong> and
-          <strong>NAME OF THE AUDITOR</strong> columns.
+          <span class="chip">Secunderabad</span> <span class="chip">Malakpet</span>
+          — locations kept in <span class="loc">Master Data &rsaquo; Location Master</span>
+          <span class="chip chip--muted">Admin only</span>, so add a location there first if a new
+          one is opening. Division &amp; Bank A/C itself is pre-loaded; add a row whenever an
+          account opens or closes, then re-run reconciliation for any affected bank statement. The
+          division drives the report's <strong>LOCATION</strong> and
+          <strong>NAME OF THE AUDITOR</strong> columns, and the same list is what the
+          <strong>Location</strong> filter on Mismatch Review offers.
         </p>
       </section>
 
-      <!-- ============ upload ============ -->
+      <!-- ============ upload & run ============ -->
       <section id="upload" class="card guide__card">
-        <h2>Step 2 — Upload the source records</h2>
+        <h2>Step 2 — Upload &amp; Run</h2>
         <p class="guide__lead">
-          All uploads take <span class="ref">.xlsx</span> / <span class="ref">.xls</span> up to
-          70&nbsp;MB. A file already ingested is rejected, and duplicate rows inside a new file are
-          skipped — so it is safe to re-send a corrected file. Every source below is uploaded from
-          the same place: <span class="loc">Reconciliation &rsaquo; Upload &amp; Run</span> — drop
-          the file into the matching zone (MIS / Bank &amp; Gateway / Cheque) and the report type is
-          detected automatically.
+          Every source — MIS, bank, gateway settlement, cheque, refund — drops into the same
+          screen: <span class="loc">Reconciliation &rsaquo; Upload &amp; Run</span>. One
+          <span class="ref">.xlsx</span> / <span class="ref">.xls</span> file, or several at once,
+          up to 70&nbsp;MB each. The system reads each file's own content to work out what it is,
+          so file names don't matter. A file already ingested is rejected outright, and duplicate
+          rows inside a new file are skipped — so it is always safe to re-send a corrected file.
         </p>
 
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Source</th><th>Drop zone</th><th>What the file is</th></tr>
+              <tr><th>Source</th><th>What the file is</th></tr>
             </thead>
             <tbody>
               <tr>
                 <td>IP online MIS</td>
-                <td class="loc">MIS</td>
                 <td>Inpatient online-collection export (a sheet per unit)</td>
               </tr>
               <tr>
                 <td>Diagnostics online MIS</td>
-                <td class="loc">MIS</td>
                 <td>Diagnostics online-collection export (a sheet per unit)</td>
               </tr>
               <tr>
+                <td>All Collections workbook</td>
+                <td>The combined IP + OP + Diagnostics HIS export in one workbook — reads the same data as the two MIS files above, checked against its own printed totals</td>
+              </tr>
+              <tr>
                 <td>Bank statement</td>
-                <td class="loc">Bank &amp; Gateway</td>
                 <td>Bank's own export — one workbook per account; a combined workbook splits per sheet</td>
               </tr>
               <tr>
                 <td>PayU MPR</td>
-                <td class="loc">Bank &amp; Gateway</td>
                 <td>PayU Merchant Payment Report (gateway settlement report)</td>
               </tr>
               <tr>
+                <td>UPI MPR</td>
+                <td>UPI gateway settlement report — feeds the UPI Reconciliation tab</td>
+              </tr>
+              <tr>
+                <td>CARD MPR</td>
+                <td>Card gateway settlement report — feeds the Card Reconciliation tab</td>
+              </tr>
+              <tr>
+                <td>Pine Labs</td>
+                <td>Card POS settlement export — an alternate match source for Card Reconciliation</td>
+              </tr>
+              <tr>
                 <td>EaseBuzz</td>
-                <td class="loc">Bank &amp; Gateway</td>
                 <td>EaseBuzz transaction report; only <em>success</em> rows are stored</td>
               </tr>
               <tr>
                 <td>EaseBuzz Settlement</td>
-                <td class="loc">Bank &amp; Gateway</td>
                 <td>EaseBuzz's own settlement export — one row per payout, ties to the real bank credit</td>
               </tr>
               <tr>
                 <td>Cheque collection</td>
-                <td class="loc">Cheque</td>
                 <td>Inpatient and/or diagnostics cheque register</td>
               </tr>
               <tr>
                 <td>Refund document</td>
-                <td class="loc">Cheque</td>
                 <td>The single 8-sheet IP &amp; OP refund workbook (reference data)</td>
               </tr>
             </tbody>
           </table>
         </div>
+
+        <h3>Auto-detection and the pre-upload check</h3>
         <p>
-          Every uploaded batch — before or after Generate — can be reviewed at
+          Drop a file and it is identified from its content, not its name — the matching type is
+          pre-ticked automatically (a combined workbook can genuinely contain more than one report,
+          and each gets stored under its own type). A file the system doesn't recognise asks you to
+          pick a type by hand. An MIS/HIS file also gets a dry-run preview first: a per-sheet check
+          against the report's own printed totals, a flag for rows already stored in another batch,
+          and anything held back for a human look, with a reason for each. Files with warnings need
+          an explicit <strong>"I have reviewed the warnings — include this file"</strong> tick before
+          the run will include them.
+        </p>
+
+        <h3>Run Reconciliation — one button, everything at once</h3>
+        <figure class="mock">
+          <figcaption>Upload &amp; Run</figcaption>
+          <div class="mock__frame">
+            <div class="mock__bar">
+              <span class="mock__crumb">Reconciliation</span>
+              <span class="mock__title">Upload Reports</span>
+            </div>
+            <div class="mock__row mock__row--filters">
+              <span class="mock__pill">MIS &amp; HIS collection reports · 3</span>
+              <span class="mock__pill">Bank &amp; gateway reports · 2</span>
+              <span class="mock__pill">Cheque ledgers &amp; refunds · 1</span>
+              <span class="mock__pill mock__pill--ghost">Not recognised · 0</span>
+            </div>
+            <div class="mock__row mock__row--gen">
+              <span class="mock__btn mock__btn--primary"><i class="pi pi-play"></i> Run Reconciliation</span>
+              <span class="mock__hint"><i class="pi pi-check-square"></i> Skip batches already generated</span>
+              <span class="mock__note mock__note--a">Uploads every staged file, then runs every reconciliation pass, in order.</span>
+            </div>
+            <div class="mock__grid">
+              <div class="mock__gh">Step</div><div class="mock__gh">Pipeline</div><div class="mock__gh">Status</div><div class="mock__gh">Detail</div>
+              <div>1</div><div>Uploading files</div><div><span class="chip chip--ok">Done</span></div><div class="mock__muted">6 files stored</div>
+              <div>2</div><div>Online &amp; UPI receipts vs bank</div><div><span class="chip chip--ok">Done</span></div><div class="mock__muted">1,981 matched · 32 unmatched</div>
+              <div>3</div><div>Card &amp; UPI Reconciliation</div><div><span class="chip chip--info">Running</span></div><div class="mock__muted">Matching by approval code / RRN&hellip;</div>
+            </div>
+            <span class="mock__note mock__note--b">Ends with a plain-English summary, then loads the results in below automatically.</span>
+          </div>
+        </figure>
+        <p>
+          Files are staged, not saved, until you press it — nothing is uploaded or matched a moment
+          before that. <strong>Skip batches already generated</strong> is off by default, so a run
+          redoes every pipeline; tick it to leave already-generated batches alone and only process
+          what's new — much faster on a repeat run.
+        </p>
+
+        <h3>Redoing just one pipeline</h3>
+        <p>
+          Most of the time <strong>Run Reconciliation</strong> is all you need. To redo a single
+          pipeline on its own — after uploading just a corrected CARD MPR, say — use its own tab
+          instead:
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Pipeline</th><th>Where to regenerate it alone</th></tr></thead>
+            <tbody>
+              <tr><td>Online &amp; UPI receipts vs bank (IP / Diag Payment Rules)</td><td>Always via <span class="loc">Upload &amp; Run</span> &rsaquo; Run Reconciliation — no standalone button</td></tr>
+              <tr><td>Card Reconciliation</td><td><span class="loc">Reconciliation Results</span> &rsaquo; Card Reconciliation tab &rarr; Generate</td></tr>
+              <tr><td>UPI Reconciliation (gateway)</td><td><span class="loc">Reconciliation Results</span> &rsaquo; UPI Reconciliation tab &rarr; Generate</td></tr>
+              <tr><td>PayU Settlements</td><td><span class="loc">Reconciliation Results</span> &rsaquo; PayU Settlements tab &rarr; Generate</td></tr>
+              <tr><td>EaseBuzz Settlements</td><td><span class="loc">Reconciliation Results</span> &rsaquo; EaseBuzz Settlements tab &rarr; Generate</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          Every uploaded batch — before or after a run — can be reviewed at
           <span class="loc">Reconciliation &rsaquo; Statements</span>, one tab per source.
         </p>
 
@@ -203,64 +293,125 @@
         </div>
       </section>
 
-      <!-- ============ generate ============ -->
-      <section id="generate" class="card guide__card">
-        <h2>Step 3 — Generate the matches</h2>
+      <!-- ============ review the results ============ -->
+      <section id="results" class="card guide__card">
+        <h2>Step 3 — Review the results</h2>
         <p class="guide__lead">
-          Uploading only loads raw rows. <strong>Generate</strong> runs the matching engine and
-          saves a verdict onto every row. Nothing is matched until you press it.
+          Two places to check the numbers: <span class="loc">Dashboard</span> for a fast glance,
+          <span class="loc">Reconciliation &rsaquo; Reconciliation Results</span> for the full
+          detail behind them. Both read the same saved verdicts, so they never disagree.
         </p>
 
-        <figure class="mock">
-          <figcaption>On a batch screen</figcaption>
-          <div class="mock__frame">
-            <div class="mock__bar">
-              <span class="mock__crumb">&larr; Back to IP Payments</span>
-              <span class="mock__title">HITECH CITY — 1,204 rows</span>
-            </div>
-            <div class="mock__row mock__row--gen">
-              <span class="mock__btn mock__btn--primary"><i class="pi pi-refresh"></i> Generate</span>
-              <span class="mock__hint"><i class="pi pi-check-circle"></i> Matched against the bank statement</span>
-              <span class="mock__note mock__note--a">Press once per batch. Reads <em>Regenerate</em> afterwards.</span>
-            </div>
-            <div class="mock__row mock__row--filters">
-              <span class="mock__pill">Status: All</span>
-              <span class="mock__search">Search patient, receipt, reference…</span>
-              <span class="mock__pill mock__pill--ghost">Manage Rules</span>
-            </div>
-            <div class="mock__grid">
-              <div class="mock__gh">Status</div><div class="mock__gh">Receipt</div><div class="mock__gh">Amount</div><div class="mock__gh">Match reason</div>
-              <div><span class="chip chip--ok">Matched</span></div><div class="ref">RCT-88213</div><div class="num">32,000</div><div class="mock__muted">Matched by rule "reference matches bank"</div>
-              <div><span class="chip chip--danger">Unmatched</span></div><div class="ref">RCT-88240</div><div class="num">5,400</div><div class="mock__muted">Reference not on any uploaded bank line…</div>
-              <div><span class="chip chip--warning">Amount Mismatch</span></div><div class="ref">RCT-88251</div><div class="num">12,000</div><div class="mock__muted">Differs by ₹200 — MIS 12,000 vs bank 11,800</div>
-            </div>
-            <span class="mock__note mock__note--b">The <em>Match reason</em> column tells you exactly what to fix.</span>
-          </div>
-        </figure>
+        <h3>Dashboard</h3>
+        <p>
+          The screen every signed-in user lands on. Five headline tiles —
+          <strong>Reconciled</strong> (% and progress), <strong>Needs Attention</strong>,
+          <strong>Awaiting Approval</strong>, <strong>Collection Value</strong> and
+          <strong>Bank Data Up To</strong> — each click through to the screen behind it. Below
+          that, a <strong>Reconciliation Flow</strong> lane per collection type (Online, Cheque,
+          Card, UPI) shows MIS uploaded &rarr; bank/MPR uploaded &rarr; reconciled % &rarr; items
+          to review, plus status charts and a Bank &amp; Gateway Files table. Admins also see the
+          last few Shared Folder Automation runs here.
+        </p>
 
-        <h3>Where to press Generate</h3>
-        <ol class="numlist">
-          <li>Each <strong>Bank Statement</strong> batch — <span class="loc">Reconciliation &rsaquo; Statements</span>, Bank Statements tab &rarr; open &rarr; Generate.</li>
-          <li>Each <strong>IP Payments</strong> and <strong>Diag OP Payments</strong> batch (same Statements page, their own tabs).</li>
-          <li>Each <strong>Cheque Collection</strong> batch (IP and Diagnostics tabs).</li>
-          <li><strong>PayU Settlements</strong> — <span class="loc">Reconciliation &rsaquo; Reconciliation Results</span>, PayU Settlements tab &rarr; Generate.</li>
-        </ol>
+        <h3>Reconciliation Results — nine tabs, one screen</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tab</th><th>What it shows</th></tr></thead>
+            <tbody>
+              <tr><td>Summary</td><td>Headline totals for every pipeline in a date range, including the Card/UPI reconciliation status and the PayU settlement gap</td></tr>
+              <tr><td>Audit Working Report</td><td>The client deliverable — see Step 5 below</td></tr>
+              <tr><td>Unit Matches</td><td>Transactions grouped by a shared Unit Identifier and reconciled on their combined amount — one row per unit rather than per receipt</td></tr>
+              <tr><td>PayU Settlements</td><td>Stage 2 of gateway-UPI matching — MPR lines grouped by settlement UTR, tied to the one bank credit carrying it</td></tr>
+              <tr><td>EaseBuzz Settlements</td><td>EaseBuzz payouts tied to the bank credit that carries them, with the transactions behind each payout</td></tr>
+              <tr><td>Card Reconciliation</td><td>Card MIS rows tied to CARD MPR / Pine Labs by approval code</td></tr>
+              <tr><td>UPI Reconciliation</td><td>UPI MIS rows tied to the UPI MPR by RRN</td></tr>
+              <tr><td>IP Payment Rules</td><td>Every IP receipt's verdict, one row per receipt, with the rule that decided it</td></tr>
+              <tr><td>Diagnostics Payment Rules</td><td>Same, for Diagnostics/OP receipts</td></tr>
+            </tbody>
+          </table>
+        </div>
 
         <div class="notice notice--warning">
           <i class="pi pi-exclamation-triangle"></i>
           <span>
-            <strong>Regenerate</strong> a batch when it shows the "matching rules have changed"
-            banner, or after uploading a new bank statement / refund document that covers it.
+            <strong>Card Reconciliation, UPI Reconciliation, PayU Settlements</strong> and
+            <strong>EaseBuzz Settlements</strong> each need their own Generate — see "Redoing just
+            one pipeline" above — before their tab has anything current in it.
+            <strong>Unit Matches</strong> reads saved verdicts too: a unit only appears once the
+            underlying IP/Diag batch has been generated <em>and</em> the "Transaction Amount Match
+            on Same Unit" rule groups two or more receipts onto one bank credit.
+          </span>
+        </div>
+      </section>
+
+      <!-- ============ handle mismatches ============ -->
+      <section id="mismatch" class="card guide__card">
+        <h2>Step 4 — Handle mismatches</h2>
+        <p class="guide__lead">
+          Anything the engine couldn't decide on its own, and anything anyone wants to
+          double-check, goes through two screens: <span class="loc">Mismatch Review</span> to look
+          at it, <span class="loc">Match Approvals</span> to sign off a change to it.
+        </p>
+
+        <h3>Mismatch Review</h3>
+        <p>
+          <span class="loc">Reconciliation &rsaquo; Mismatch Review</span> — one tab per collection
+          type (<strong>Online (IP + Diag/OP)</strong>, <strong>Cheque</strong>,
+          <strong>Card</strong>, <strong>UPI</strong>), and four views inside each tab:
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>View</th><th>Shows</th></tr></thead>
+            <tbody>
+              <tr><td>All</td><td>Every transaction, matched or not</td></tr>
+              <tr><td>Mismatches <span class="chip chip--muted">default</span></td><td>Everything short of a clean match</td></tr>
+              <tr><td>Matched</td><td>Clean system matches — browsable, so a wrong one can still be caught</td></tr>
+              <tr><td>Matched by Auditor</td><td>Just the ones an auditor locked by hand</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Filter by <strong>Search</strong> (patient, receipt or reference), <strong>Location</strong>
+          (an Auditor only ever sees their own assigned branches), <strong>Department</strong> and
+          <strong>From date</strong>. <strong>Show up to</strong> defaults to
+          <em>Till last bank upload</em> — each branch is cut off at its own latest bank statement
+          date — or pick <em>As on date</em> for a fixed cut-off. Click any row to open the full
+          record with the plain-English reason it didn't tally.
+        </p>
+
+        <div class="notice notice--req">
+          <i class="pi pi-info-circle"></i>
+          <span>
+            <strong>Admin</strong> actions apply straight away —
+            <strong>Mark as Matched</strong>, <strong>Reset to Unmatched</strong>. An
+            <strong>Auditor</strong> instead proposes a change —
+            <strong>Propose as Matched</strong>, <strong>Propose a Correction</strong> — which sits
+            in Match Approvals until their Reporting Manager signs off. An auditor-approved match is
+            final; it can't be re-opened from here. On the Mismatches view, select several rows to
+            propose them as Matched together with one shared reason.
           </span>
         </div>
 
-        <h3>Step 4 — Review</h3>
+        <h3>Match Approvals</h3>
         <p>
-          Open <span class="loc">Reconciliation &rsaquo; Reconciliation Results</span> (Summary tab), set <strong>From / To</strong>
-          to the period, press <strong>Apply</strong>. Clear every yellow
-          "&hellip;never been through Generate" banner before you rely on the totals. Check the
-          <strong>Amount Differences</strong> table at the bottom.
+          <span class="loc">Reconciliation &rsaquo; Match Approvals</span> — the checker's side of
+          that same flow, for whoever the Auditor reports to. Two tabs: <strong>To Review</strong>
+          (requests from people who report to you) and <strong>My Requests</strong> (your own, with
+          their <span class="chip chip--warning">Pending</span> /
+          <span class="chip chip--ok">Approved</span> / <span class="chip chip--danger">Rejected</span>
+          status). Open a request to <strong>Approve</strong> or <strong>Reject</strong> it (a note
+          is required to reject, optional to approve), or select several for
+          <strong>Approve Selected</strong> / <strong>Reject Selected</strong>.
         </p>
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>
+            Approving a <strong>Correction</strong> unlocks the record and resets it to
+            <span class="chip chip--danger">Unmatched</span> — the next reconciliation run
+            re-decides it from scratch.
+          </span>
+        </div>
       </section>
 
       <!-- ============ report ============ -->
@@ -275,6 +426,7 @@
               <span class="mock__field"><span class="mock__flabel">Period</span><span class="mock__fval">Monthly</span></span>
               <span class="mock__field"><span class="mock__flabel">Month</span><span class="mock__fval">2026-07</span></span>
               <span class="mock__field"><span class="mock__flabel">Filter on</span><span class="mock__fval">Receipt Date</span></span>
+              <span class="mock__field"><span class="mock__flabel">Unit</span><span class="mock__fval">All Units</span></span>
               <span class="mock__note mock__note--a">Receipt Date = raised in the period · Realization Date = cleared in the period</span>
             </div>
             <div class="mock__grid mock__grid--report">
@@ -292,8 +444,9 @@
         </figure>
 
         <ol class="numlist">
-          <li><strong>Pick the period</strong> — Monthly + <span class="ref">2026-07</span> gives the label <span class="ref">JUL-26</span>, used in the file name and every sheet title.</li>
+          <li><strong>Pick the period</strong> — Daily, Monthly, Yearly or a Date range. Monthly + <span class="ref">2026-07</span> gives the label <span class="ref">JUL-26</span>, used in the file name and every sheet title.</li>
           <li><strong>Choose the date it filters on</strong> — Receipt Date (normal) or Realization Date (only receipts whose bank credit cleared in the period).</li>
+          <li><strong>Narrow to one location if needed</strong> — the Unit dropdown defaults to All Units.</li>
           <li><strong>Read the preview</strong> — confirm totals and that Unmatched is as low as you expect.</li>
           <li><strong>Download <span class="ref">Client Report</span></strong> — saves as <span class="ref">Audit Working Report - JUL-26.xlsx</span>. This is the deliverable.</li>
         </ol>
@@ -316,14 +469,29 @@
           <i class="pi pi-info-circle"></i>
           <span>
             The report reflects the saved verdicts at the moment of download. Upload more data
-            afterwards &rarr; regenerate the affected batches &rarr; download again.
+            afterwards &rarr; re-run reconciliation for the affected batches &rarr; download again.
+          </span>
+        </div>
+
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>
+            The workbook currently covers <strong>cheque collection</strong>, <strong>IP online</strong>
+            and <strong>Diagnostics online</strong> collections — three sheets:
+            <span class="loc">CHEQUE COLL AND REALIZN</span>, <span class="loc">ONLINE COLLECTION</span>,
+            <span class="loc">ONLINE DIAG COLLECTION</span>. Card and UPI reconciliation live on their
+            own tabs (see "Review the results" above) and are not part of this workbook yet. Validate
+            each report against your own control figures before circulating.
           </span>
         </div>
       </section>
 
-      <!-- ============ two-stage ============ -->
-      <section id="twostage" class="card guide__card">
-        <h2>Two-stage matching</h2>
+      <!-- ============ how matching works ============ -->
+      <section id="matching" class="card guide__card">
+        <h2>How matching works</h2>
+        <p class="guide__lead">Most receipts match straight to a bank line. Three exceptions work differently.</p>
+
+        <h3>Two-stage matching</h3>
         <p class="guide__lead">Two streams reconcile in two hops rather than one.</p>
 
         <div class="twostage">
@@ -344,11 +512,32 @@
               <g class="svg-box"><rect x="4" y="24" width="140" height="48" rx="9" /><text x="74" y="53" class="svg-t" text-anchor="middle">UPI receipt</text></g>
               <path class="svg-arrow" d="M144 48 H204 M196 43 L204 48 L196 53" />
               <g class="svg-box"><rect x="204" y="24" width="150" height="48" rx="9" /><text x="279" y="47" class="svg-t" text-anchor="middle">PayU MPR line</text><text x="279" y="63" class="svg-t2" text-anchor="middle">merchant txn id</text></g>
-              <path class="svg-arrow" d="M354 48 H414 M406 43 L414 48 L406 53" /><text x="384" y="38" class="svg-t2" text-anchor="middle">group by UTR</text>
+              <path class="svg-arrow" d="M354 48 H414 M406 43 L414 48 L406 53" /><text x="384" y="38" class="svg-t2" text-anchor="middle">by UTR</text>
               <g class="svg-box svg-box--accent"><rect x="414" y="24" width="198" height="48" rx="9" /><text x="513" y="47" class="svg-t" text-anchor="middle">One bank credit</text><text x="513" y="63" class="svg-t2" text-anchor="middle">PayU Settlements screen</text></g>
             </svg>
           </figure>
+
+          <figure class="figure">
+            <figcaption>EaseBuzz</figcaption>
+            <svg viewBox="0 0 620 96" role="img" aria-label="EaseBuzz: IP online receipt to a successful EaseBuzz transaction, settlements grouped by settlement id, tied to one bank credit">
+              <g class="svg-box"><rect x="4" y="24" width="150" height="48" rx="9" /><text x="79" y="53" class="svg-t" text-anchor="middle">IP online receipt</text></g>
+              <path class="svg-arrow" d="M154 48 H214 M206 43 L214 48 L206 53" />
+              <g class="svg-box"><rect x="214" y="24" width="160" height="48" rx="9" /><text x="294" y="47" class="svg-t" text-anchor="middle">EaseBuzz transaction</text><text x="294" y="63" class="svg-t2" text-anchor="middle">EaseBuzz ID</text></g>
+              <path class="svg-arrow" d="M374 48 H424 M416 43 L424 48 L416 53" /><text x="399" y="38" class="svg-t2" text-anchor="middle">payout</text>
+              <g class="svg-box svg-box--accent"><rect x="424" y="24" width="188" height="48" rx="9" /><text x="518" y="47" class="svg-t" text-anchor="middle">One bank credit</text><text x="518" y="63" class="svg-t2" text-anchor="middle">EaseBuzz Settlements screen</text></g>
+            </svg>
+          </figure>
         </div>
+
+        <h3>Card &amp; UPI Reconciliation — a direct match, its own module</h3>
+        <p>
+          Card and UPI receipts are reconciled by a separate module from the one behind IP/Diag
+          Payment Rules above, in a single hop: the MIS row is tied straight to the gateway's own
+          settlement line — by <strong>approval code</strong> for Card (CARD MPR or Pine Labs), by
+          <strong>RRN</strong> for UPI (UPI MPR). A CREDIT/PAY refund pair — a failed UPI payment
+          later returned to the payer — is excluded automatically. When several MIS rows share one
+          settlement line, all of them show <span class="chip chip--ok">Grouped Matched</span>.
+        </p>
       </section>
 
       <!-- ============ statuses ============ -->
@@ -356,15 +545,127 @@
         <h2>Match statuses</h2>
         <ul class="statuslist">
           <li><span class="chip chip--ok">Matched</span> Reconciled 1:1 to a bank credit. The goal.</li>
+          <li><span class="chip chip--ok">Grouped Matched</span> Several MIS rows share one settlement line — Card / UPI Reconciliation and PayU / EaseBuzz Settlements.</li>
           <li><span class="chip chip--ok">EaseBuzz Matched</span> Reconciled against a successful EaseBuzz gateway transaction.</li>
           <li><span class="chip chip--info">Contra Entry</span> Cheque collected then refunded — cancels out, matched to the refund document.</li>
           <li><span class="chip chip--warning">Partial Match</span> Bank has the same reference with extra digits and the amount agrees. Fix the MIS reference, regenerate.</li>
           <li><span class="chip chip--warning">Amount Mismatch</span> Reference matches a bank line but amounts differ beyond tolerance. Check both amounts.</li>
-          <li><span class="chip chip--warning">Ambiguous</span> More than one candidate; the engine will not guess.</li>
+          <li><span class="chip chip--warning">Multiple Matches Found</span> The reference matched more than one bank credit, so the engine stopped rather than guess — picking the wrong one would look settled. Choose the right one, or check whether the same settlement file has been uploaded twice.</li>
           <li><span class="chip chip--danger">Unmatched</span> Nothing found. Read the <em>Match reason</em> — usually a missing upload or a data-entry slip.</li>
+          <li><span class="chip chip--danger">No Gateway Row</span> Nothing on the gateway or bank side to tie it to yet. Called <span class="ref">No Bank Credit</span> on PayU / EaseBuzz Settlements, <span class="ref">No UPI MPR Row</span> on UPI Reconciliation.</li>
+          <li><span class="chip chip--info">Pending Approval</span> An Auditor's proposed change is waiting on their Reporting Manager in Match Approvals.</li>
           <li><span class="chip chip--muted">Excluded</span> A rule removed the row from scope; it does not appear in the report.</li>
-          <li><span class="chip chip--muted">Not generated</span> Generate has never been run on this batch.</li>
+          <li><span class="chip chip--muted">Not generated</span> This batch or pipeline has never been through Generate / Run Reconciliation.</li>
         </ul>
+
+        <h3>Only on Unit Matches</h3>
+        <p>
+          Unit Matches reconciles a <em>unit's combined total</em> against one bank credit, so it
+          adds two statuses the rest of the app doesn't use:
+        </p>
+        <ul class="statuslist">
+          <li><span class="chip chip--warning">Partially Matched</span> The unit's receipts add up to less than the bank credit — a short balance is still owed.</li>
+          <li><span class="chip chip--warning">Amount Excess</span> The unit's receipts add up to more than the bank credit — it over-collected.</li>
+        </ul>
+      </section>
+
+      <!-- ============ manage rules ============ -->
+      <section id="rules" class="card guide__card">
+        <h2>Manage Rules</h2>
+        <p class="guide__lead">
+          <span class="loc">Reconciliation &rsaquo; Manage Rules</span> tunes how the engine
+          decides a match, as four tabs: <strong>IP Payment Matching</strong>,
+          <strong>Diagnostics Payment Matching</strong>, <strong>Cheque Collection Matching</strong>
+          and <strong>Gateway Matching</strong> — the last one covers PayU, EaseBuzz, CARD and UPI
+          together, with a target picker inside to choose which gateway you're editing. Every
+          "Manage Rules" link elsewhere in the app jumps straight to the right tab.
+        </p>
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>
+            Editing a rule never rewrites a verdict that was already saved — it only changes what
+            happens on the <em>next</em> run. Regenerate the affected pipeline (see "Redoing just
+            one pipeline" under Upload &amp; Run) to apply it.
+          </span>
+        </div>
+      </section>
+
+      <!-- ============ automation & go-live ============ -->
+      <section id="automation" class="card guide__card">
+        <h2>Automation &amp; Go-Live <span class="chip chip--muted">Admin only</span></h2>
+
+        <h3>Shared Folder Automation</h3>
+        <p>
+          <span class="loc">Reconciliation &rsaquo; Shared Folder Automation</span> checks one
+          shared network folder on a schedule, pulls in anything new, and reconciles it — no manual
+          upload. Configure a <strong>Shared Folder Path</strong> (a UNC path the server can read),
+          a daily <strong>Check Time</strong> (IST), and a <strong>Batch "Uploaded By" Label</strong>
+          so an auto-ingested batch is always visibly not a manual one, then toggle
+          <strong>Automation Enabled</strong> and <strong>Save Settings</strong>.
+          <strong>Run Now</strong> checks the folder immediately, without waiting for the scheduled
+          time.
+        </p>
+        <p>
+          Every run is logged — Started / Trigger / Status / Found / Ingested / Skipped / Failed.
+          Open a run for the per-file detail (<em>Stored</em>, <em>Already stored</em>,
+          <em>Not recognised</em>, <em>Needs a person</em>, <em>Nothing to store</em>,
+          <em>Failed</em>), each with a <strong>Retry</strong> option if nothing was stored from it.
+        </p>
+        <div class="notice notice--req">
+          <i class="pi pi-info-circle"></i>
+          <span>
+            A run that ingests anything re-runs reconciliation automatically afterwards — the same
+            as pressing <strong>Run Reconciliation</strong> by hand.
+          </span>
+        </div>
+
+        <h3>Go-Live Settings</h3>
+        <p>
+          <span class="loc">Reconciliation &rsaquo; Go-Live Settings</span> holds one cutoff switch:
+          a <strong>Go-Live Date</strong> and a <strong>Switch Enabled</strong> toggle. From that
+          date, every clean match locks itself the moment it's generated, and MIS/bank records can
+          no longer be deleted or edited. Turning the switch off pauses both effects — useful for
+          pushing the date back — without touching the date itself.
+        </p>
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          <span>
+            If the picked date has already passed and the switch is on, locking and the delete
+            freeze are in effect <strong>right now</strong>.
+          </span>
+        </div>
+      </section>
+
+      <!-- ============ master data ============ -->
+      <section id="masters" class="card guide__card">
+        <h2>Master Data</h2>
+        <p class="guide__lead">
+          Division &amp; Bank A/C is covered in Step 1 above. Two more screens sit here, both
+          <span class="chip chip--muted">Admin only</span>.
+        </p>
+
+        <h3>Location Master</h3>
+        <p>
+          <span class="loc">Master Data &rsaquo; Location Master</span> is where a hospital
+          location itself is added, renamed or retired — before it can be mapped in Division &amp;
+          Bank A/C, or picked as a branch/department filter anywhere else. "Delete" is really a
+          soft deactivation: it stops the location being offered for new uploads or assignments,
+          every record already tagged with it is untouched, and it can be restored any time.
+        </p>
+
+        <h3>User Management</h3>
+        <p>
+          <span class="loc">Master Data &rsaquo; User Management</span> is where accounts, roles
+          and access live. <strong>Add User</strong> asks for an Employee ID, Full Name, a
+          Temporary Password (the user must change it at first login), a Role, a
+          <strong>Reporting Manager</strong> (who their proposed changes go to for approval in
+          Match Approvals), which <strong>Branches</strong> an Auditor can see (Admins see every
+          branch automatically) and which <strong>Screen Access</strong> they're granted (the
+          Dashboard is always visible to everyone). Per-user actions cover Edit, Branches, Screen
+          access, Reset password and Activity; an account locks itself after five failed logins and
+          unlocks with one click. An <strong>Audit Log</strong> tab alongside the user list is a
+          whole-application activity log — who did what, and when, searchable and filterable.
+        </p>
       </section>
 
       <!-- ============ troubleshooting ============ -->
@@ -377,22 +678,16 @@
               <tr><td>"All rows already present" / upload rejected</td><td>The file or its rows are already loaded. To reload, delete the old batch first.</td></tr>
               <tr><td>Many Unmatched receipts</td><td>The bank statement / PayU MPR for that date range or account is not uploaded, or its batch was never generated. Check the Summary banners.</td></tr>
               <tr><td><span class="chip chip--warning">Partial Match</span></td><td>MIS reference is truncated. Fix it on the MIS row, regenerate.</td></tr>
-              <tr><td>LOCATION blank or wrong in the report</td><td>Bank account not in Master Data, or the MIS unit name has no division. Fix Step 1, regenerate.</td></tr>
-              <tr><td>Report shows no rows</td><td>Wrong period format (Monthly needs <span class="ref">YYYY-MM</span>), nothing uploaded, or filtering on Realization Date before anything cleared.</td></tr>
+              <tr><td>LOCATION blank or wrong in the report</td><td>Bank account not in Division &amp; Bank A/C, the location isn't in Location Master yet, or the MIS unit name has no division. Fix Step 1, regenerate.</td></tr>
+              <tr><td>Report shows no rows</td><td>Wrong period format (Monthly needs <span class="ref">YYYY-MM</span>), nothing uploaded, filtering on Realization Date before anything cleared, or a Unit filter with no matching data.</td></tr>
               <tr><td>Refunded cheque shows Unmatched</td><td>The refund document for that period is not uploaded. Upload it, regenerate the cheque batch.</td></tr>
-              <tr><td>"Rules have changed" banner</td><td>Press <strong>Regenerate Matches</strong>.</td></tr>
+              <tr><td>Card / UPI row shows <span class="chip chip--danger">No Gateway Row</span></td><td>CARD MPR, Pine Labs, or UPI MPR for that period isn't uploaded yet, or Card / UPI Reconciliation hasn't been generated. Upload it, press Generate on that tab.</td></tr>
+              <tr><td><span class="chip chip--info">Pending Approval</span> never clears</td><td>Check Match Approvals &rsaquo; To Review. Nothing shows there unless the requester's Reporting Manager is set correctly in User Management.</td></tr>
+              <tr><td>Can't delete an MIS row or a batch</td><td>The Go-Live date has passed and the switch is on — deletes are frozen from that date. Check Go-Live Settings.</td></tr>
+              <tr><td>A file dropped in the shared folder never shows up</td><td>Automation isn't enabled, today's check time hasn't run yet, or the path is wrong. Open Shared Folder Automation and use Run Now to check immediately.</td></tr>
+              <tr><td>"Rules have changed" banner</td><td>Press <strong>Regenerate</strong> on that tab, or re-run everything from Upload &amp; Run.</td></tr>
             </tbody>
           </table>
-        </div>
-
-        <div class="notice notice--warning">
-          <i class="pi pi-exclamation-triangle"></i>
-          <span>
-            <strong>Phase 1</strong> covers cheque, IP online and Diagnostics online collections —
-            three sheets: <span class="loc">CHEQUE COLL AND REALIZN</span>,
-            <span class="loc">ONLINE COLLECTION</span>, <span class="loc">ONLINE DIAG COLLECTION</span>.
-            Validate each report against your own control figures before circulating.
-          </span>
         </div>
       </section>
   </div>

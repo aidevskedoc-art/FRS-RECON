@@ -5,6 +5,7 @@ import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { SelectModule } from 'primeng/select';
 import { Ripple } from 'primeng/ripple';
+import { TooltipModule } from 'primeng/tooltip';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
 import { IpPaymentService } from '../../../core/services/ip-payment.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
@@ -41,7 +42,7 @@ const STATUS_LABELS: Record<MatchStatus, string> = {
 @Component({
   selector: 'app-unit-matches',
   standalone: true,
-  imports: [FormsModule, ButtonModule, TableModule, SelectModule, Ripple],
+  imports: [FormsModule, ButtonModule, TableModule, SelectModule, Ripple, TooltipModule],
   templateUrl: './unit-matches.component.html',
   styleUrl: './unit-matches.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

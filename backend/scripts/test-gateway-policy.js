@@ -44,6 +44,22 @@ ok('CARD carries no token/refund/compare knobs (they do not apply)',
   !('minTokenLength' in GATEWAY_DEFAULTS.CARD) && !('excludeRefundPairs' in GATEWAY_DEFAULTS.CARD) && !('compareAmount' in GATEWAY_DEFAULTS.CARD));
 
 console.log('\n=== a malformed policy degrades to the default, never throws ===');
+
+console.log('\n=== onGroupMismatch: card/upi only, defaults to the safe policy ===');
+for (const t of ['CARD', 'UPI']) {
+  ok(t + ': defaults to PREFER_EXACT_MEMBER',
+    resolveGatewayPolicy(t, null).onGroupMismatch === 'PREFER_EXACT_MEMBER',
+    resolveGatewayPolicy(t, null).onGroupMismatch);
+  ok(t + ': REPORT_DIFFERENCE is selectable',
+    resolveGatewayPolicy(t, { onGroupMismatch: 'REPORT_DIFFERENCE' }).onGroupMismatch === 'REPORT_DIFFERENCE');
+  ok(t + ': a nonsense value falls back to the default rather than throwing',
+    resolveGatewayPolicy(t, { onGroupMismatch: 'WHATEVER' }).onGroupMismatch === 'PREFER_EXACT_MEMBER');
+}
+for (const t of ['PAYU', 'EASEBUZZ']) {
+  ok(t + ': does not carry onGroupMismatch (it never groups the MIS side)',
+    resolveGatewayPolicy(t, { onGroupMismatch: 'REPORT_DIFFERENCE' }).onGroupMismatch === undefined);
+}
+
 for (const bad of [undefined, null, 'nonsense', 42, [], { tolerance: 'abc' }, { tolerance: -1 }, { onAmbiguous: 'WHATEVER' }]) {
   const p = resolveGatewayPolicy('CARD', bad);
   ok(`${JSON.stringify(bad)} -> default tolerance 1, nearest-amount`, p.tolerance === 1 && p.onAmbiguous === 'NEAREST_AMOUNT');

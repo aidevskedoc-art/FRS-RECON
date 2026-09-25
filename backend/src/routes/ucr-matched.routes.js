@@ -27,6 +27,12 @@ const { isPastGoLive } = require('../go-live');
 
 const router = express.Router();
 
+/** Same rupee rendering the online/cheque reasons use (matched-rules.routes.js). */
+function rupees(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? `₹${n.toLocaleString('en-IN')}` : String(value);
+}
+
 /** Every uploaded Card-type MIS row + both processor pools, mapped. Not date-scoped — a settlement can lag behind the underlying swipe. */
 async function loadRowsForCardRecon() {
   const { rows: misRows } = await db.query(`SELECT * FROM ucr_ip_records WHERE instrument_type = 'CARD'`);
@@ -47,19 +53,60 @@ async function loadRowsForUpiRecon() {
 }
 
 function tallyCounts(results) {
-  const counts = { total: results.length, matched: 0, mismatched: 0, unmatched: 0 };
+  const counts = { total: results.length, matched: 0, groupedMatched: 0, mismatched: 0, unmatched: 0 };
   for (const r of results) {
     if (r.status === 'MATCHED') counts.matched += 1;
+    else if (r.status === 'GROUPED_MATCHED') counts.groupedMatched += 1;
     else if (r.status === 'AMOUNT_MISMATCH') counts.mismatched += 1;
     else counts.unmatched += 1;
   }
   return counts;
 }
 
+/**
+ * Why a GROUPED_MATCHED result is a group: the MIS side (several receipts
+ * summed), the gateway side (a reused approval code / RRN carrying more than
+ * one real settlement, summed instead), or both at once.
+ */
+function groupedReasonSuffix(result) {
+  const misGrouped = result.groupSize > 1;
+  const gatewayGrouped = result.candidateCount > 1;
+  if (misGrouped && gatewayGrouped) return ` — ${result.groupSize} receipts and ${result.candidateCount} gateway rows both summing to ${result.groupAmount}`;
+  if (misGrouped) return ` — ${result.groupSize} receipts summing to ${result.groupAmount}`;
+  if (gatewayGrouped) return ` — the reference carries ${result.candidateCount} gateway rows summing to ${result.groupAmount}`;
+  return '';
+}
+
+/**
+ * A collided reference (see reconciliation/upi-card-recon/collided-group.js).
+ * Without this, a rescued row falls through to "No ... row found carrying
+ * approval code X" — which is untrue, a row WAS found, it just does not
+ * reconcile — so one false sentence would simply replace another.
+ *
+ * @param what  what the reference is called on this gateway ("approval code" / "RRN")
+ */
+function collisionReasonText(result, what) {
+  const c = result.collision;
+  if (!c) return null;
+  const ref = result.referenceId ?? '(blank)';
+  if (c.kind === 'COLLIDED_WINNER') {
+    return `Matched on its own amount — ${what} ${ref} is shared by ${c.sharedBy} receipts, and this is the only one that reconciles`;
+  }
+  if (c.kind === 'COLLIDED_SIBLING') {
+    return `${what} ${ref} is shared by ${c.sharedBy} receipts and another of them reconciles with the settlement — this receipt has no counterpart of its own`;
+  }
+  const amounts = (c.candidateAmounts || []).map(rupees).join(', ');
+  return `${what} ${ref} is carried by ${c.sharedBy} unrelated receipts, so their total is not a real payment`
+    + `${amounts ? ` — the settlement under this ${what} is ${amounts}` : ''}. Nothing here reconciles; the reference needs correcting in the MIS.`;
+}
+
 function cardReasonText(result) {
-  if (result.status === 'MATCHED') {
+  const collision = collisionReasonText(result, 'approval code');
+  if (collision) return collision;
+  if (result.status === 'MATCHED' || result.status === 'GROUPED_MATCHED') {
     const src = result.matchSourceType === 'CARD_PINELABS' ? 'Pine Labs' : 'CARD MPR';
-    return `Matched ${src} approval code ${result.referenceId}${result.matchedDate ? ` dated ${result.matchedDate}` : ''}`;
+    const group = result.status === 'GROUPED_MATCHED' ? groupedReasonSuffix(result) : '';
+    return `Matched ${src} approval code ${result.referenceId}${result.matchedDate ? ` dated ${result.matchedDate}` : ''}${group}`;
   }
   if (result.status === 'AMOUNT_MISMATCH') {
     const src = result.matchSourceType === 'CARD_PINELABS' ? 'Pine Labs' : 'CARD MPR';
@@ -75,7 +122,12 @@ function cardReasonText(result) {
 }
 
 function upiReasonText(result) {
-  if (result.status === 'MATCHED') return `Matched UPI MPR RRN ${result.referenceId}${result.matchedDate ? ` dated ${result.matchedDate}` : ''}`;
+  const collision = collisionReasonText(result, 'RRN');
+  if (collision) return collision;
+  if (result.status === 'MATCHED' || result.status === 'GROUPED_MATCHED') {
+    const group = result.status === 'GROUPED_MATCHED' ? groupedReasonSuffix(result) : '';
+    return `Matched UPI MPR RRN ${result.referenceId}${result.matchedDate ? ` dated ${result.matchedDate}` : ''}${group}`;
+  }
   if (result.status === 'AMOUNT_MISMATCH') return `UPI MPR RRN ${result.referenceId} found but differs by ${result.difference}`;
   if (result.candidateCount > 1) {
     return `${result.candidateCount} UPI MPR rows carry RRN ${result.referenceId} — the rule is set not to guess between them`;
@@ -102,7 +154,7 @@ router.post('/card-recon/generate', async (req, res, next) => {
         await client.query(
           `UPDATE ucr_ip_records
               SET match_status = $2, match_source_type = $3, match_source_id = $4, match_reason = $5,
-                  match_difference = $6, match_group_amount = $7,
+                  match_difference = $6, match_group_amount = $7, match_source_amount = $9,
                   locked_at = CASE WHEN $8 THEN now() ELSE NULL END, locked_by = NULL
             -- A checker-approved row is locked and must survive a re-run
             -- untouched (see match_change_requests / bulkUpdateMatchStatus).
@@ -113,7 +165,8 @@ router.post('/card-recon/generate', async (req, res, next) => {
             Number(result.misRecordId), result.status, result.matchSourceType,
             result.matchSourceId != null ? Number(result.matchSourceId) : null, cardReasonText(result),
             result.difference ?? null, result.groupAmount ?? null,
-            pastGoLive && result.status === 'MATCHED',
+            pastGoLive && (result.status === 'MATCHED' || result.status === 'GROUPED_MATCHED'),
+            result.matchedAmount ?? null,
           ],
         );
       }
@@ -145,14 +198,15 @@ router.post('/upi-recon/generate', async (req, res, next) => {
         await client.query(
           `UPDATE ucr_ip_records
               SET match_status = $2, match_source_type = $3, match_source_id = $4, match_reason = $5,
-                  match_difference = $6, match_group_amount = $7,
+                  match_difference = $6, match_group_amount = $7, match_source_amount = $9,
                   locked_at = CASE WHEN $8 THEN now() ELSE NULL END, locked_by = NULL
             WHERE id = $1 AND locked_at IS NULL`,
           [
             Number(result.misRecordId), result.status, result.matchSourceType,
             result.matchSourceId != null ? Number(result.matchSourceId) : null, upiReasonText(result),
             result.difference ?? null, result.groupAmount ?? null,
-            pastGoLive && result.status === 'MATCHED',
+            pastGoLive && (result.status === 'MATCHED' || result.status === 'GROUPED_MATCHED'),
+            result.matchedAmount ?? null,
           ],
         );
       }
@@ -175,10 +229,15 @@ router.post('/upi-recon/generate', async (req, res, next) => {
  * mapper's `matchedSource` hydration (see ucr-mappers.js) works regardless
  * of which of the (up to) 3 possible tables actually matched.
  */
-async function listUcrIpRecords({ instrumentType, query, res }) {
-  const page = Math.max(1, Number(query.page) || 1);
-  const pageSize = Math.min(500, Math.max(1, Number(query.pageSize) || 50));
-
+/**
+ * The WHERE for one instrument type under the screen's toolbar filters.
+ *
+ * Split out of listUcrIpRecords so the combined Mismatch Review export
+ * (excel/mismatch-export.js) selects by the SAME predicate the screen lists
+ * with — a second copy of this is how a downloaded file and the screen it came
+ * from quietly stop agreeing.
+ */
+async function buildUcrFilter({ instrumentType, query }) {
   const clauses = ['r.instrument_type = $1'];
   const params = [instrumentType];
   if (query.status) {
@@ -237,7 +296,13 @@ async function listUcrIpRecords({ instrumentType, query, res }) {
     const cutoff = cutoffClause('ucr_ip_upload_batches', cutoffs, params);
     if (cutoff) clauses.push(cutoff);
   }
-  const where = `WHERE ${clauses.join(' AND ')}`;
+  return { where: `WHERE ${clauses.join(' AND ')}`, params };
+}
+
+async function listUcrIpRecords({ instrumentType, query, res }) {
+  const page = Math.max(1, Number(query.page) || 1);
+  const pageSize = Math.min(500, Math.max(1, Number(query.pageSize) || 50));
+  const { where, params } = await buildUcrFilter({ instrumentType, query });
 
   const { rows: countRows } = await db.query(`SELECT COUNT(*)::int AS total FROM ucr_ip_records r ${where}`, params);
   const { rows } = await db.query(
@@ -273,3 +338,5 @@ router.get('/upi-recon', async (req, res, next) => {
 });
 
 module.exports = router;
+// See buildUcrFilter's comment — shared with the combined Mismatch Review export.
+module.exports.buildUcrFilter = buildUcrFilter;

@@ -6,16 +6,27 @@
   gap: var(--space-4);
 }
 
-.unit-matches__head h1 {
-  margin: 0;
-  font-size: 1.25rem;
+.unit-matches__head {
+  display: flex;
+  align-items: center;
+
+  h1 {
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: normal;
+  }
 }
 
-.unit-matches__sub {
-  margin: var(--space-1) 0 0;
-  color: var(--text-tertiary);
+.unit-matches__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-info {
   font-size: 0.85rem;
-  max-width: 62ch;
+  color: var(--text-subtle);
+  cursor: help;
 }
 
 .unit-matches__filters {

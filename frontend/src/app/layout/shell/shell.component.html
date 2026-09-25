@@ -5,11 +5,24 @@
 <app-aurora-background />
 <app-cursor-glow />
 
-<div class="shell" [class.shell--collapsed]="sidebarStore.collapsed()">
+@if (navigating()) {
+  <app-ai-loader
+    [label]="navigatingLabel() ?? 'Loading'"
+    [caption]="navigatingLabel() ? 'Opening this screen' : ''"
+    icon="pi pi-compass"
+  />
+}
+
+<div class="shell" [class.shell--collapsed]="sidebarStore.collapsed()" [class.shell--compact]="compact()">
   <app-topbar class="shell__topbar" />
   <app-sidebar class="shell__sidebar" />
 
-  <main class="shell__content" [@routeFade]="routeKey()" [@.disabled]="reducedMotion.prefersReduced()">
+  <main
+    class="shell__content"
+    [@routeFade]="routeKey()"
+    [@.disabled]="reducedMotion.prefersReduced()"
+    (scroll)="onContentScroll($event)"
+  >
     <router-outlet />
   </main>
 </div>

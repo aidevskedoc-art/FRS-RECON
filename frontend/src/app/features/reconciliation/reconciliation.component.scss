@@ -8,29 +8,33 @@
 
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
   flex-wrap: wrap;
+  margin-bottom: calc(var(--space-3) - var(--space-5));
 
   h2 {
     margin: 0;
-    font-size: var(--text-xl);
+    font-size: 1.05rem;
+    line-height: normal;
     color: var(--text-primary);
-  }
-
-  p {
-    margin: var(--space-1) 0 0;
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-    max-width: 78ch;
   }
 }
 
-/* Keeps the heading and its blurb together as one flex item, so the button is
-   pushed to the right edge rather than sitting between them. */
+/* Keeps the heading and its info icon together as one flex item, so the button
+   is pushed to the right edge rather than sitting between them. */
 .page-header__text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+}
+
+.page-info {
+  font-size: 0.85rem;
+  color: var(--text-subtle);
+  cursor: help;
 }
 
 .notice {
@@ -372,18 +376,6 @@
 .report__cross,
 .report__problem--error {
   color: var(--status-danger-fg);
-}
-
-.reports__ack {
-  align-self: flex-start;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--status-warning-border);
-  border-radius: var(--radius-sm);
-  background: var(--status-warning-bg);
-  color: var(--status-warning-fg);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  cursor: pointer;
 }
 
 /* ---- what this run covers ---- */

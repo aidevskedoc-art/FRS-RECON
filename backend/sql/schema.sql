@@ -1141,6 +1141,18 @@ ALTER TABLE ucr_ip_records ADD COLUMN IF NOT EXISTS diag_no VARCHAR(255); -- DIA
 -- and recomputing the difference per row would contradict match_status.
 ALTER TABLE ucr_ip_records ADD COLUMN IF NOT EXISTS match_difference   NUMERIC(14,2);
 ALTER TABLE ucr_ip_records ADD COLUMN IF NOT EXISTS match_group_amount NUMERIC(14,2);
+-- The gateway-side counterpart to match_group_amount: what the matcher actually
+-- compared match_group_amount against. Usually equal to the single joined
+-- gateway row's own amount (msrc_amount in ucr-record-query.js) — but a
+-- reference can carry MORE THAN ONE real gateway settlement at once (a 6-digit
+-- CARD approval code gets reissued to unrelated transactions; confirmed live:
+-- app_code 705447 is two real settlements four days apart). When that happens
+-- match_source_id can only point at one of them (it is a single FK), so the
+-- live join alone would show a number that disagrees with match_difference —
+-- this column is what GROUPED_MATCHED actually reconciled against, persisted
+-- once at Generate time rather than re-derived (and risking drifting from the
+-- matcher's own normalizeRef logic) on every read.
+ALTER TABLE ucr_ip_records ADD COLUMN IF NOT EXISTS match_source_amount NUMERIC(14,2);
 
 CREATE INDEX IF NOT EXISTS ucr_ip_records_batch_id_idx ON ucr_ip_records(batch_id);
 CREATE INDEX IF NOT EXISTS ucr_ip_records_status_idx ON ucr_ip_records(match_status);
@@ -1259,6 +1271,10 @@ CREATE TABLE IF NOT EXISTS ucr_upi_mpr_upload_batches (
 );
 
 CREATE INDEX IF NOT EXISTS ucr_upi_mpr_upload_batches_file_hash_idx ON ucr_upi_mpr_upload_batches(file_hash);
+
+-- The bank_statement_uploads mirror this UPI batch created (ucr-upload.routes.js,
+-- upi-mpr beforeRecords) — deleting the UPI batch deletes the mirror too.
+ALTER TABLE ucr_upi_mpr_upload_batches ADD COLUMN IF NOT EXISTS bank_batch_id INTEGER REFERENCES bank_statement_uploads(id) ON DELETE SET NULL;
 
 -- UPI Merchant Payout Report. rrn ("Txn ref no. (RRN)") is the join key to
 -- ucr_ip_records.reference_id (UPI rows). transaction_amount is GROSS and
@@ -1541,6 +1557,13 @@ CREATE TABLE IF NOT EXISTS folder_watch_config (
   updated_at         TIMESTAMP NOT NULL DEFAULT now(),
   updated_by         INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
+
+-- Login for a share that needs its own user ID/password (folder-watch/
+-- share-credentials.js). Both NULL = use the backend machine's own Windows
+-- account. The password is AES-256-GCM ciphertext, never plain text, and is
+-- never returned by the API.
+ALTER TABLE folder_watch_config ADD COLUMN IF NOT EXISTS share_username      VARCHAR(255);
+ALTER TABLE folder_watch_config ADD COLUMN IF NOT EXISTS share_password_enc  TEXT;
 
 CREATE TABLE IF NOT EXISTS folder_watch_runs (
   id             SERIAL PRIMARY KEY,

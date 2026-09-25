@@ -796,3 +796,77 @@
   mix-blend-mode: var(--cursor-glow-blend);
   will-change: transform;
 }
+
+// ---------------------------------------------------------------------
+// Data-table extras shared by the dashboard's By Payment Type table and
+// Mismatch Review: legend chips over a table, and the collapsible
+// "How to read this table" note under it.
+// ---------------------------------------------------------------------
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+
+  i {
+    font-size: 0.65rem;
+  }
+}
+
+.legend-chip--good {
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+
+.legend-chip--bad {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+
+.legend-chip--warn {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-fg);
+}
+
+// "How to read this table" — closed by default.
+.how-to {
+  border: 1px solid color-mix(in srgb, var(--ai-purple) 18%, var(--border-default));
+  border-radius: var(--r-lg);
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--ai-purple);
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::after {
+      content: '▸';
+      margin-left: auto;
+      transition: transform 150ms var(--ease);
+    }
+  }
+
+  &[open] summary::after {
+    transform: rotate(90deg);
+  }
+
+  ul {
+    margin: 8px 0 2px;
+    padding-left: 18px;
+    display: grid;
+    gap: 4px;
+  }
+}

@@ -117,7 +117,7 @@ const ok = (name, cond, extra) => {
   ok('...stored as the export stored it (RRN in transaction_id_2, merged trans_id, unit on the batch)', upi && upi.transaction_id_2 === '624473022200' && upi.trans_id === '624473022200' && upi.payment_mode === 'UPI' && rowsOf('ip_payment_upload_batches')[0].unit_name === 'SECUNDERABAD', upi);
 
   const diagRes = await post('diag', bytes, 'All Collections.xls');
-  ok('Diag MIS: 201 and the held-back receipt reported by number', diagRes.status === 201 && diagRes.body.heldBack.length === 1 && diagRes.body.heldBack[0].receiptNo === 'ORE190739', diagRes.body);
+  ok('Diag MIS: 201, the split-paid receipt stored and reported by number', diagRes.status === 201 && diagRes.body.heldBack.length === 0 && diagRes.body.splitPaid.length === 1 && diagRes.body.splitPaid[0].receiptNo === 'ORE190739' && rowsOf('diag_op_payment_records').some((r) => r.receipt_number === 'ORE190739/26'), diagRes.body);
   ok('...doctor-fee bill stored with pay_mode blank and both references', rowsOf('diag_op_payment_records').some((r) => r.receipt_number === 'DFV1155251/26' && r.pay_mode === null && r.transaction_id_1 === '331890422868'));
 
   const chqRes = await post('cheque', bytes, 'All Collections.xls');

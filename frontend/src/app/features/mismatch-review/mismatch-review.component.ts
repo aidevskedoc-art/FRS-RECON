@@ -8,6 +8,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { DialogModule } from 'primeng/dialog';
 import { DatePickerModule } from 'primeng/datepicker';
 import { SelectModule } from 'primeng/select';
+import { MultiSelectModule } from 'primeng/multiselect';
 import { MismatchReviewService } from '../../core/services/mismatch-review.service';
 import { MasterDataService } from '../../core/services/master-data.service';
 import { ChequeCollectionService } from '../../core/services/cheque-collection.service';
@@ -22,6 +23,10 @@ import {
   DEPARTMENT_LABELS,
   Department,
   MISMATCH_STATUSES,
+  MatchStatusFilter,
+  STATUS_FILTER_OPTIONS,
+  STATUS_LABELS,
+  statusesForTab,
   OnlineMismatchRecord,
   PendingChange,
   ReconciliationDates,
@@ -46,6 +51,29 @@ const TABS: readonly ReviewTab[] = [
   { id: 'upi', label: 'UPI', icon: 'pi pi-mobile' },
 ];
 
+/** Short noun phrase per tab, for embedding in the dynamic subtitle sentence (headerSubtitle) — TABS.label reads fine as a tab caption but not mid-sentence. */
+const TAB_NOUN: Record<TabId, string> = {
+  online: 'online IP and Diagnostics/OP',
+  cheque: 'cheque collection',
+  card: 'card',
+  upi: 'UPI',
+};
+
+/**
+ * The three Excel downloads the client asked for. Each is one workbook covering
+ * all four tabs; the toolbar's other filters narrow whichever is chosen.
+ *
+ * Separate buttons rather than "export what is on screen": they asked to pull a
+ * Matched report without first switching the screen to Matched, which is a
+ * reasonable thing to want when the screen is a review worklist.
+ */
+type ExportReport = 'mismatches' | 'matched' | 'all' | 'matched_by_auditor';
+const EXPORT_REPORTS: readonly { mode: ExportReport; label: string; hint: string }[] = [
+  { mode: 'mismatches', label: 'Mismatched', hint: 'Everything short of a clean match, all four tabs, in one file' },
+  { mode: 'matched', label: 'Matched', hint: 'Every clean match, all four tabs, in one file' },
+  { mode: 'all', label: 'All Report', hint: 'Matched and mismatched together, all four tabs, in one file' },
+];
+
 const PAGE_SIZE = 25;
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -53,7 +81,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 // which the same-named comment there says serves both "on screen" and "in the result file").
 // This screen only ever lists mismatches, so GREEN never actually appears here — it's kept
 // so the rule stays identical to the export's, and the legend can still explain it.
-const CLEAN_MATCH_STATUSES = new Set(['MATCHED', 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY']);
+const CLEAN_MATCH_STATUSES = new Set(['MATCHED', 'GROUPED_MATCHED', 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY']);
 type StatusTone = 'GREEN' | 'RED' | 'ORANGE';
 
 function statusTone(status: string | null, matchedByAuditor: boolean): StatusTone | null {
@@ -66,16 +94,17 @@ function statusTone(status: string | null, matchedByAuditor: boolean): StatusTon
  * Client mail item 15 — a "Matched" view alongside the default mismatches
  * one, so an Auditor can find a locked system match to flag as wrong (see
  * MatchApprovalService.propose, which now also accepts a clean-match row as
- * a correction). Card/UPI's only clean status is 'MATCHED' (no
- * EASEBUZZ_MATCHED/CONTRA_ENTRY concept there — see UcrMatchStatus), which is
- * already a member of CLEAN_MATCH_STATUSES above.
+ * a correction). Card/UPI's clean statuses are 'MATCHED' and 'GROUPED_MATCHED'
+ * (a split payment — see card-matcher.js/upi-matcher.js; no EASEBUZZ_MATCHED/
+ * CONTRA_ENTRY concept there — see UcrMatchStatus), both already members of
+ * CLEAN_MATCH_STATUSES above.
  *
  * 'Matched by Auditor' is a narrower look into 'Matched' (every clean match,
  * whether green/system or orange/auditor-locked per the AC-16 legend) rather
  * than a disjoint slice of it — 'All' drops the status filter entirely.
  */
 type ViewMode = 'all' | 'mismatches' | 'matched' | 'matched_by_auditor';
-const UCR_CLEAN_STATUSES = ['MATCHED'];
+const UCR_CLEAN_STATUSES = ['MATCHED', 'GROUPED_MATCHED'];
 
 interface ViewModeOption {
   readonly id: ViewMode;
@@ -158,15 +187,26 @@ interface Filters {
   location: string | null;
   /** null = All Departments. */
   department: Department | null;
+  /**
+   * Exact verdicts to show; [] = whatever the view mode says.
+   *
+   * Narrower than the view mode, and takes precedence over it: "Mismatches" is
+   * four statuses at once, and the client asked to be able to pull just one —
+   * every Unmatched row, say — both on screen and into the Excel download.
+   */
+  statuses: MatchStatusFilter[];
 }
 
 function emptyFilters(): Filters {
-  return { search: '', dateFrom: null, upTo: 'BANK', asOn: null, location: null, department: null };
+  return { search: '', dateFrom: null, upTo: 'BANK', asOn: null, location: null, department: null, statuses: [] };
 }
 
 const UP_TO_OPTIONS: { label: string; value: UpTo }[] = [
   { label: 'Till last bank upload', value: 'BANK' },
-  { label: 'As on date', value: 'AS_ON' },
+  // Reads as the upper end of a From-To range, which is what it always was:
+  // dateFrom + this are sent as dateFrom/dateTo. It was labelled "As on date",
+  // so nobody looking for a date range found it.
+  { label: 'To date', value: 'AS_ON' },
 ];
 
 /** A picked Date -> '20 Sep 2026' (it's already a local calendar date, so no timezone shift). */
@@ -454,7 +494,7 @@ function emptyTabs(): Record<TabId, TabState> {
 @Component({
   selector: 'app-mismatch-review',
   standalone: true,
-  imports: [DatePipe, FormsModule, TableModule, InputTextModule, DialogModule, DatePickerModule, SelectModule, PageHeaderComponent, RecordDetailComponent],
+  imports: [DatePipe, FormsModule, TableModule, InputTextModule, DialogModule, DatePickerModule, SelectModule, MultiSelectModule, PageHeaderComponent, RecordDetailComponent],
   templateUrl: './mismatch-review.component.html',
   styleUrl: './mismatch-review.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -477,6 +517,10 @@ export class MismatchReviewComponent {
   protected readonly filters = signal<Filters>(emptyFilters());
   protected readonly listError = signal<string | null>(null);
   protected readonly loading = signal(false);
+  /** Which report is downloading, so only that button spins. null = idle. */
+  protected readonly exporting = signal<ExportReport | null>(null);
+  protected readonly exportError = signal<string | null>(null);
+  protected readonly exportReports = EXPORT_REPORTS;
 
   // ---- list state, one entry per tab ---------------------------------------------------
   private readonly tabState = signal<Record<TabId, TabState>>(emptyTabs());
@@ -511,6 +555,35 @@ export class MismatchReviewComponent {
   private readonly dates = signal<ReconciliationDates | null>(null);
   protected readonly activeDates = computed(() => this.dates()?.[this.activeTab()] ?? null);
   protected readonly activeTabLabel = computed(() => TABS.find((t) => t.id === this.activeTab())?.label ?? '');
+
+  /**
+   * Client ask, 2026-09-23: the page heading always read "Mismatch Review",
+   * even on the Matched / Matched by Auditor / All views where that name is
+   * simply wrong, and gave no hint which of the 4 tabs was open. Title now
+   * names both — "Card — Matched", "Online (IP + Diag/OP) — Mismatches" — and
+   * the subtitle underneath explains what that combination actually shows,
+   * without repeating the same words the title already said.
+   */
+  protected readonly headerTitle = computed(() => {
+    const tabLabel = TABS.find((t) => t.id === this.activeTab())?.label ?? '';
+    const viewLabel = VIEW_MODES.find((v) => v.id === this.viewMode())?.label ?? '';
+    return `${tabLabel} — ${viewLabel}`;
+  });
+
+  protected readonly headerSubtitle = computed(() => {
+    const tab = TAB_NOUN[this.activeTab()];
+    switch (this.viewMode()) {
+      case 'all':
+        return `Every ${tab} transaction, matched or not — click one to see the full record.`;
+      case 'matched':
+        return `${tab} transactions the system has matched — click one to see the full record, or flag it as wrong.`;
+      case 'matched_by_auditor':
+        return `Locked by an auditor's approval — click one to see who approved it and when.`;
+      case 'mismatches':
+      default:
+        return `Click one to see the full record and why it didn't tally.`;
+    }
+  });
 
   // ---- bulk select + propose (client ask, 2026-09-23) — Mismatches view only, current page ----
   protected readonly selectedRows = signal<ReviewRow[]>([]);
@@ -574,7 +647,7 @@ export class MismatchReviewComponent {
 
   protected readonly hasFilters = computed(() => {
     const f = this.filters();
-    return !!f.search.trim() || !!f.dateFrom || f.upTo !== 'BANK' || !!f.location || !!f.department;
+    return !!f.search.trim() || !!f.dateFrom || f.upTo !== 'BANK' || !!f.location || !!f.department || f.statuses.length > 0;
   });
 
   // ---- AC-12 "show up to" -----------------------------------------------------------
@@ -588,7 +661,13 @@ export class MismatchReviewComponent {
   protected readonly cutoffNote = computed<string | null>(() => {
     const f = this.filters();
     if (f.upTo === 'AS_ON') {
-      return f.asOn ? `Showing mismatches as on ${pickedDateText(f.asOn)}.` : 'Showing every date — pick an "as on" date to stop the list there.';
+      // Says the range in full, both ends, because that is what the download
+      // will contain — and a partial-period file with no stated period is the
+      // easiest kind to misread later.
+      if (!f.asOn) return 'Showing every date — pick a To date to stop the list there.';
+      return f.dateFrom
+        ? `Showing ${pickedDateText(f.dateFrom)} to ${pickedDateText(f.asOn)}.`
+        : `Showing everything up to ${pickedDateText(f.asOn)}.`;
     }
     const bank = this.activeDates()?.bank;
     if (!bank) return null;
@@ -665,13 +744,35 @@ export class MismatchReviewComponent {
   }
 
   /** From date, the up-to mode, and the as-on date — none of them move the file dates. */
+  /**
+   * Both date boxes are always on screen, so From-To reads as the range it is.
+   *
+   * Picking a To date switches the upper bound to it, and clearing it goes back
+   * to the bank cut-off (AC-12's default). That coupling is what lets the To box
+   * be visible at all times: it used to be hidden behind the "Show up to"
+   * dropdown, and nobody looking for a date range found it there.
+   */
   protected updateDateFilter(patch: Partial<Pick<Filters, 'dateFrom' | 'upTo' | 'asOn'>>): void {
-    this.filters.update((f) => ({ ...f, ...patch }));
+    this.filters.update((f) => {
+      const next = { ...f, ...patch };
+      if ('asOn' in patch) next.upTo = patch.asOn ? 'AS_ON' : 'BANK';
+      // Going back to the bank cut-off drops the To date, so the box does not
+      // sit there showing a date that is no longer being applied.
+      if (patch.upTo === 'BANK') next.asOn = null;
+      return next;
+    });
     this.refresh(false);
   }
 
   protected updateScopeFilter(patch: Partial<Pick<Filters, 'location' | 'department'>>): void {
     this.filters.update((f) => ({ ...f, ...patch }));
+    this.refresh(true);
+  }
+
+  protected readonly statusOptions = STATUS_FILTER_OPTIONS;
+
+  protected updateStatusFilter(statuses: MatchStatusFilter[]): void {
+    this.filters.update((f) => ({ ...f, statuses: statuses ?? [] }));
     this.refresh(true);
   }
 
@@ -688,6 +789,57 @@ export class MismatchReviewComponent {
     const picked = this.filters().location;
     if (picked) return picked;
     return this.branchRestricted() ? this.availableLocations().join(',') : undefined;
+  }
+
+  /**
+   * Client ask: all four tabs in ONE Excel file.
+   *
+   * Sends the toolbar exactly as the lists send it, plus the view mode — so
+   * the workbook is the screen, not a second opinion about it. Deliberately
+   * NOT the Audit Working Report: that is a fixed client-approved layout of
+   * every row in a period, and filtering it would put a signed-off deliverable
+   * at risk for a different job (see backend/src/excel/mismatch-export.js).
+   *
+   * The server may refuse an unfiltered export as too large; that reads back as
+   * a plain message rather than a failed download, hence the blob-to-text step.
+   */
+  protected downloadExport(report: ExportReport): void {
+    if (this.exporting()) return;
+    this.exporting.set(report);
+    this.exportError.set(null);
+    const f = this.filters();
+    this.mismatchReview
+      .downloadExport({
+        // The report picked here, not the view mode: the client asked to pull a
+        // Matched report without first switching the screen to Matched. Any
+        // Status pick NARROWS it server-side rather than replacing it.
+        mode: report,
+        statuses: f.statuses.length ? f.statuses.join(',') : undefined,
+        search: f.search.trim() || undefined,
+        dateFrom: toDateOnly(f.dateFrom),
+        upTo: f.upTo === 'BANK' ? 'BANK' : undefined,
+        dateTo: f.upTo === 'AS_ON' ? toDateOnly(f.asOn) : undefined,
+        location: this.locationParam(),
+        department: f.department ?? undefined,
+        matchedByAuditor: report === 'matched_by_auditor' ? 'true' : undefined,
+      })
+      .subscribe({
+        next: () => this.exporting.set(null),
+        error: async (err) => {
+          this.exporting.set(null);
+          // An error body arrives as a Blob because the request asked for one.
+          let message = errorMessage(err);
+          if (err?.error instanceof Blob) {
+            try {
+              const parsed = JSON.parse(await err.error.text());
+              if (parsed?.error) message = parsed.error;
+            } catch {
+              /* not JSON — keep the generic message */
+            }
+          }
+          this.exportError.set(message);
+        },
+      });
   }
 
   // ---- loading -------------------------------------------------------------------------
@@ -741,8 +893,19 @@ export class MismatchReviewComponent {
     // set, so an Auditor can find a locked system match to flag as wrong.
     // 'All' sends no status filter at all — that's the whole point of it.
     const wantsClean = mode === 'matched' || mode === 'matched_by_auditor';
-    const onlineChequeStatuses = mode === 'mismatches' ? MISMATCH_STATUSES : wantsClean ? [...CLEAN_MATCH_STATUSES] : null;
-    const ucrStatuses = mode === 'mismatches' ? UCR_MISMATCH_STATUSES : wantsClean ? UCR_CLEAN_STATUSES : null;
+    let onlineChequeStatuses = mode === 'mismatches' ? MISMATCH_STATUSES : wantsClean ? [...CLEAN_MATCH_STATUSES] : null;
+    let ucrStatuses = mode === 'mismatches' ? UCR_MISMATCH_STATUSES : wantsClean ? UCR_CLEAN_STATUSES : null;
+    // An explicit Status pick is narrower than the view mode, so it replaces it
+    // rather than adding to it. Narrowed per tab because the two families of
+    // tables do not share a vocabulary (see STATUS_FILTER_OPTIONS) — and an
+    // EMPTY narrowing must send a filter that matches nothing, not no filter at
+    // all, which the API would read as "every row".
+    if (f.statuses.length) {
+      const forTab = statusesForTab(f.statuses, tab);
+      const list = forTab.length ? forTab : ['__NONE__'];
+      onlineChequeStatuses = list;
+      ucrStatuses = list;
+    }
     switch (tab) {
       case 'online':
         return this.mismatchReview.fetchOnlineMismatches({ ...common, matchStatus: onlineChequeStatuses?.join(','), page, pageSize });
@@ -895,18 +1058,38 @@ export class MismatchReviewComponent {
     }
   }
 
+  /** The pill's icon, same tone rule: ✓ matched, auditor, ↘ still open. */
+  protected statusIcon(status: string | null, matchedByAuditor = false): string {
+    switch (statusTone(status, matchedByAuditor)) {
+      case 'GREEN': return 'pi-check';
+      case 'ORANGE': return 'pi-user-edit';
+      default: return 'pi-arrow-down-right';
+    }
+  }
+
+  /** Dot colour for the IP / OP / Diag chip — the same category colours as the dashboard's By Payment Type. */
+  protected typeColor(value: unknown): string {
+    const v = String(value ?? '').toLowerCase();
+    // OP sits in the dashboard's "Diagnostics / OP Payments" row, so it shares its orange.
+    if (v.includes('diag') || v === 'op' || v.startsWith('op')) return 'var(--ai-orange)';
+    if (v.includes('cheque')) return '#db2777';
+    if (v.includes('card')) return '#2563eb';
+    if (v.includes('upi')) return '#0d9488';
+    if (v === 'ip' || v.startsWith('ip')) return 'var(--ai-purple)';
+    return 'var(--text-subtle)';
+  }
+
+  /**
+   * Wording shared with every Excel the client gets (backend
+   * reconciliation/status-tone.js STATUS_LABEL). Kept identical on purpose —
+   * a verdict that reads one way on screen and another in the download is the
+   * kind of thing a client raises as a bug.
+   */
   protected statusLabel(status: string | null, matchedByAuditor = false): string {
     if (matchedByAuditor) return 'Matched by Auditor';
-    switch (status) {
-      case 'UNMATCHED': return 'Unmatched';
-      case 'AMOUNT_MISMATCH': return 'Amount Mismatch';
-      case 'PARTIAL_MATCH': return 'Partial Match';
-      case 'AMBIGUOUS_MATCH': return 'Ambiguous';
-      case 'MATCHED': return 'Matched';
-      case 'EASEBUZZ_MATCHED': return 'Matched';
-      case 'CONTRA_ENTRY': return 'Contra Entry';
-      default: return status ?? 'Not Generated';
-    }
+    // `status` is whatever the API sent, so it is narrowed here rather than
+    // trusted — an unknown verdict falls through to its own raw value.
+    return STATUS_LABELS[status as MatchStatusFilter] ?? status ?? 'Not Generated';
   }
 
   protected amount(value: CellValue): string {

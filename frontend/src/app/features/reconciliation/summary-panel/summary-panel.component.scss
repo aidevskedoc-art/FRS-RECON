@@ -91,40 +91,73 @@
   color: var(--ai-cyan);
 }
 
-.panel__section {
+// ---------------------------------------------------------------------
+// By Payment Type — card table: colour dot per type, mono figures, a
+// balance pill, an unmatched badge and a reconciled meter per row.
+// ---------------------------------------------------------------------
+.breakdown {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--ai-purple) 22%, transparent);
+  border-radius: var(--r-xl);
+  @include mixins.glass-card;
+}
+
+.breakdown__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
 
   h4 {
     margin: 0;
-    font-size: var(--text-md);
+    font-size: 1rem;
+    font-weight: 700;
     color: var(--text-primary);
   }
 }
 
+.breakdown__legend {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .table-wrap {
-  @include mixins.card;
   @include mixins.scrollbar-thin;
   overflow: auto;
+  border-radius: var(--r-lg);
 }
 
 .breakdown-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-sm);
+  font-size: 0.84rem;
 
   th,
   td {
-    padding: var(--space-3) var(--space-4);
+    padding: 11px 14px;
     text-align: left;
     white-space: nowrap;
   }
 
-  th {
-    background: var(--surface-sunken);
+  thead th {
+    background: color-mix(in srgb, var(--ai-purple) 7%, var(--surface));
     color: var(--text-secondary);
-    font-weight: 600;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  tbody tr {
+    transition: background-color 120ms var(--ease);
+
+    &:hover {
+      background: color-mix(in srgb, var(--ai-purple) 4%, transparent);
+    }
   }
 
   td {
@@ -133,23 +166,130 @@
   }
 
   tfoot td {
-    border-top: 2px solid var(--border-default);
+    border-top: 2px solid color-mix(in srgb, var(--ai-purple) 25%, var(--border-default));
     font-weight: 700;
-    background: var(--surface-sunken);
+    background: color-mix(in srgb, var(--ai-purple) 4%, var(--surface));
   }
 }
 
 .num {
-  text-align: right;
+  text-align: right !important;
   font-variant-numeric: tabular-nums;
 }
 
-.amount {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
 }
 
-/* A non-zero Balance Amount is the thing a reviewer is looking for. */
-.amount--flag {
-  color: var(--status-warning-fg);
+// A zero reads as quiet, so the counts that matter stand out.
+.zero {
+  color: var(--text-subtle) !important;
+}
+
+.type {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.type__dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.type__name {
+  font-weight: 700;
+}
+
+// Unmatched count — the figure a reviewer acts on.
+.badge {
+  display: inline-block;
+  min-width: 34px;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  background: var(--ai-purple);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.badge--none {
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+
+// Balance Amount: red with ↘ when money is still to be accounted for.
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
   font-weight: 600;
+
+  i {
+    font-size: 0.62rem;
+  }
+}
+
+.pill--bad {
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger-border, transparent);
+  color: var(--status-danger-fg);
+}
+
+.pill--good {
+  background: var(--status-success-bg);
+  border-color: var(--status-success-border, transparent);
+  color: var(--status-success-fg);
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.meter__track {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.meter__fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 400ms var(--ease);
+}
+
+.meter__fill--good {
+  background: linear-gradient(90deg, #34d399, #059669);
+}
+
+.meter__fill--warn {
+  background: linear-gradient(90deg, #fbbf24, #d97706);
+}
+
+.meter__fill--bad {
+  background: linear-gradient(90deg, #f87171, #dc2626);
+}
+
+.meter__pct {
+  flex: none;
+  width: 36px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
 }

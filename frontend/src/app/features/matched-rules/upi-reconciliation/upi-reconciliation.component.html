@@ -1,12 +1,17 @@
+@if (generating()) {
+  <app-ai-loader label="Reconciling UPI Payments" caption="Matching MIS rows against the UPI MPR by RRN · Applying rules" icon="pi pi-mobile" />
+}
+
 <div class="upi-reconciliation">
   <header class="upi-reconciliation__head">
-    <div>
+    <div class="upi-reconciliation__title">
       <h1>UPI Reconciliation</h1>
-      <p class="upi-reconciliation__sub">
-        Every uploaded UPI MIS row tied to the UPI MPR row carrying the same RRN. CREDIT/PAY refund pairs
-        (a failed payment later returned to the payer) are excluded automatically. Run Generate after
-        uploading or re-uploading the MIS (IP) or UPI MPR feeds.
-      </p>
+      <i
+        class="pi pi-info-circle page-info"
+        pTooltip="Every uploaded UPI MIS row tied to the UPI MPR row carrying the same RRN. CREDIT/PAY refund pairs (a failed payment later returned to the payer) are excluded automatically. Run Generate after uploading or re-uploading the MIS (IP) or UPI MPR feeds."
+        tooltipPosition="bottom"
+        tabindex="0"
+      ></i>
     </div>
     <div class="head-actions">
       <p-button
@@ -46,6 +51,7 @@
     <div class="upi-reconciliation__tally">
       <span>{{ total() }} UPI rows</span>
       <span class="tally--matched">{{ matchedCount() }} matched</span>
+      <span class="tally--grouped-matched">{{ groupedMatchedCount() }} grouped matched</span>
       <span class="tally--mismatch">{{ mismatchCount() }} amount mismatch</span>
       <span class="tally--unmatched">{{ unmatchedCount() }} no UPI MPR row</span>
       <span class="tally--sep">·</span>
@@ -76,6 +82,7 @@
             <span
               class="status-pill"
               [class.status-pill--matched]="row.matchStatus === 'MATCHED'"
+              [class.status-pill--grouped-matched]="row.matchStatus === 'GROUPED_MATCHED'"
               [class.status-pill--mismatch]="row.matchStatus === 'AMOUNT_MISMATCH'"
               [class.status-pill--unmatched]="row.matchStatus === 'UNMATCHED' || !row.matchStatus"
             >{{ statusLabel(row.matchStatus) }}</span>

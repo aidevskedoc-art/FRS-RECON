@@ -7,7 +7,7 @@
  * What it pins down is the part unit tests of the parsers cannot: the client's
  * combined "All Collections" workbook is uploaded three times (IP, OP, DIAG) and
  * each must land as its own batch; a repeat of any of them must be refused; and
- * rows already stored from an overlapping earlier file must be refused.
+ * rows already stored from an overlapping earlier file are skipped (only new ones stored).
  */
 const path = require('path');
 const XLSX = require('xlsx');
@@ -22,6 +22,16 @@ function runQuery(sql, params = []) {
     const scoped = /AND mis_source = \$2/.test(text);
     const rows = store.batches.filter((b) => b.file_hash === params[0] && (!scoped || b.mis_source === params[1]));
     return { rows: rows.slice(0, 1) };
+  }
+  if (/^WITH n AS .* SELECT DISTINCT n\.receipt_no/.test(text)) {
+    // splitStoredRows: which of these keys are already stored
+    const [source, receipts, types, amounts, refs] = params;
+    const stored = new Set(store.records.filter((x) => x.mis_source === source).map((r) => JSON.stringify([r.receipt_no, r.instrument_type, r.amount, r.reference_id || ''])));
+    return {
+      rows: receipts
+        .map((r, i) => ({ receipt_no: r, instrument_type: types[i], amount: amounts[i] === null ? null : Number(amounts[i]), reference_id: refs[i] }))
+        .filter((k) => stored.has(JSON.stringify([k.receipt_no, k.instrument_type, k.amount, k.reference_id || '']))),
+    };
   }
   if (/^WITH n AS/.test(text)) {
     const [source, receipts, types, amounts, refs] = params;
@@ -182,9 +192,16 @@ const ok = (name, cond, extra) => {
     [4, '09/IDE4/26', 'Card', 7000, '112233'],
   ]);
   const overlapping = await post('/ucr-ip', sep1to20, 'All Collections 1-20.xls');
-  ok('a different file repeating stored transactions -> 409', overlapping.status === 409, overlapping);
-  ok('...saying how many and where', /2 of the Card\/UPI rows in this file are already stored — batch #\d+ "All Collections.xls" \(2 rows\)/.test(overlapping.body.error), overlapping.body.error);
-  ok('...and nothing was written', store.records.filter((r) => r.mis_source === 'IP').length === 2 && store.batches.length === 3);
+  ok('an overlapping period -> 201, only the new transaction stored', overlapping.status === 201 && overlapping.body.rowCount === 1 && overlapping.body.rowsSkipped === 2, overlapping);
+  ok('...the stored ones are not stored twice', store.records.filter((r) => r.mis_source === 'IP').length === 3 && store.records.filter((r) => r.receipt_no === '09/IDE1/26').length === 1);
+
+  const nothingNew = combinedWorkbook([
+    [1, '09/IDE1/26', 'Card', 20000, '475806'],
+    [2, '09/IDE2/26', 'UPI', 40000, '624473022200'],
+  ]);
+  const allStored = await post('/ucr-ip', nothingNew, 'All Collections 1-10.xls');
+  ok('a different file with NOTHING new -> 409, naming where', allStored.status === 409 && /All 2 Card\/UPI rows in this file are already stored — batch #\d+ "All Collections.xls"/.test(allStored.body.error), allStored.body.error);
+  ok('...and nothing was written', store.records.filter((r) => r.mis_source === 'IP').length === 3);
 
   const fresh = combinedWorkbook([[1, '09/IDE9/26', 'UPI', 1000, '999999999999']]);
   const later = await post('/ucr-ip', fresh, 'All Collections 16-30.xls');

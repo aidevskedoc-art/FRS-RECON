@@ -60,7 +60,7 @@ console.log('\n=== Online Collection MIS — IP ===');
 
 console.log('\n=== Online Collection MIS — Diagnostics / OP ===');
 {
-  const { sheets, heldBack } = M.hisDiagMisUpload(WB);
+  const { sheets, heldBack, splitPaid } = M.hisDiagMisUpload(WB);
   const rows = sheets[0].rows;
   const fee = byNo(rows, 'DFV1155251/26')[0];
   ok('doctor fee: one row per bill; bill and discount over ALL lines, online over the UPI line', fee && fee.billAmount === 900 && fee.onlineUpiAmount === 100 && fee.discountAmount === 800, fee);
@@ -76,7 +76,13 @@ console.log('\n=== Online Collection MIS — Diagnostics / OP ===');
   const ors = byNo(rows, 'ORS18915/26')[0];
   ok('ORS: no diag number or bill figures, UPI reference repeated in the third column', ors && ors.diagNo === null && ors.billAmount === null && ors.transactionRef3 === '621302109075', ors);
   ok('ODE receipts are not here (they belong to the IP export)', byNo(rows, 'ODE914/26').length === 0);
-  ok('a receipt split between UPI and ManualUPI is held back, not invented', byNo(rows, 'ORE190739/26').length === 0 && heldBack.length === 1 && heldBack[0].receiptNo === 'ORE190739' && heldBack[0].references.includes('886695615191'), heldBack);
+  // Split between UPI and ManualUPI: stored ONCE at the combined amount with
+  // both references (no invented split), reported in splitPaid — never left
+  // out of the lists and totals (2026-09-25).
+  const split = byNo(rows, 'ORE190739/26');
+  ok('a UPI + ManualUPI split receipt is stored once, with both references, not left out',
+    split.length === 1 && split[0].payType === 'UPI' && split[0].payMode === null && [split[0].transactionRef1, split[0].transactionRef2].includes('886695615191'), split);
+  ok('...reported by number in splitPaid, nothing held back', heldBack.length === 0 && splitPaid.length === 1 && splitPaid[0].receiptNo === 'ORE190739', { heldBack, splitPaid });
 }
 
 console.log('\n=== Cheque collection ledger ===');
@@ -135,8 +141,8 @@ console.log('\n=== real workbooks (skipped when not on this machine) ===');
   // Row counts and amounts; the Aug-26 figures were verified column by column
   // against the stored SBD Aug-26 exports (verify-his-mis-parity.js).
   const REAL = [
-    ['All Collection Types Single  Report -Aug-26 SBD.xls', { ip: [4317, 229825372], diag: [28063, 70637886.5], chequeIp: [251, 18389017], chequeOp: 7, refunds: [618, 34900980], held: 'ORE190739,ORE191228,ORE192584,ORE195414' }],
-    ['All Collections 01.09.26 to  15.09.26 -SBD.xls', { ip: [2242, 115777259], diag: [13638, 33252586], chequeIp: [130, 6240126], chequeOp: 17, refunds: [345, 15156522], held: 'ORE197023,ORE202675,ORE206650' }],
+    ['All Collection Types Single  Report -Aug-26 SBD.xls', { ip: [4317, 229825372], diag: [28067, 70667372.5], chequeIp: [251, 18389017], chequeOp: 7, refunds: [618, 34900980], split: 'ORE190739,ORE191228,ORE192584,ORE195414' }],
+    ['All Collections 01.09.26 to  15.09.26 -SBD.xls', { ip: [2242, 115777259], diag: [13641, 33256103], chequeIp: [130, 6240126], chequeOp: 17, refunds: [345, 15156522], split: 'ORE197023,ORE202675,ORE206650' }],
   ];
   const r2 = (n) => Math.round(n * 100) / 100;
   for (const [file, e] of REAL) {
@@ -158,7 +164,8 @@ console.log('\n=== real workbooks (skipped when not on this machine) ===');
     ok(`${file}: Diag MIS ${e.diag[0]} rows, ${e.diag[1]}`, dgRows.length === e.diag[0] && r2(sum(dgRows, (r) => r.onlineUpiAmount)) === e.diag[1], [dgRows.length, r2(sum(dgRows, (r) => r.onlineUpiAmount))]);
     ok(`${file}: IP cheques ${e.chequeIp[0]}, ${e.chequeIp[1]}; OP cheques ${e.chequeOp}`, chIp.length === e.chequeIp[0] && r2(sum(chIp, (r) => r.amount)) === e.chequeIp[1] && chOp.length === e.chequeOp, [chIp.length, r2(sum(chIp, (r) => r.amount)), chOp.length]);
     ok(`${file}: refunds ${e.refunds[0]}, ${e.refunds[1]}`, rfU.rows.length === e.refunds[0] && r2(sum(rfU.rows, (r) => r.amount)) === e.refunds[1], [rfU.rows.length, r2(sum(rfU.rows, (r) => r.amount))]);
-    ok(`${file}: held back exactly ${e.held}`, [...ipU.heldBack, ...dgU.heldBack].map((h) => h.receiptNo).sort().join() === e.held, [...ipU.heldBack, ...dgU.heldBack].map((h) => h.receiptNo));
+    // The split receipts are now IN the Diag rows (the +3 / +4 above), reported by number, none held back.
+    ok(`${file}: split-paid exactly ${e.split}, nothing held back`, [...ipU.splitPaid, ...dgU.splitPaid].map((h) => h.receiptNo).sort().join() === e.split && ![...ipU.heldBack, ...dgU.heldBack].length, [...ipU.splitPaid, ...dgU.splitPaid].map((h) => h.receiptNo));
   }
 }
 

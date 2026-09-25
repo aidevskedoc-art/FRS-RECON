@@ -33,6 +33,36 @@ const GATEWAY_TARGETS = ['CARD', 'UPI', 'PAYU', 'EASEBUZZ'];
  */
 const GATEWAY_AMBIGUITY_MODES = ['NEAREST_AMOUNT', 'UNMATCHED'];
 
+/**
+ * What to do when a MIS group's SUMMED amount does not reconcile with its
+ * gateway counterpart. Card and UPI only — payu/easebuzz do not group the MIS
+ * side.
+ *
+ * The problem this exists for: a group is formed purely by shared reference,
+ * and a reference is not reliably unique. A CARD approval code is 6 digits and
+ * the network reissues it; the HIS also writes placeholder codes onto bulk
+ * entries. Confirmed live: approval code 192081 sits on 144 unrelated ₹503
+ * diagnostic receipts AND on one genuine ₹73,941 VISA swipe (one card, one ARN,
+ * one terminal — not a bulk settlement). Summing those 144 gives ₹72,432 and
+ * reports every one of them as short by ₹1,509 — a figure that is pure
+ * arithmetic of the collision and describes nothing real.
+ *
+ * REPORT_DIFFERENCE — every member gets AMOUNT_MISMATCH carrying the group's
+ *   difference. What this matcher has always done; kept so the default-only
+ *   failure mode of the policy subsystem stays "behaves as before".
+ * PREFER_EXACT_MEMBER — before blaming the group, look for exactly ONE member
+ *   that reconciles with a candidate on its own. Found: that member is a real
+ *   1:1 match and is reported as such, the rest are UNMATCHED naming the shared
+ *   reference. Not found: nothing here reconciles, so every member is UNMATCHED
+ *   with that reason rather than AMOUNT_MISMATCH asserting a difference that was
+ *   never a real shortfall.
+ *
+ * Why this is policy and not grouping semantics (which the header says stay in
+ * the matchers): it does not change how groups are FORMED, only which verdict a
+ * failed group earns. Same class of decision as onAmbiguous.
+ */
+const GATEWAY_GROUP_MISMATCH_MODES = ['PREFER_EXACT_MEMBER', 'REPORT_DIFFERENCE'];
+
 /** PayU only: whether the bank credit is compared against the net or gross batch total. */
 const PAYU_AMOUNT_MODES = ['NET', 'GROSS'];
 
@@ -47,17 +77,31 @@ const MIN_TOKEN_LENGTH_FLOOR = 6;
 const MIN_TOKEN_LENGTH_CEILING = 32;
 
 /**
- * Per-target defaults, each reproducing today's hardcoded behaviour EXACTLY.
- * These are the fallback whenever no rule is configured, every rule is inactive,
- * or the rule store cannot be read at all — so the failure mode of the whole
- * configurable subsystem is "behaves exactly as it did before it existed".
+ * Per-target defaults. These are the fallback whenever no rule is configured,
+ * every rule is inactive, or the rule store cannot be read at all — so the
+ * failure mode of the configurable subsystem is a known, deliberate policy
+ * rather than whatever a half-read row happened to contain.
+ *
+ * Every key here reproduces the original hardcoded behaviour EXACTLY, with ONE
+ * deliberate exception: `onGroupMismatch` defaults to PREFER_EXACT_MEMBER, not
+ * to the original REPORT_DIFFERENCE. The original is still selectable and still
+ * does exactly what it always did — but it is not a safe DEFAULT, because what
+ * it does on a collided reference is state a rupee difference that never
+ * existed (see GATEWAY_GROUP_MISMATCH_MODES). A default that silently
+ * misreports money on a client-facing audit report is the wrong thing to fall
+ * back to when the rule store is unreadable.
  *
  * Keys that do not apply to a target are simply absent; each matcher reads only
  * what it understands and ignores the rest.
  */
 const GATEWAY_DEFAULTS = Object.freeze({
-  CARD: Object.freeze({ tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT' }),
-  UPI: Object.freeze({ tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT', excludeRefundPairs: true }),
+  CARD: Object.freeze({ tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT', onGroupMismatch: 'PREFER_EXACT_MEMBER' }),
+  UPI: Object.freeze({
+    tolerance: 1,
+    onAmbiguous: 'NEAREST_AMOUNT',
+    excludeRefundPairs: true,
+    onGroupMismatch: 'PREFER_EXACT_MEMBER',
+  }),
   PAYU: Object.freeze({
     tolerance: 1,
     onAmbiguous: 'NEAREST_AMOUNT',
@@ -107,6 +151,9 @@ function resolveGatewayPolicy(target, raw) {
   if ('excludeRefundPairs' in base && typeof cfg.excludeRefundPairs === 'boolean') {
     out.excludeRefundPairs = cfg.excludeRefundPairs;
   }
+  if ('onGroupMismatch' in base && GATEWAY_GROUP_MISMATCH_MODES.includes(cfg.onGroupMismatch)) {
+    out.onGroupMismatch = cfg.onGroupMismatch;
+  }
   if ('compareAmount' in base && PAYU_AMOUNT_MODES.includes(cfg.compareAmount)) {
     out.compareAmount = cfg.compareAmount;
   }
@@ -138,6 +185,7 @@ function pickGatewayRule(rows, target) {
 module.exports = {
   GATEWAY_TARGETS,
   GATEWAY_AMBIGUITY_MODES,
+  GATEWAY_GROUP_MISMATCH_MODES,
   PAYU_AMOUNT_MODES,
   MIN_TOKEN_LENGTH_FLOOR,
   MIN_TOKEN_LENGTH_CEILING,

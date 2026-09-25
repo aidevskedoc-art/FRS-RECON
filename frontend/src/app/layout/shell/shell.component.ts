@@ -1,14 +1,38 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { animate, style, transition, trigger } from '@angular/animations';
-import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import {
+  NavigationCancel,
+  NavigationEnd,
+  NavigationError,
+  NavigationSkipped,
+  NavigationStart,
+  Router,
+  RouterOutlet,
+} from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
-import { SidebarComponent } from '../sidebar/sidebar.component';
+import { SidebarComponent, NAV_GROUPS } from '../sidebar/sidebar.component';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { AuroraBackgroundComponent } from '../../shared/ambient/aurora-background.component';
 import { CursorGlowComponent } from '../../shared/ambient/cursor-glow.component';
 import { SidebarStore } from '../sidebar/sidebar.store';
 import { ReducedMotionService } from '../../core/a11y/reduced-motion';
+import { AiLoaderComponent } from '../../shared/ui/ai-loader.component';
+
+/** The nav rail's own label for whichever link's path prefixes `path` most specifically — null off-nav (a drill-down/detail route). */
+function navLabelFor(path: string): string | null {
+  let label: string | null = null;
+  let bestLength = -1;
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (path.startsWith(item.path) && item.path.length > bestLength) {
+        label = item.label;
+        bestLength = item.path.length;
+      }
+    }
+  }
+  return label;
+}
 
 /**
  * The persistent app shell: a CSS-grid frame whose sidebar and topbar are
@@ -21,7 +45,7 @@ import { ReducedMotionService } from '../../core/a11y/reduced-motion';
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, SidebarComponent, TopbarComponent, AuroraBackgroundComponent, CursorGlowComponent],
+  imports: [RouterOutlet, SidebarComponent, TopbarComponent, AuroraBackgroundComponent, CursorGlowComponent, AiLoaderComponent],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -46,6 +70,31 @@ export class ShellComponent {
   /** Bumped on every navigation so the routeFade trigger re-fires. */
   protected readonly routeKey = signal(0);
 
+  /**
+   * The top bar slims down (52 -> 40px) once the page is scrolled into its
+   * content, and comes back at the top — more rows on a laptop screen without
+   * a button anyone has to remember. Two thresholds so it doesn't flicker
+   * around a single scroll position.
+   */
+  protected readonly compact = signal(false);
+
+  protected onContentScroll(event: Event): void {
+    const top = (event.target as HTMLElement).scrollTop;
+    if (!this.compact() && top > 48) this.compact.set(true);
+    else if (this.compact() && top < 8) this.compact.set(false);
+  }
+
+  /**
+   * Full-screen loader for a genuine page change (a different lazy-loaded
+   * route, not just a tab/filter's query-param navigation on the page
+   * you're already on). Delayed so an already-cached chunk — the common
+   * case after the first visit — never flashes it.
+   */
+  protected readonly navigating = signal(false);
+  protected readonly navigatingLabel = signal<string | null>(null);
+  private navigatingTimer: ReturnType<typeof setTimeout> | null = null;
+  private currentPath = this.router.url.split('?')[0];
+
   constructor() {
     this.router.events
       .pipe(
@@ -53,5 +102,32 @@ export class ShellComponent {
         takeUntilDestroyed(),
       )
       .subscribe(() => this.routeKey.update((n) => n + 1));
+
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event instanceof NavigationStart) {
+        const targetPath = event.url.split('?')[0];
+        if (targetPath === this.currentPath) return;
+        this.navigatingTimer = setTimeout(() => {
+          this.navigatingLabel.set(navLabelFor(targetPath));
+          this.navigating.set(true);
+        }, 200);
+        return;
+      }
+      if (event instanceof NavigationEnd) {
+        this.currentPath = event.urlAfterRedirects.split('?')[0];
+      }
+      if (
+        event instanceof NavigationEnd ||
+        event instanceof NavigationCancel ||
+        event instanceof NavigationError ||
+        event instanceof NavigationSkipped
+      ) {
+        if (this.navigatingTimer) {
+          clearTimeout(this.navigatingTimer);
+          this.navigatingTimer = null;
+        }
+        this.navigating.set(false);
+      }
+    });
   }
 }

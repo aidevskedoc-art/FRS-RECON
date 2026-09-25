@@ -242,7 +242,9 @@ export class OverviewDashboardComponent {
     const c = s.combined;
     const p = this.palette();
     return {
-      labels: ['Matched', 'Gateway Matched', 'Contra', 'Partial Match', 'Amount Mismatch', 'Unmatched', 'Ambiguous'],
+      // Same wording as the screens and the Excel files (STATUS_LABELS) — a chart
+      // slice that says something different from the table under it invites a query.
+      labels: ['Matched', 'Gateway Matched', 'Contra', 'Partial Match', 'Amount Mismatch', 'Unmatched', 'Multiple Matches Found'],
       datasets: [
         {
           data: [c.totalMatched, c.totalEasebuzzMatched, c.totalContra, c.totalPartialMatch, c.totalMismatched, c.totalUnmatched, c.totalAmbiguous],

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { TooltipModule } from 'primeng/tooltip';
 
 /**
  * Every screen starts with this.
@@ -7,25 +8,24 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
  *     <button actions class="btn btn-secondary">Export</button>
  *   </app-page-header>
  *
- * The 42px gradient icon tile is the constant — it is how a page announces
- * itself, and it is the one gradient element allowed above the fold on a
- * non-dashboard screen.
+ * One slim row (2026-09-25 — the client found the header too tall on a
+ * laptop): a small gradient icon tile, the title, the subtitle behind an ⓘ
+ * tooltip, and the page's actions on the right.
  */
 @Component({
   selector: 'app-page-header',
   standalone: true,
+  imports: [TooltipModule],
   template: `
     <header class="page-header anim-fade-up">
       <div class="page-header__lead">
         <div class="page-header__icon">
           <i [class]="icon()"></i>
         </div>
-        <div class="page-header__text">
-          <h1 class="ai-display">{{ title() }}</h1>
-          @if (subtitle()) {
-            <p>{{ subtitle() }}</p>
-          }
-        </div>
+        <h1 class="ai-display">{{ title() }}</h1>
+        @if (subtitle()) {
+          <i class="pi pi-info-circle page-header__info" [pTooltip]="subtitle()" tooltipPosition="bottom" [attr.aria-label]="subtitle()" tabindex="0"></i>
+        }
       </div>
       <div class="page-header__actions">
         <ng-content select="[actions]" />
@@ -36,17 +36,17 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     `
       .page-header {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
-        gap: var(--space-4);
-        margin-bottom: var(--space-6);
+        gap: var(--space-2) var(--space-4);
+        margin-bottom: var(--space-3);
       }
 
       .page-header__lead {
         display: flex;
         align-items: center;
-        gap: var(--space-3);
+        gap: var(--space-2);
         min-width: 0;
       }
 
@@ -54,31 +54,31 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         flex: none;
         display: grid;
         place-items: center;
-        width: 42px;
-        height: 42px;
-        border-radius: var(--r-xl);
+        width: 28px;
+        height: 28px;
+        border-radius: var(--r-md);
         background: var(--ai-gradient);
         color: #fff;
-        font-size: 1.05rem;
-        box-shadow: 0 10px 24px -10px rgba(79, 70, 229, 0.45);
+        font-size: 0.8rem;
+        box-shadow: 0 6px 14px -8px rgba(79, 70, 229, 0.45);
       }
 
-      .page-header__text {
-        min-width: 0;
+      .page-header__info {
+        flex: none;
+        font-size: 0.85rem;
+        color: var(--text-subtle);
+        cursor: help;
       }
 
       h1 {
         margin: 0;
-        font-size: 1.35rem;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         font-weight: 700;
         letter-spacing: -0.01em;
         color: var(--text);
-      }
-
-      p {
-        margin: 2px 0 0;
-        font-size: 0.875rem;
-        color: var(--text-muted);
       }
 
       .page-header__actions {

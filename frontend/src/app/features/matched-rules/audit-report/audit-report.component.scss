@@ -8,22 +8,28 @@
 
 .audit-report__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
   flex-wrap: wrap;
 
   h1 {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: 1.05rem;
+    line-height: normal;
   }
 }
 
-.audit-report__sub {
-  margin: var(--space-1) 0 0;
-  color: var(--text-tertiary);
+.audit-report__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-info {
   font-size: 0.85rem;
-  max-width: 78ch;
+  color: var(--text-subtle);
+  cursor: help;
 }
 
 .audit-report__downloads {

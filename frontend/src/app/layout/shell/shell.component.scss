@@ -21,12 +21,18 @@
   padding: var(--shell-gap);
   gap: var(--shell-gap);
   background: transparent;
-  transition: grid-template-columns 320ms var(--ease);
+  transition: grid-template-columns 320ms var(--ease), grid-template-rows 200ms var(--ease);
 }
 
 // Collapsing narrows the rail; the sidebar's own labels fade out in step.
 .shell--collapsed {
   grid-template-columns: var(--sidebar-width-collapsed) minmax(0, 1fr);
+}
+
+// Page scrolled: the top bar slims down (topbar.component.scss follows via
+// :host-context).
+.shell--compact {
+  grid-template-rows: var(--topbar-height-compact) minmax(0, 1fr);
 }
 
 .shell__topbar {
@@ -61,6 +67,14 @@
   --shell-content-pad-bottom: 28px;
   padding: var(--shell-content-pad-top) var(--shell-content-pad-x) var(--shell-content-pad-bottom);
   @include mixins.scrollbar-thin;
+
+  // Laptops (1280–1440 wide, see styles/_responsive.scss): every pixel of
+  // side padding is a pixel less for wide tables.
+  @media (max-width: 1439.98px) {
+    --shell-content-pad-x: 16px;
+    --shell-content-pad-top: 14px;
+    --shell-content-pad-bottom: 20px;
+  }
 }
 
 @media (max-width: 900px) {

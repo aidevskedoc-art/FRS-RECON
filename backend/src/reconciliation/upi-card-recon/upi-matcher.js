@@ -29,11 +29,17 @@
  */
 const { normalizeRef } = require('../matcher');
 const { resolveGatewayPolicy } = require('../gateway-policy');
+const { rescueCollidedGroup } = require('./collided-group');
 
 const MATCHED = 'MATCHED';
+// A split payment: 2+ MIS rows share one RRN and their SUMMED amount is what
+// matched the UPI MPR row, not any single row's own amount — see
+// card-matcher.js's identical GROUPED_MATCHED for the full rationale (same
+// concept, same tolerance-based computation, applied to UPI instead of Card).
+const GROUPED_MATCHED = 'GROUPED_MATCHED';
 const AMOUNT_MISMATCH = 'AMOUNT_MISMATCH';
 const UNMATCHED = 'UNMATCHED';
-const UPI_MATCH_STATUSES = [MATCHED, AMOUNT_MISMATCH, UNMATCHED];
+const UPI_MATCH_STATUSES = [MATCHED, GROUPED_MATCHED, AMOUNT_MISMATCH, UNMATCHED];
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -109,20 +115,40 @@ function reconcileUpiTransactions({ misRows, upiMprRows, tolerance, policy }) {
     const groupAmount = round2(members.reduce((s, m) => s + (Number(m.amount) || 0), 0));
 
     let picked = null;
+    // True when `picked.amount` is the SUM of every candidate, not one row's
+    // own amount — see card-matcher.js's identical block for the full
+    // rationale (a reference can carry more than one real settlement at once).
+    let pickedIsCandidateGroup = false;
     if (candidates.length === 1) {
       picked = candidates[0];
-    } else if (candidates.length > 1 && p.onAmbiguous !== 'UNMATCHED') {
-      // Under onAmbiguous 'UNMATCHED' the rule declines to guess; `candidateCount`
-      // still reports how many were found so the reason text can say so.
-      picked = candidates.reduce((best, c) =>
-        Math.abs((Number(c.amount) || 0) - groupAmount) < Math.abs((Number(best.amount) || 0) - groupAmount) ? c : best,
-      );
+    } else if (candidates.length > 1) {
+      const candidatesSum = round2(candidates.reduce((s, c) => s + (Number(c.amount) || 0), 0));
+      if (Math.abs(Math.round((groupAmount - candidatesSum) * 100)) <= tolPaise) {
+        const latestDate = candidates.map((c) => c.date).filter(Boolean).sort().pop() || null;
+        picked = { sourceId: candidates[0].sourceId, amount: candidatesSum, date: latestDate };
+        pickedIsCandidateGroup = true;
+      } else if (p.onAmbiguous !== 'UNMATCHED') {
+        // Under onAmbiguous 'UNMATCHED' the rule declines to guess; `candidateCount`
+        // still reports how many were found so the reason text can say so.
+        picked = candidates.reduce((best, c) =>
+          Math.abs((Number(c.amount) || 0) - groupAmount) < Math.abs((Number(best.amount) || 0) - groupAmount) ? c : best,
+        );
+      }
     }
 
     const matchedAmount = picked ? round2(Number(picked.amount) || 0) : null;
     const difference = picked ? round2(groupAmount - matchedAmount) : null;
     let status = UNMATCHED;
-    if (picked) status = Math.abs(Math.round(difference * 100)) <= tolPaise ? MATCHED : AMOUNT_MISMATCH;
+    if (picked) {
+      const withinTolerance = Math.abs(Math.round(difference * 100)) <= tolPaise;
+      status = withinTolerance ? (members.length > 1 || pickedIsCandidateGroup ? GROUPED_MATCHED : MATCHED) : AMOUNT_MISMATCH;
+    }
+
+    // Collided RRN — same rationale as card-matcher.js; see collided-group.js.
+    if (status === AMOUNT_MISMATCH && members.length > 1 && p.onGroupMismatch === 'PREFER_EXACT_MEMBER') {
+      results.push(...rescueCollidedGroup({ key, members, candidates, tolPaise, sourceType: 'UPI_MPR' }));
+      continue;
+    }
 
     for (const m of members) {
       results.push({
@@ -146,4 +172,4 @@ function reconcileUpiTransactions({ misRows, upiMprRows, tolerance, policy }) {
   return results;
 }
 
-module.exports = { reconcileUpiTransactions, UPI_MATCH_STATUSES, MATCHED, AMOUNT_MISMATCH, UNMATCHED };
+module.exports = { reconcileUpiTransactions, UPI_MATCH_STATUSES, MATCHED, GROUPED_MATCHED, AMOUNT_MISMATCH, UNMATCHED };

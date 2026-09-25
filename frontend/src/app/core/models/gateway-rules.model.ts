@@ -17,6 +17,8 @@ export type GatewayTarget = 'CARD' | 'UPI' | 'PAYU' | 'EASEBUZZ';
 
 /** What to do when several counterparty rows carry the same reference. */
 export type GatewayAmbiguityMode = 'NEAREST_AMOUNT' | 'UNMATCHED';
+/** Card/UPI: what a MIS group earns when its summed amount does not reconcile. */
+export type GatewayGroupMismatchMode = 'PREFER_EXACT_MEMBER' | 'REPORT_DIFFERENCE';
 
 /** PayU only: whether the bank credit is held against the net or gross batch total. */
 export type PayuAmountMode = 'NET' | 'GROSS';
@@ -37,6 +39,8 @@ export interface GatewayRuleConfig {
   minTokenLength?: number;
   /** UPI: drop both legs of a CREDIT/PAY refund pair from the candidate pool. */
   excludeRefundPairs?: boolean;
+  /** Card / UPI: what to do when receipts sharing a reference do not add up to the settlement. */
+  onGroupMismatch?: GatewayGroupMismatchMode;
   /** PayU: compare the bank credit against the net (post-fee) or gross total. */
   compareAmount?: PayuAmountMode;
 }
@@ -71,6 +75,11 @@ export const GATEWAY_AMBIGUITY_OPTIONS: { value: GatewayAmbiguityMode; label: st
   { value: 'UNMATCHED', label: 'Leave unmatched (do not guess)' },
 ];
 
+export const GATEWAY_GROUP_MISMATCH_OPTIONS: { value: GatewayGroupMismatchMode; label: string }[] = [
+  { value: 'PREFER_EXACT_MEMBER', label: 'Match the receipt that reconciles on its own' },
+  { value: 'REPORT_DIFFERENCE', label: 'Report the whole group as a difference' },
+];
+
 export const PAYU_AMOUNT_OPTIONS: { value: PayuAmountMode; label: string }[] = [
   { value: 'NET', label: 'Net (after gateway fee)' },
   { value: 'GROSS', label: 'Gross (before gateway fee)' },
@@ -82,8 +91,8 @@ export const MIN_TOKEN_LENGTH_CEILING = 32;
 
 /** Which knobs each target actually uses. Drives what the dialog renders. */
 export const GATEWAY_FIELDS_BY_TARGET: Record<GatewayTarget, readonly (keyof GatewayRuleConfig)[]> = {
-  CARD: ['tolerance', 'onAmbiguous'],
-  UPI: ['tolerance', 'onAmbiguous', 'excludeRefundPairs'],
+  CARD: ['tolerance', 'onAmbiguous', 'onGroupMismatch'],
+  UPI: ['tolerance', 'onAmbiguous', 'excludeRefundPairs', 'onGroupMismatch'],
   PAYU: ['tolerance', 'onAmbiguous', 'useNarrationTokens', 'minTokenLength', 'compareAmount'],
   EASEBUZZ: ['tolerance', 'onAmbiguous', 'useNarrationTokens', 'minTokenLength'],
 };
@@ -92,12 +101,12 @@ export const GATEWAY_FIELDS_BY_TARGET: Record<GatewayTarget, readonly (keyof Gat
 export function defaultGatewayConfig(target: GatewayTarget): GatewayRuleConfig {
   switch (target) {
     case 'UPI':
-      return { tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT', excludeRefundPairs: true };
+      return { tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT', excludeRefundPairs: true, onGroupMismatch: 'PREFER_EXACT_MEMBER' };
     case 'PAYU':
       return { tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT', useNarrationTokens: true, minTokenLength: 8, compareAmount: 'NET' };
     case 'EASEBUZZ':
       return { tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT', useNarrationTokens: true, minTokenLength: 8 };
     default:
-      return { tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT' };
+      return { tolerance: 1, onAmbiguous: 'NEAREST_AMOUNT', onGroupMismatch: 'PREFER_EXACT_MEMBER' };
   }
 }

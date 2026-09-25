@@ -158,6 +158,25 @@
       <small>Leaving it unmatched is the defensible choice when two credits carry the same reference.</small>
     </label>
 
+    @if (uses('onGroupMismatch')) {
+      <label class="form__field">
+        <span>When receipts sharing a reference don't add up</span>
+        <p-select
+          [options]="groupMismatchOptions"
+          optionLabel="label"
+          optionValue="value"
+          appendTo="body"
+          [ngModel]="draft().gatewayConfig.onGroupMismatch"
+          (ngModelChange)="patchConfig({ onGroupMismatch: $event })"
+        />
+        <small>
+          A card approval code is only 6 digits and gets reused, so unrelated receipts can end up sharing one. Adding
+          those together produces a difference nobody owes. Matching the receipt that reconciles on its own keeps the
+          genuine match and reports the rest honestly as unmatched.
+        </small>
+      </label>
+    }
+
     @if (uses('compareAmount')) {
       <label class="form__field">
         <span>Compare the bank credit against</span>

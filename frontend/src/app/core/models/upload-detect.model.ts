@@ -73,11 +73,13 @@ export interface UploadPreview {
   sheets: ReportSheetCheck[];
   ingest: { rows: number; amount: number; byType: { type: string; rows: number; amount: number }[] };
   notUsed: ReportTally[];
-  /** UPI & Card: transactions already stored from an earlier file — uploading is refused, it would double-count them. */
+  /** No longer set: already-stored UPI & Card rows are now skipped and reported in `alreadyStored`, like the MIS reports. */
   overlap: { rows: number; batches: { id: number; fileName: string; rows: number }[] } | null;
   /** Older pipelines: rows already stored from an earlier file — the upload skips them (as those routes always have). */
   alreadyStored: { rows: number } | null;
   heldBack: HeldBackReceipt[];
+  /** Paid in two UPI parts (UPI + ManualUPI): STORED once with both references, shown as Unmatched until checked. */
+  splitPaid?: HeldBackReceipt[];
   notes: string[];
 }
 
@@ -94,6 +96,16 @@ export interface DetectedType {
   reason: string;
   /** Present for the HIS collection reports; absent for every other type. */
   preview?: UploadPreview;
+  /** The backend's shared store/skip rule (upload-decision.js) — the folder scheduler follows the same one. */
+  decision?: UploadDecision | null;
+}
+
+export interface UploadDecision {
+  action: 'STORE' | 'SKIP';
+  outcome: string;
+  /** SKIP: why. STORE: the warnings, joined — shown as information. */
+  message: string | null;
+  warnings: string[];
 }
 
 /** One entry in the catalogue used to populate the "change type" dropdown. */
@@ -144,8 +156,6 @@ export interface StagedFile {
    * reports. Each is ingested through its own endpoint.
    */
   chosenTypes: string[];
-  /** Set once a person has read the warnings on a report that has some. */
-  acknowledged: boolean;
   /** Rows stored, summed across every type this file was saved as. */
   rowCount: number | null;
   error: string | null;

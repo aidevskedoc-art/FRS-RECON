@@ -24,6 +24,7 @@ const db = require('../db');
 const {
   GATEWAY_TARGETS,
   GATEWAY_AMBIGUITY_MODES,
+  GATEWAY_GROUP_MISMATCH_MODES,
   PAYU_AMOUNT_MODES,
   MIN_TOKEN_LENGTH_FLOOR,
   MIN_TOKEN_LENGTH_CEILING,
@@ -72,6 +73,9 @@ function validateGatewayConfig(cfg) {
   }
   if (cfg.compareAmount !== undefined && !PAYU_AMOUNT_MODES.includes(cfg.compareAmount)) {
     return `compareAmount must be one of: ${PAYU_AMOUNT_MODES.join(', ')}`;
+  }
+  if (cfg.onGroupMismatch !== undefined && !GATEWAY_GROUP_MISMATCH_MODES.includes(cfg.onGroupMismatch)) {
+    return `onGroupMismatch must be one of: ${GATEWAY_GROUP_MISMATCH_MODES.join(', ')}`;
   }
   return null;
 }

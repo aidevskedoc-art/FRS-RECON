@@ -2,7 +2,12 @@
   <div class="page-header">
     <div class="page-header__text">
       <h2>Reconciliation</h2>
-      <p>Drop every report in one place — MIS, the combined “All Collections” workbook, bank statements, MPRs, cheque ledgers. Each file is identified from its content and checked before anything is saved; then every reconciliation runs in one go.</p>
+      <i
+        class="pi pi-info-circle page-info"
+        pTooltip="Drop every report in one place — MIS, the combined “All Collections” workbook, bank statements, MPRs, cheque ledgers. Each file is identified from its content and checked before anything is saved; then every reconciliation runs in one go."
+        tooltipPosition="bottom"
+        tabindex="0"
+      ></i>
     </div>
     <!-- The deliverable this whole screen feeds. Sits here so it is reachable
          straight after a run, without going back out to the sidebar. -->
@@ -155,9 +160,9 @@
                     @let p = m.preview!;
                     <div
                       class="report"
-                      [class.report--ok]="p.status === 'VERIFIED' && !previewBlock(p)"
+                      [class.report--ok]="p.status === 'VERIFIED' && !skipReason(m)"
                       [class.report--warn]="p.status === 'UNVERIFIED'"
-                      [class.report--bad]="!!previewBlock(p)"
+                      [class.report--bad]="!!skipReason(m)"
                       [class.report--off]="!entry.chosenTypes.includes(m.type)"
                     >
                       <div class="report__head">
@@ -165,7 +170,7 @@
                         @if (p.unitNames.length) { <span class="report__meta">{{ p.unitNames.join(', ') }}</span> }
                         @if (p.period) { <span class="report__meta">{{ formatDate(p.period.from) }} → {{ formatDate(p.period.to) }}</span> }
                         <span class="report__badge">
-                          @if (previewBlock(p); as why) {
+                          @if (skipReason(m); as why) {
                             <i class="pi pi-ban"></i> Will not be uploaded: {{ why }}
                           } @else {
                             <i class="pi" [class.pi-verified]="p.status === 'VERIFIED'" [class.pi-exclamation-triangle]="p.status !== 'VERIFIED'"></i>
@@ -227,15 +232,18 @@
                           Held back, not stored: {{ h.receiptNo }} · {{ money(h.amount) }} · refs {{ h.references.join(', ') }} — {{ h.reason }}
                         </p>
                       }
+                      <!-- Stored, and listed so nobody wonders where they went:
+                           they will show in Mismatch Review as Unmatched. -->
+                      @for (h of p.splitPaid ?? []; track h.receiptNo) {
+                        <p class="report__problem">
+                          <i class="pi pi-clone"></i>
+                          Stored, will show as Unmatched: {{ h.receiptNo }} · {{ money(h.amount) }} · refs {{ h.references.join(' + ') }} — {{ h.reason }}
+                        </p>
+                      }
                     </div>
                   }
                   @for (note of notesOf(entry); track note) {
                     <p class="reports__note"><i class="pi pi-info-circle"></i> {{ note }}</p>
-                  }
-                  @if (needsReview(entry) && !entry.acknowledged) {
-                    <button type="button" class="reports__ack" (click)="acknowledge(entry.id)">
-                      <i class="pi pi-check-square"></i> I have reviewed the warnings — include this file
-                    </button>
                   }
                 </div>
               }

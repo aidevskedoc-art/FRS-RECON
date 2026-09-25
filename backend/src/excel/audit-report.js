@@ -41,7 +41,7 @@
 
 const XLSX = require('xlsx');
 const { MONTHS_SHORT } = require('../reconciliation/period');
-const { statusTone } = require('../reconciliation/status-tone');
+const { statusTone, STATUS_LABEL, AUDITOR_MATCHED_LABEL } = require('../reconciliation/status-tone');
 const { tagColumn } = require('./write-xlsx');
 
 const MONTHS_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -366,19 +366,9 @@ const bankAcct = (res) => (res && res.bank ? bankAccountShort(res.bank.accountNo
 const locationCell = (r) => String(r.division || r.unitName || '').toUpperCase();
 const auditorCell = (r) => AUDITOR_BY_LOCATION[locationCell(r)] || '';
 
-const STATUS_LABEL = {
-  MATCHED: 'Matched',
-  EASEBUZZ_MATCHED: 'EaseBuzz Matched',
-  CONTRA_ENTRY: 'Contra Entry',
-  PARTIAL_MATCH: 'Partial Match',
-  AMOUNT_MISMATCH: 'Amount Mismatch',
-  AMBIGUOUS_MATCH: 'Ambiguous',
-  UNMATCHED: 'Unmatched',
-};
-
-// Maker-checker: an approved auditor change outranks the engine's own verdict
-// (buildAuditSheets stamps `matchedByAuditor` on the result).
-const AUDITOR_MATCHED_LABEL = 'Matched by Auditor';
+// STATUS_LABEL / AUDITOR_MATCHED_LABEL are imported at the top from
+// status-tone.js — one map for the screen, this report and the payment
+// exports, which previously each kept their own and had drifted apart.
 
 const statusCell = (r) => {
   if (!r.__result) return '';
@@ -798,7 +788,7 @@ const SHEETS = [
       const seen = new Set();
       for (const r of rows) {
         out.totalMisAmount += Number(r.amount) || 0;
-        if (r.matchStatus === 'MATCHED') out.matched += 1;
+        if (r.matchStatus === 'MATCHED' || r.matchStatus === 'GROUPED_MATCHED') out.matched += 1;
         else out.unmatched += 1;
 
         const g = r.matchedSource;

@@ -422,3 +422,9 @@ router.use((err, req, res, next) => {
 });
 
 module.exports = router;
+// Reused by the combined Mismatch Review export (excel/mismatch-export.js) so
+// the workbook is filtered by the SAME predicate the screen lists with. Exported
+// rather than reimplemented: a second copy of this filter is exactly how a file
+// and the screen it came from drift apart.
+module.exports.buildRecordsFilter = buildRecordsFilter;
+module.exports.RECORDS_WITH_MATCH_SQL = RECORDS_WITH_MATCH_SQL;

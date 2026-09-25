@@ -1,9 +1,29 @@
 <div class="mismatch-review">
   <app-page-header
     icon="pi pi-exclamation-triangle"
-    title="Mismatch Review"
-    subtitle="Mismatched transactions across every collection type — click one to see the full record and why it didn't tally."
-  />
+    [title]="headerTitle()"
+    [subtitle]="headerSubtitle()"
+  >
+    <!-- AC-10 Location, moved up next to the heading: it scopes the whole
+         highlighted summary below (every count already reads
+         filters().location via fetchPage) — Department/Search/Date stay in
+         the toolbar as table-level filters. -->
+    <span actions class="header-scope">
+      <i class="pi pi-map-marker"></i>
+      {{ scopeLabel() }}
+    </span>
+    <p-select
+      actions
+      [options]="locationOptions()"
+      optionLabel="label"
+      optionValue="value"
+      [ngModel]="filters().location"
+      (ngModelChange)="updateScopeFilter({ location: $event })"
+      appendTo="body"
+      styleClass="filter-scope"
+      ariaLabel="Location"
+    />
+  </app-page-header>
 
   @if (listError(); as err) {
     <div class="notice notice--danger">
@@ -18,26 +38,6 @@
       No branches are assigned to you yet, so there's nothing to show. Ask an Admin to assign your locations in User Management.
     </div>
   }
-
-  <!-- AC-10 Location, moved up here: it scopes the whole highlighted summary
-       below (every count already reads filters().location via fetchPage) —
-       Department/Search/Date stay in the toolbar as table-level filters. -->
-  <div class="tab-totals-header">
-    <span class="tab-totals-header__scope">
-      <i class="pi pi-map-marker"></i>
-      {{ scopeLabel() }}
-    </span>
-    <p-select
-      [options]="locationOptions()"
-      optionLabel="label"
-      optionValue="value"
-      [ngModel]="filters().location"
-      (ngModelChange)="updateScopeFilter({ location: $event })"
-      appendTo="body"
-      styleClass="filter-scope"
-      ariaLabel="Location"
-    />
-  </div>
 
   <!-- Client ask: Online/Cheque/Card/UPI's own record totals, highlighted at the very top,
        plus one lead tile for every collection type added together. -->
@@ -183,7 +183,23 @@
         appendTo="body"
         styleClass="filter-date"
       />
-      <!-- AC-12: by default only up to the bank data; or as on a chosen date -->
+      <!-- Always visible, right beside the From date, so the pair reads as one
+           range. Setting it switches the upper bound to this date; clearing it
+           falls back to AC-12's bank cut-off (see updateDateFilter). -->
+      <p-datepicker
+        [ngModel]="filters().asOn"
+        (ngModelChange)="updateDateFilter({ asOn: $event })"
+        placeholder="To date"
+        dateFormat="d M yy"
+        [showIcon]="true"
+        iconDisplay="input"
+        [showClear]="true"
+        appendTo="body"
+        styleClass="filter-date"
+      />
+      <!-- AC-12: the default upper bound when no To date is picked. Kept as an
+           explicit control because "till the bank file reaches" is a client
+           requirement in its own right, not just "no end date". -->
       <p-select
         [options]="upToOptions"
         optionLabel="label"
@@ -194,27 +210,63 @@
         styleClass="filter-scope"
         ariaLabel="Show up to"
       />
-      @if (filters().upTo === 'AS_ON') {
-        <p-datepicker
-          [ngModel]="filters().asOn"
-          (ngModelChange)="updateDateFilter({ asOn: $event })"
-          placeholder="As on date"
-          dateFormat="d M yy"
-          [showIcon]="true"
-          iconDisplay="input"
-          appendTo="body"
-          styleClass="filter-date"
-        />
-      }
       @if (hasFilters()) {
         <button type="button" class="btn btn-ghost" (click)="clearFilters()">
           <i class="pi pi-filter-slash"></i>
           <span>Clear</span>
         </button>
       }
+      <!-- Client ask: pick exact verdicts, not just the view mode's whole set —
+           on screen and in the Excel download, which follows this. A status a
+           tab cannot hold simply gives that tab no rows (see STATUS_FILTER_OPTIONS). -->
+      <p-multiSelect
+        [options]="statusOptions"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="filters().statuses"
+        (ngModelChange)="updateStatusFilter($event)"
+        appendTo="body"
+        styleClass="filter-scope"
+        placeholder="Status"
+        selectedItemsLabel="{0} statuses"
+        [maxSelectedLabels]="2"
+        [showClear]="true"
+        ariaLabel="Status"
+      />
       <span class="filter-bar__spacer"></span>
+      <!-- Client ask: three reports — Mismatched, Matched, or both — each as ONE
+           workbook covering all four tabs. Every other filter above (status,
+           location, department, date) narrows whichever is chosen, so the file
+           is always the screen rather than a second opinion about it. -->
+      <span class="export-group">
+        <span class="export-group__label">Excel:</span>
+        @for (r of exportReports; track r.mode) {
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            [disabled]="!!exporting()"
+            (click)="downloadExport(r.mode)"
+            [title]="r.hint"
+          >
+            <i
+              class="pi"
+              [class.pi-download]="exporting() !== r.mode"
+              [class.pi-spinner]="exporting() === r.mode"
+              [class.pi-spin]="exporting() === r.mode"
+            ></i>
+            <span>{{ exporting() === r.mode ? 'Preparing…' : r.label }}</span>
+          </button>
+        }
+      </span>
       <span class="review-panel__count">Scroll sideways for every MIS field →</span>
     </div>
+
+    @if (exportError(); as err) {
+      <div class="review-panel__cutoff review-panel__cutoff--error">
+        <i class="pi pi-exclamation-triangle"></i>
+        <span>{{ err }}</span>
+      </div>
+    }
 
     @if (cutoffNote(); as note) {
       <div class="review-panel__cutoff">
@@ -244,9 +296,9 @@
          scheme the exported files (AC-17) use too. -->
     <div class="status-legend">
       <span class="status-legend__label">Colour code:</span>
-      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span>Matched</span>
-      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span>Matched by Auditor</span>
-      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span>Unmatched / Mismatch</span>
+      <span class="legend-chip legend-chip--good"><i class="pi pi-check"></i> Matched</span>
+      <span class="legend-chip legend-chip--warn"><i class="pi pi-user-edit"></i> Matched by Auditor</span>
+      <span class="legend-chip legend-chip--bad"><i class="pi pi-arrow-down-right"></i> Unmatched / Mismatch</span>
     </div>
 
     <!-- AC-11: every MIS field per collection type (COLUMNS_BY_TAB) + the reason.
@@ -308,10 +360,15 @@
             >
               @switch (col.kind) {
                 @case ('chip') {
-                  <span class="type-chip">{{ col.value(row) }}</span>
+                  <span class="type-chip">
+                    <span class="type-chip__dot" [style.background]="typeColor(col.value(row))"></span>{{ col.value(row) }}
+                  </span>
                 }
                 @case ('status') {
-                  <span class="status-pill" [class]="statusPillClass(row.matchStatus, row.matchedByAuditor)">{{ statusLabel(row.matchStatus, row.matchedByAuditor) }}</span>
+                  <span class="status-pill" [class]="statusPillClass(row.matchStatus, row.matchedByAuditor)">
+                    <i class="pi" [class]="'pi ' + statusIcon(row.matchStatus, row.matchedByAuditor)"></i>
+                    {{ statusLabel(row.matchStatus, row.matchedByAuditor) }}
+                  </span>
                   @if (row.pendingChange) {
                     <span class="pending-tag" title="A change request is waiting for approval"><i class="pi pi-clock"></i>Pending approval</span>
                   }
@@ -342,6 +399,17 @@
         </tr>
       </ng-template>
     </p-table>
+
+    <details class="how-to review-panel__how-to">
+      <summary><i class="pi pi-info-circle"></i> How to read this table</summary>
+      <ul>
+        <li><b>One row = one MIS receipt</b> that has no confirmed bank / MPR counterpart yet. Click a row for the full record and the plain-English reason.</li>
+        <li><b>IP / OP / Diag</b> — which collection it came from; the dot colour is the same on every screen.</li>
+        <li><b>Status</b> — <span class="legend-chip legend-chip--bad"><i class="pi pi-arrow-down-right"></i> Unmatched / Mismatch</span> still open; <span class="legend-chip legend-chip--warn"><i class="pi pi-user-edit"></i> Matched by Auditor</span> accepted by a person; <span class="legend-chip legend-chip--good"><i class="pi pi-check"></i> Matched</span> found by the rules.</li>
+        <li><b>Reason for mismatch</b> — why the rules could not match it. Often the bank statement or MPR for that date is not uploaded yet; the date note above the table shows up to when the list is checked.</li>
+        <li>Tick rows to propose several as Matched at once; <b>Pending approval</b> means a change is waiting for an approver.</li>
+      </ul>
+    </details>
   </section>
 
   <!--

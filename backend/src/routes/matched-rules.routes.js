@@ -11,7 +11,7 @@ const {
   refundRecordRowToApi,
   easebuzzSettlementRecordRowToApi,
 } = require('../mappers');
-const { groupRecords, buildFieldIndex, candidateBankRows, keysWithPrefix, resolveDivision, normalizeRef } = require('../reconciliation/matcher');
+const { groupRecords, buildFieldIndex, candidateBankRows, keysWithPrefix, resolveDivision, normalizeRef, refMatchKeys } = require('../reconciliation/matcher');
 const { runUnitPass } = require('../reconciliation/unit-pass');
 const { ACTION_STATUS, TERMINAL_STATUSES, joinLeaves, groupsMatch, isIndexable, leafMatches } = require('../reconciliation/rules');
 const { UNIT_STATUSES } = require('../reconciliation/unit-groups');
@@ -51,10 +51,14 @@ const isUpiMode = (text) => UPI_MODE_RE.test(text || '');
 
 async function loadBankRecords(dateFrom, dateTo) {
   // The candidate pool for the CNF rules: real bank rows (NEFT/IMPS/RTGS), PayU
-  // MPR lines (what a gateway-UPI receipt reconciles against) and EaseBuzz
+  // MPR lines (what a gateway-UPI receipt reconciles against), EaseBuzz
   // gateway rows (what the seeded "EaseBuzz — Transaction Id matches Easebuzz
-  // ID" rule joins on via chq_ref_no). A source added here without a matching
-  // rule is simply never joined; one omitted here silently defeats its rule.
+  // ID" rule joins on via chq_ref_no), and UPI MPR lines (mirrored here by
+  // ucr-upload.routes.js's upi-mpr upload — see its beforeRecords comment for
+  // why a UPI receipt's real counterpart has to ride on this table rather than
+  // being read from ucr_upi_mpr_records directly). A source added here without
+  // a matching rule is simply never joined; one omitted here silently defeats
+  // its rule.
   //
   // deposit_amt IS NOT NULL excludes debit/withdrawal-only lines — a receipt is
   // money coming IN, so its counterpart can only ever be a credit. Without this,
@@ -66,7 +70,7 @@ async function loadBankRecords(dateFrom, dateTo) {
   // itself. Verified against live data before adding this: zero existing
   // matches, anywhere (IP, Diag, cheque), relied on a withdrawal-only
   // counterpart — only those three erroneous rows did.
-  const clauses = [`r.source IN ('BANK', 'PAYU_MPR', 'EASEBUZZ')`, `r.deposit_amt IS NOT NULL`];
+  const clauses = [`r.source IN ('BANK', 'PAYU_MPR', 'EASEBUZZ', 'UPI_MPR')`, `r.deposit_amt IS NOT NULL`];
   const params = [];
   if (dateFrom) {
     params.push(dateFrom);
@@ -269,6 +273,14 @@ function diagnoseUnmatched(group, indexes, rules, paymentModeField) {
   const joinAll = pool.flatMap((r) => joinLeaves(r));
   const cands = rule ? candidateBankRows(joinAll, group, indexes) : [];
 
+  // Paid in more than one part (e.g. UPI + ManualUPI — his-mis-rows.js stores
+  // such a receipt once, at the combined amount, with every reference): say
+  // so, with each part's amount from the statement / MPR, so the reason reads
+  // as the actual situation rather than "amount differs". Explanation only —
+  // the verdict above is untouched.
+  const split = explainSplitPayment(rec, refs, cands);
+  if (split) return split;
+
   if (cands.length > 0) {
     // The candidate satisfying the most of the rule's groups — the "closest"
     // bank row, so the message names the most relevant one.
@@ -320,6 +332,31 @@ function diagnoseUnmatched(group, indexes, rules, paymentModeField) {
   return isUpi
     ? `UPI reference ${refText} is not in any uploaded bank statement or the PayU MPR. Either the reference in the MIS is wrong/incomplete, or the settlement report covering it has not been uploaded.`
     : `Reference ${refText} is not on any uploaded bank line. Either the reference in the MIS is wrong/incomplete, or the bank statement covering this date/account has not been uploaded.`;
+}
+
+/** The "paid in N parts" reason, or null when the row carries a single reference. */
+function explainSplitPayment(rec, refs, cands) {
+  const distinct = [...new Set(refs.map(normalizeRef).filter(Boolean))];
+  if (distinct.length < 2) return null;
+  const onRow = (ref, c) => {
+    const keys = refMatchKeys(ref);
+    const hay = [c.chqRefNo, c.narration].filter(Boolean).map((v) => String(v).toUpperCase());
+    return keys.some((k) => hay.some((h) => h.includes(k)));
+  };
+  const parts = distinct.map((ref) => ({ ref, row: cands.find((c) => onRow(ref, c)) || null }));
+  const misAmt = Number(rec.onlineUpiAmount ?? rec.billAmount);
+  const head = `Paid in ${parts.length} parts (${parts.map((p) => p.ref).join(' + ')}); the MIS gives only the combined ${inr(misAmt)}.`;
+  const missing = parts.filter((p) => !p.row);
+  if (missing.length) {
+    return `${head} Reference ${missing.map((p) => p.ref).join(', ')} is not in any uploaded bank statement / MPR yet${
+      missing.length < parts.length ? ` (found: ${parts.filter((p) => p.row).map((p) => `${p.ref} = ${inr(p.row.depositAmt)}`).join(', ')})` : ''
+    }.`;
+  }
+  const sum = Number(parts.reduce((t, p) => t + (Number(p.row.depositAmt) || 0), 0).toFixed(2));
+  const list = parts.map((p) => `${p.ref} = ${inr(p.row.depositAmt)}`).join(', ');
+  return Math.abs(sum - misAmt) < 0.01
+    ? `${head} Statement / MPR: ${list} — together ${inr(sum)}, equal to the receipt. The parts add up; confirm it as Matched.`
+    : `${head} Statement / MPR: ${list} — together ${inr(sum)}, not ${inr(misAmt)}. A reference may be shared with another receipt; check before confirming.`;
 }
 
 function buildGroupResult(group, indexes, rules, paymentModeField) {
@@ -1079,11 +1116,17 @@ router.get('/diag-op-payments', async (req, res, next) => {
 // schema.sql) and differ only in a handful of business columns (ip_no vs
 // diag_no, payment_mode vs pay_mode, diag's discount/diff amounts) — bridged
 // here with column aliases and NULL placeholders, not two different shapes.
-router.get('/online-mismatches', async (req, res, next) => {
-  try {
-    const { search, dateFrom, dateTo, matchStatus, matchedByAuditor } = req.query;
-    const page = Math.max(1, Number(req.query.page) || 1);
-    const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
+/**
+ * The IP and Diag halves of the Online list under the screen's toolbar filters,
+ * as two UNION-able SELECTs sharing one `params` array.
+ *
+ * Split out of the route below so the combined Mismatch Review export
+ * (excel/mismatch-export.js) selects by the SAME predicate the screen lists
+ * with. A second copy of this filter is exactly how a downloaded file and the
+ * screen it came from quietly stop agreeing on what counts as a mismatch.
+ */
+async function buildOnlineMismatchSelects(query) {
+    const { search, dateFrom, dateTo, matchStatus, matchedByAuditor } = query;
 
     // Shared clauses/params — both UNION halves reference the same $n
     // placeholders for the conditions that mean the same thing on either
@@ -1133,13 +1176,13 @@ router.get('/online-mismatches', async (req, res, next) => {
     // department column — the other side is switched off with FALSE.
     const ipScope = [];
     const diagScope = [];
-    const locations = locationPatterns(req.query.location);
+    const locations = locationPatterns(query.location);
     if (locations) {
       params.push(locations);
       ipScope.push(batchLocationClause('ip_payment_upload_batches', params.length));
       diagScope.push(batchLocationClause('diag_op_upload_batches', params.length));
     }
-    const department = parseDepartment(req.query.department);
+    const department = parseDepartment(query.department);
     if (department === 'IP') diagScope.push('FALSE');
     if (department === 'DIAG' || department === 'OPD') {
       ipScope.push('FALSE');
@@ -1147,7 +1190,7 @@ router.get('/online-mismatches', async (req, res, next) => {
       diagScope.push(`r.department = $${params.length}`);
     }
     // AC-12 "till bank upload": each row cut at its own branch's bank date.
-    if (parseUpTo(req.query.upTo) === 'BANK') {
+    if (parseUpTo(query.upTo) === 'BANK') {
       const cutoffs = await settlementCutoffs('BANK');
       const ipCut = cutoffClause('ip_payment_upload_batches', cutoffs, params);
       const diagCut = cutoffClause('diag_op_upload_batches', cutoffs, params);
@@ -1188,6 +1231,15 @@ router.get('/online-mismatches', async (req, res, next) => {
         FROM diag_op_payment_records r
         LEFT JOIN diag_op_upload_batches pb ON pb.id = r.batch_id
         ${diagWhere}`;
+
+  return { ipSelect, diagSelect, params };
+}
+
+router.get('/online-mismatches', async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
+    const { ipSelect, diagSelect, params } = await buildOnlineMismatchSelects(req.query);
 
     const { rows: countRows } = await db.query(
       `SELECT COUNT(*)::int AS total FROM (${ipSelect} UNION ALL ${diagSelect}) t`,
@@ -1519,6 +1571,18 @@ router.get('/summary', async (req, res, next) => {
   try {
     const { dateFrom, dateTo } = req.query;
 
+    // AC-12, applied here the same way it already is on Mismatch Review's own
+    // lists (online-mismatches, ucr-matched's card-recon/upi-recon): a receipt
+    // dated after the bank/gateway file can possibly have matched it yet is not
+    // a real gap, it is just too soon to tell — counting it as "needs attention"
+    // is technically true but misleading on a dashboard a client reads next to
+    // that same Mismatch Review screen. Without this, the two screens count
+    // different populations and look inconsistent for no reason a client can
+    // see (confirmed live: 1,981 here vs 425 there, same underlying data).
+    // Only applied when the caller did not ask for a specific range — an
+    // explicit dateFrom/dateTo (e.g. a future "as of" picker) is honoured as-is.
+    const bankCutoffDateTo = dateTo ? dateTo : (await settlementCutoffs('BANK')).fallback || undefined;
+
     const [ipResults, diagResults, chequeResults] = await Promise.all([
       computeMatchResults({
         recordTable: 'ip_payment_records',
@@ -1527,7 +1591,7 @@ router.get('/summary', async (req, res, next) => {
         paymentModeField: 'paymentMode',
         batchTable: 'ip_payment_upload_batches',
         dateFrom,
-        dateTo,
+        dateTo: bankCutoffDateTo,
       }),
       computeMatchResults({
         recordTable: 'diag_op_payment_records',
@@ -1536,9 +1600,9 @@ router.get('/summary', async (req, res, next) => {
         paymentModeField: 'payMode',
         batchTable: 'diag_op_upload_batches',
         dateFrom,
-        dateTo,
+        dateTo: bankCutoffDateTo,
       }),
-      computeMatchResults({ ...CHEQUE_OPTS, dateFrom, dateTo }),
+      computeMatchResults({ ...CHEQUE_OPTS, dateFrom, dateTo: bankCutoffDateTo }),
     ]);
     // One engine per type over all its rows. The "UPI" figure below is a
     // reporting slice of those same results by payment mode, not a separate run.
@@ -1670,8 +1734,30 @@ router.get('/summary', async (req, res, next) => {
       ucrDateClauses.push(`receipt_date >= $${ucrDateParams.length}`);
     }
     if (dateTo) {
+      // Caller asked for a specific range — honour it exactly, same cutoff for both instrument types.
       ucrDateParams.push(dateTo);
       ucrDateClauses.push(`receipt_date < ($${ucrDateParams.length}::date + interval '1 day')`);
+    } else {
+      // No explicit range: cut each instrument type at its OWN gateway file's
+      // latest date (CARD MPR/Pine Labs for Card, UPI MPR for UPI) — the same
+      // AC-12 cutoff card-recon/upi-recon's own list routes already apply by
+      // default (ucr-matched.routes.js), so this dashboard figure doesn't
+      // disagree with what clicking into Card/UPI Reconciliation shows.
+      const [cardCutoff, upiCutoff] = await Promise.all([settlementCutoffs('CARD_MPR'), settlementCutoffs('UPI_MPR')]);
+      const perType = [];
+      if (cardCutoff.fallback) {
+        ucrDateParams.push(cardCutoff.fallback);
+        perType.push(`(instrument_type = 'CARD' AND receipt_date < ($${ucrDateParams.length}::date + interval '1 day'))`);
+      } else {
+        perType.push(`instrument_type = 'CARD'`);
+      }
+      if (upiCutoff.fallback) {
+        ucrDateParams.push(upiCutoff.fallback);
+        perType.push(`(instrument_type = 'UPI' AND receipt_date < ($${ucrDateParams.length}::date + interval '1 day'))`);
+      } else {
+        perType.push(`instrument_type = 'UPI'`);
+      }
+      ucrDateClauses.push(`(${perType.join(' OR ')})`);
     }
     const ucrDateWhere = ucrDateClauses.length ? `AND ${ucrDateClauses.join(' AND ')}` : '';
     const { rows: ucrCountRows } = await db.query(
@@ -2429,3 +2515,8 @@ router.get('/audit-report', async (req, res, next) => {
 });
 
 module.exports = router;
+// See buildOnlineMismatchSelects' comment — shared with the combined Mismatch
+// Review export so the workbook and the screen filter identically.
+module.exports.buildOnlineMismatchSelects = buildOnlineMismatchSelects;
+// For scripts/test-split-reason.js — the "paid in N parts" unmatched reason.
+module.exports.explainSplitPayment = explainSplitPayment;

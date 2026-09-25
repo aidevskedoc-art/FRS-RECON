@@ -15,10 +15,9 @@
       <img class="masthead__logo" src="logo.svg" alt="Yashoda" width="34" height="34" />
       <span class="masthead__rule" aria-hidden="true"></span>
       <!-- The client's name for the application (core/config/app-name.ts): the
-           short mark, with the full name in small type beneath it. -->
-      <span class="masthead__wordmark">
+           short mark; the full name on hover (one line keeps the bar slim). -->
+      <span class="masthead__wordmark" [pTooltip]="appName" tooltipPosition="bottom">
         <span class="masthead__name">{{ appShortName }}</span>
-        <span class="masthead__expansion">{{ appName }}</span>
       </span>
     </div>
   </div>
@@ -31,40 +30,44 @@
       [@.disabled]="reducedMotion.prefersReduced()"
     >
       {{ routeTitle().title }}
-      <span class="ai-gradient-text">· {{ routeTitle().subtitle }}</span>
+      <span class="ai-gradient-text topbar__route-section">· {{ routeTitle().subtitle }}</span>
     </h1>
   </div>
 
   <!-- Right — action cluster. -->
   <div class="topbar__actions">
-    <!-- Client mail AC-9: logged-in user + reporting manager, ID and name. -->
+    <!-- Client mail AC-9: logged-in user + reporting manager, ID and name.
+         In the bar on screens 1536px and wider; below that it is hidden and
+         the same details are in the user dropdown. -->
     @if (authService.token()) {
-      <dl class="identity">
-        <dt class="identity__label">Logged in</dt>
-        <dd class="identity__value">
+      <div class="identity-strip" aria-label="Logged-in user and reporting manager">
+        <span class="identity-strip__part">
+          <i class="pi pi-user identity-strip__icon"></i>
+          <span class="identity-strip__label">Logged in</span>
           @if (authService.profile(); as p) {
-            <span class="identity__id" [pTooltip]="p.fullName">{{ p.employeeId }}</span>
-            <span class="identity__name">{{ p.fullName }}</span>
+            <span class="identity-strip__id" [pTooltip]="p.fullName" tooltipPosition="bottom">{{ p.employeeId }}</span>
+            <span class="identity-strip__name">{{ p.fullName }}</span>
           } @else {
-            <span class="identity__muted">…</span>
+            <span class="identity-strip__muted">…</span>
           }
-        </dd>
-        <dt class="identity__label">Reporting Manager</dt>
-        <dd class="identity__value">
+        </span>
+        <span class="identity-strip__divider" aria-hidden="true"></span>
+        <span class="identity-strip__part">
+          <span class="identity-strip__label">Manager</span>
           @if (authService.profile(); as p) {
             @if (p.managerEmployeeId) {
-              <span class="identity__id" [pTooltip]="p.managerName">{{ p.managerEmployeeId }}</span>
-              <span class="identity__name">{{ p.managerName }}</span>
+              <span class="identity-strip__id" [pTooltip]="p.managerName" tooltipPosition="bottom">{{ p.managerEmployeeId }}</span>
+              <span class="identity-strip__name">{{ p.managerName }}</span>
             } @else if (p.role === 'Admin') {
-              <span class="identity__muted">Not applicable</span>
+              <span class="identity-strip__muted">Not applicable</span>
             } @else {
-              <span class="identity__muted" pTooltip="An Admin sets this in User Management">Not assigned</span>
+              <span class="identity-strip__muted" pTooltip="An Admin sets this in User Management" tooltipPosition="bottom">Not assigned</span>
             }
           } @else {
-            <span class="identity__muted">…</span>
+            <span class="identity-strip__muted">…</span>
           }
-        </dd>
-      </dl>
+        </span>
+      </div>
     }
 
     <button
@@ -77,17 +80,75 @@
       <i class="pi" [class.pi-moon]="themeStore.mode() !== 'dark'" [class.pi-sun]="themeStore.mode() === 'dark'"></i>
     </button>
 
-    @if (policyDocuments.counts().needsReview > 0) {
-      <p-overlaybadge [value]="policyDocuments.counts().needsReview.toString()" severity="warn">
-        <button type="button" class="icon-btn" pTooltip="Documents needing review" aria-label="Documents needing review">
+    <div class="notif-menu">
+      @if (notificationCount() > 0) {
+        <p-overlaybadge [value]="notificationCount().toString()" severity="warn">
+          <button
+            type="button"
+            class="icon-btn"
+            (click)="toggleNotifPanel()"
+            [attr.aria-expanded]="notifPanelOpen()"
+            aria-haspopup="menu"
+            pTooltip="Notifications"
+            aria-label="Notifications"
+          >
+            <i class="pi pi-bell"></i>
+          </button>
+        </p-overlaybadge>
+      } @else {
+        <button
+          type="button"
+          class="icon-btn"
+          (click)="toggleNotifPanel()"
+          [attr.aria-expanded]="notifPanelOpen()"
+          aria-haspopup="menu"
+          pTooltip="Notifications"
+          aria-label="Notifications"
+        >
           <i class="pi pi-bell"></i>
         </button>
-      </p-overlaybadge>
-    } @else {
-      <button type="button" class="icon-btn" pTooltip="Notifications" aria-label="Notifications">
-        <i class="pi pi-bell"></i>
-      </button>
-    }
+      }
+
+      @if (notifPanelOpen()) {
+        <div class="user-menu__scrim" (click)="notifPanelOpen.set(false)"></div>
+        <div class="user-menu__panel notif-menu__panel anim-fade-up" role="menu">
+          <div class="user-menu__header">
+            <span class="user-menu__name">Notifications</span>
+          </div>
+
+          @if (notificationCount() === 0) {
+            <p class="notif-menu__empty">Nothing needs your attention right now.</p>
+          }
+
+          @if (pendingApprovalsCount() > 0) {
+            <a
+              routerLink="/reconciliation/approvals"
+              class="user-menu__item"
+              role="menuitem"
+              (click)="notifPanelOpen.set(false)"
+            >
+              <i class="pi pi-verified"></i>
+              <span>{{ pendingApprovalsCount() }} match {{ pendingApprovalsCount() === 1 ? 'approval' : 'approvals' }} waiting on you</span>
+            </a>
+          }
+
+          @for (run of automationAlertRuns(); track run.id) {
+            <a
+              routerLink="/reconciliation/folder-watch"
+              class="user-menu__item"
+              role="menuitem"
+              (click)="notifPanelOpen.set(false)"
+            >
+              <i class="pi pi-exclamation-triangle"></i>
+              <span>
+                Shared Folder Automation — {{ run.status === 'FAILED' ? 'run failed' : run.filesFailed + ' file(s) failed' }}
+                <span class="notif-menu__when">{{ run.startedAt | date: 'd MMM, h:mm a' }}</span>
+              </span>
+            </a>
+          }
+        </div>
+      }
+    </div>
 
     <div class="user-menu">
       <button
@@ -99,8 +160,8 @@
       >
         <span class="user-menu__avatar">{{ initials() }}</span>
         <span class="user-menu__text">
-          <span class="user-menu__name">{{ authService.userId() }}</span>
-          <span class="user-menu__role">{{ role() }}</span>
+          <span class="user-menu__name">{{ authService.profile()?.fullName || authService.userId() }}</span>
+          <span class="user-menu__role">{{ authService.profile()?.employeeId || authService.userId() }} · {{ role() }}</span>
         </span>
         <i class="pi pi-angle-down user-menu__chevron"></i>
       </button>
@@ -110,10 +171,33 @@
              document-level listener fighting the trigger's own click. -->
         <div class="user-menu__scrim" (click)="menuOpen.set(false)"></div>
         <div class="user-menu__panel anim-fade-up" role="menu">
+          <!-- Client mail AC-9: logged-in user + reporting manager, ID and name.
+               Stacked so it fits the menu at any name length (the old
+               side-by-side grid overflowed the panel). -->
           <div class="user-menu__header">
-            <span class="user-menu__name">{{ authService.userId() }}</span>
-            <span class="user-menu__role">{{ role() }}</span>
+            <span class="user-menu__label">Logged in</span>
+            <span class="user-menu__fullname">{{ authService.profile()?.fullName || authService.userId() }}</span>
+            <span class="user-menu__role">{{ authService.profile()?.employeeId || authService.userId() }} · {{ role() }}</span>
           </div>
+          @if (authService.token()) {
+            <div class="identity">
+              <span class="identity__label">Reporting Manager</span>
+              @if (authService.profile(); as p) {
+                @if (p.managerEmployeeId) {
+                  <span class="identity__value">
+                    <span class="identity__id">{{ p.managerEmployeeId }}</span>
+                    <span class="identity__name">{{ p.managerName }}</span>
+                  </span>
+                } @else if (p.role === 'Admin') {
+                  <span class="identity__muted">Not applicable</span>
+                } @else {
+                  <span class="identity__muted">Not assigned — an Admin sets this in User Management</span>
+                }
+              } @else {
+                <span class="identity__muted">…</span>
+              }
+            </div>
+          }
           @if (authService.isFrsAdmin()) {
             <a routerLink="/master-data/users" class="user-menu__item" role="menuitem" (click)="menuOpen.set(false)">
               <i class="pi pi-users"></i>

@@ -17,7 +17,7 @@ const { readHisReport, verificationSummary } = require('./his-report-reader');
 const { ucrIpRowsFrom } = require('./ucr-ip-parser');
 const { ucrOpRowsFrom } = require('./ucr-op-parser');
 const { ucrDiagRowsFrom } = require('./ucr-diag-parser');
-const { findStoredOverlap, OVERLAP_KEYS } = require('./ucr-overlap');
+const { splitStoredRows, overlapWhere, OVERLAP_KEYS } = require('./ucr-overlap');
 const { isHisWorkbook, hisIpMisUpload, hisDiagMisUpload, hisChequeUpload, hisRefundUpload } = require('./his-mis-rows');
 const { filterNewRows } = require('./dedupe');
 const identities = require('./mis-identities');
@@ -106,6 +106,7 @@ function failedPreview(family, message) {
     overlap: null,
     alreadyStored: null,
     heldBack: [],
+    splitPaid: [],
     notes: [message],
   };
 }
@@ -115,13 +116,22 @@ async function previewUcr(workbook, type, opts) {
   const report = readHisReport(workbook, type);
   const summary = verificationSummary(report);
   // A FAILED sheet's rows are not trustworthy, so nothing is counted from it.
-  const { rows, notUsed } = report.status === 'FAILED' ? { rows: [], notUsed: [] } : rowsFrom(report);
+  const read = report.status === 'FAILED' ? { rows: [], notUsed: [] } : rowsFrom(report);
+  const { notUsed } = read;
+  let rows = read.rows;
 
-  let overlap = null;
+  // Transactions already stored from an earlier (overlapping) file are
+  // skipped and only the new ones stored — what the upload route does.
+  let alreadyStored = null;
   const notes = [UCR_NOTE];
   if (opts.checkOverlap !== false && rows.length) {
     try {
-      overlap = await findStoredOverlap(source, rows.map(OVERLAP_KEYS[source]));
+      const split = await splitStoredRows(source, rows, OVERLAP_KEYS[source]);
+      if (split.skipped) {
+        alreadyStored = { rows: split.skipped };
+        notes.push(`${split.skipped} of these rows are already stored (${overlapWhere(split.overlap)}) and will be skipped.`);
+      }
+      rows = split.newRows;
     } catch (err) {
       notes.push(`Could not check for already-stored rows: ${err.message}`);
     }
@@ -139,9 +149,10 @@ async function previewUcr(workbook, type, opts) {
     sheets: summary.sheets,
     ingest: { rows: rows.length, amount: round2(rows.reduce((s, r) => s + (r.amount || 0), 0)), byType: byGroup(rows, (r) => r.instrumentType, (r) => r.amount) },
     notUsed,
-    overlap,
-    alreadyStored: null,
+    overlap: null,
+    alreadyStored,
     heldBack: [],
+    splitPaid: [],
     notes,
   };
 }
@@ -156,6 +167,7 @@ async function previewMis(workbook, type, opts) {
   }
   let rows = spec.rowsOf(built);
   const heldBack = built.heldBack || [];
+  const splitPaid = built.splitPaid || [];
   const notes = [spec.note];
 
   let alreadyStored = null;
@@ -171,6 +183,9 @@ async function previewMis(workbook, type, opts) {
   }
   if (heldBack.length) {
     notes.push(`${heldBack.length} receipt(s) held back for review — see below; they are not stored.`);
+  }
+  if (splitPaid.length) {
+    notes.push(`${splitPaid.length} receipt(s) paid in two UPI parts are stored with both references and will show as Unmatched until checked — see below.`);
   }
 
   const statuses = (built.verification || []).map((v) => v.status);
@@ -189,6 +204,7 @@ async function previewMis(workbook, type, opts) {
     overlap: null,
     alreadyStored,
     heldBack,
+    splitPaid,
     notes,
   };
 }

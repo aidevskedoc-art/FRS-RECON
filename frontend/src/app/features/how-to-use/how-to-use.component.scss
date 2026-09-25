@@ -583,7 +583,7 @@ td .loc {
 
   li {
     display: grid;
-    grid-template-columns: 8.5rem 1fr;
+    grid-template-columns: minmax(8.5rem, max-content) 1fr;
     align-items: start;
     gap: var(--space-3);
     font-size: var(--text-sm);
@@ -593,6 +593,8 @@ td .loc {
 
   .chip {
     justify-self: start;
+    white-space: normal;
+    text-align: left;
   }
 }
 

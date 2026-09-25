@@ -24,7 +24,8 @@
 const express = require('express');
 const multer = require('multer');
 const { detectFileType, SIGNATURES } = require('../online-upload/detect-file-type');
-const { attachHisPreviews, allPreviewsClean } = require('../online-upload/his-preview');
+const { attachHisPreviews } = require('../online-upload/his-preview');
+const { decideFile } = require('../online-upload/upload-decision');
 
 const router = express.Router();
 
@@ -78,18 +79,18 @@ router.post('/detect', upload.array('files', MAX_FILES), async (req, res, next) 
       try {
         const { matches, sheetNames, certain } = detectFileType(file.buffer);
         const withPreviews = await attachHisPreviews(file.buffer, matches);
-        const hasPreview = withPreviews.some((m) => m.preview);
+        // upload-decision.js — the same decision the folder scheduler acts
+        // on. Each match carries it: STORE (pre-ticked, warnings shown as
+        // information) or SKIP (with the reason). `certain` is false only
+        // when a person has to pick the type.
+        const { needsType, decisions } = decideFile(withPreviews, certain);
+        const decided = withPreviews.map((m) => ({ ...m, decision: decisions.find((d) => d.type === m.type) || null }));
         results.push({
           ...base,
-          // Where a preview exists it decides: a sheet that failed its totals,
-          // or whose rows are already stored, is never "certain", however
-          // confidently its sheet name was recognised.
-          certain: hasPreview ? allPreviewsClean(withPreviews) : certain,
-          // Best match, or null when nothing recognised it. `certain` is false
-          // in both the nothing-matched and several-matched cases, and the
-          // screen asks the user in either.
-          detected: withPreviews[0] || null,
-          alternatives: withPreviews.slice(1),
+          certain: !needsType,
+          // Best match, or null when nothing recognised it.
+          detected: decided[0] || null,
+          alternatives: decided.slice(1),
           sheetNames,
         });
       } catch (err) {

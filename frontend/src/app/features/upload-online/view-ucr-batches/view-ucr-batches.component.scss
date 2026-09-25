@@ -7,17 +7,22 @@
 }
 
 .page-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
   h2 {
     margin: 0;
-    font-size: var(--text-xl);
+    font-size: 1.05rem;
+    line-height: normal;
     color: var(--text-primary);
   }
+}
 
-  p {
-    margin: var(--space-1) 0 0;
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-  }
+.page-info {
+  font-size: 0.85rem;
+  color: var(--text-subtle);
+  cursor: help;
 }
 
 .hub-picker {

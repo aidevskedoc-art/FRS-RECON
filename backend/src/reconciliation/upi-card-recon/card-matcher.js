@@ -31,11 +31,18 @@
  */
 const { normalizeRef } = require('../matcher');
 const { resolveGatewayPolicy } = require('../gateway-policy');
+const { rescueCollidedGroup } = require('./collided-group');
 
 const MATCHED = 'MATCHED';
+// A split payment: 2+ MIS rows share one reference and their SUMMED amount is
+// what matched the gateway row, not any single row's own amount — worth
+// telling apart from a plain 1:1 match so a reviewer isn't left assuming the
+// MIS amount and the gateway amount agree line for line. Still a clean,
+// system-confirmed match — status-tone.js colours it green like MATCHED.
+const GROUPED_MATCHED = 'GROUPED_MATCHED';
 const AMOUNT_MISMATCH = 'AMOUNT_MISMATCH';
 const UNMATCHED = 'UNMATCHED';
-const CARD_MATCH_STATUSES = [MATCHED, AMOUNT_MISMATCH, UNMATCHED];
+const CARD_MATCH_STATUSES = [MATCHED, GROUPED_MATCHED, AMOUNT_MISMATCH, UNMATCHED];
 
 const CARD_MPR = 'CARD_MPR';
 const CARD_PINELABS = 'CARD_PINELABS';
@@ -108,23 +115,57 @@ function reconcileCardTransactions({ misRows, cardMprRows, pinelabsRows, toleran
     const groupAmount = round2(members.reduce((s, m) => s + (Number(m.amount) || 0), 0));
 
     let picked = null;
+    // True when `picked.amount` is the SUM of every candidate, not one row's
+    // own amount — see the block below.
+    let pickedIsCandidateGroup = false;
     if (candidates.length === 1) {
       picked = candidates[0];
-    } else if (candidates.length > 1 && p.onAmbiguous !== 'UNMATCHED') {
-      // Nearest to the group's total is the real counterpart (same tie-break
-      // as payu-settlement.js/easebuzz-settlement.js). Under onAmbiguous
-      // 'UNMATCHED' the rule declines to guess and the row stays unmatched —
-      // `candidateCount` below still reports how many were found, so the
-      // route's reason text can say so.
-      picked = candidates.reduce((best, c) =>
-        Math.abs((Number(c.amount) || 0) - groupAmount) < Math.abs((Number(best.amount) || 0) - groupAmount) ? c : best,
-      );
+    } else if (candidates.length > 1) {
+      // A reference can legitimately carry more than one real gateway
+      // settlement at once: a CARD approval code is only 6 digits, so the
+      // network genuinely reissues the same code to unrelated transactions
+      // weeks apart (confirmed live: app_code 705447 is TWO real settlements —
+      // different cards, different ARNs, four days apart — for two unrelated
+      // MIS receipts that happen to share the code). Summing the MIS side
+      // without also summing the gateway side would wrongly average them into
+      // one false mismatch, since neither individual gateway row equals the
+      // MIS group total. So: if EVERY candidate's amount, summed, reconciles
+      // with the MIS group total, that is the true match — checked before the
+      // "nearest single candidate" guess below, which is for genuine
+      // ambiguity (one real settlement, several look-alike candidates), not
+      // this.
+      const candidatesSum = round2(candidates.reduce((s, c) => s + (Number(c.amount) || 0), 0));
+      if (Math.abs(Math.round((groupAmount - candidatesSum) * 100)) <= tolPaise) {
+        const latestDate = candidates.map((c) => c.date).filter(Boolean).sort().pop() || null;
+        picked = { sourceType: candidates[0].sourceType, sourceId: candidates[0].sourceId, amount: candidatesSum, date: latestDate };
+        pickedIsCandidateGroup = true;
+      } else if (p.onAmbiguous !== 'UNMATCHED') {
+        // Nearest to the group's total is the real counterpart (same tie-break
+        // as payu-settlement.js/easebuzz-settlement.js). Under onAmbiguous
+        // 'UNMATCHED' the rule declines to guess and the row stays unmatched —
+        // `candidateCount` below still reports how many were found, so the
+        // route's reason text can say so.
+        picked = candidates.reduce((best, c) =>
+          Math.abs((Number(c.amount) || 0) - groupAmount) < Math.abs((Number(best.amount) || 0) - groupAmount) ? c : best,
+        );
+      }
     }
 
     const matchedAmount = picked ? round2(Number(picked.amount) || 0) : null;
     const difference = picked ? round2(groupAmount - matchedAmount) : null;
     let status = UNMATCHED;
-    if (picked) status = Math.abs(Math.round(difference * 100)) <= tolPaise ? MATCHED : AMOUNT_MISMATCH;
+    if (picked) {
+      const withinTolerance = Math.abs(Math.round(difference * 100)) <= tolPaise;
+      status = withinTolerance ? (members.length > 1 || pickedIsCandidateGroup ? GROUPED_MATCHED : MATCHED) : AMOUNT_MISMATCH;
+    }
+
+    // A multi-member group that did NOT reconcile is the collided-reference
+    // case, not a real shortfall — hand it to the rescue below rather than
+    // stamping every member with a difference nobody owes.
+    if (status === AMOUNT_MISMATCH && members.length > 1 && p.onGroupMismatch === 'PREFER_EXACT_MEMBER') {
+      results.push(...rescueCollidedGroup({ key, members, candidates, tolPaise }));
+      continue;
+    }
 
     // Every row sharing this reference gets the same verdict.
     for (const m of members) {
@@ -150,4 +191,4 @@ function reconcileCardTransactions({ misRows, cardMprRows, pinelabsRows, toleran
   return results;
 }
 
-module.exports = { reconcileCardTransactions, CARD_MATCH_STATUSES, MATCHED, AMOUNT_MISMATCH, UNMATCHED, CARD_MPR, CARD_PINELABS };
+module.exports = { reconcileCardTransactions, CARD_MATCH_STATUSES, MATCHED, GROUPED_MATCHED, AMOUNT_MISMATCH, UNMATCHED, CARD_MPR, CARD_PINELABS };

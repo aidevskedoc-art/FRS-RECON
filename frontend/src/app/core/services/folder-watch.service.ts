@@ -4,6 +4,7 @@ import { Observable, tap } from 'rxjs';
 import {
   FolderWatchConfig,
   FolderWatchConfigDraft,
+  FolderWatchConnectionTest,
   FolderWatchRun,
   FolderWatchRunFile,
   FolderWatchRunsPage,
@@ -40,6 +41,11 @@ export class FolderWatchService {
     return this.http
       .put<FolderWatchConfig>(`${API_BASE_URL}/folder-watch/config`, draft)
       .pipe(tap((config) => this._config.set(config)));
+  }
+
+  /** POST /api/folder-watch/test-connection — logs in and lists the folder with the saved settings. */
+  testConnection(): Observable<FolderWatchConnectionTest> {
+    return this.http.post<FolderWatchConnectionTest>(`${API_BASE_URL}/folder-watch/test-connection`, {});
   }
 
   /** GET /api/folder-watch/runs?page=&pageSize= */

@@ -104,7 +104,14 @@ function ucrIpRecordRowToApi(row) {
         ? row.match_source_id
           ? {
               reference: row.msrc_reference ?? null,
-              amount: toNumber(row.msrc_amount),
+              // Prefer the persisted group total (correct even when the
+              // reference's real gateway rows span more than the one
+              // match_source_id can point at — see the schema comment on
+              // ucr_ip_records.match_source_amount); falls back to the
+              // single live-joined row's own amount for a record that
+              // matched under pre-this-column code and has not been
+              // regenerated since.
+              amount: toNumber(row.match_source_amount) ?? toNumber(row.msrc_amount),
               date: toDateOnly(row.msrc_date),
               sourceType: row.match_source_type ?? null,
               // Widened for the audit report's gateway realization block. The

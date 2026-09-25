@@ -63,17 +63,10 @@
 }
 
 // ---------------------------------------------------------------------
-// AC-10 Location, moved up to sit with the highlighted totals it scopes.
+// AC-10 Location, moved up into the page header's actions slot so it sits
+// next to the heading.
 // ---------------------------------------------------------------------
-.tab-totals-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.tab-totals-header__scope {
+.header-scope {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -352,6 +345,11 @@
 // ---------------------------------------------------------------------
 .review-panel {
   overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ai-purple) 22%, transparent);
+}
+
+.review-panel__how-to {
+  margin: var(--space-3) var(--space-4) var(--space-4);
 }
 
 .review-panel__toolbar {
@@ -392,6 +390,31 @@
   i {
     color: var(--ai-blue);
   }
+
+  // Same strip, used to report a failed export (e.g. "too many rows"). Red so
+  // it does not read as the informational cut-off note it sits next to.
+  &--error {
+    background: var(--danger-soft, #fdecea);
+    color: var(--danger, #9c0006);
+
+    i {
+      color: var(--danger, #9c0006);
+    }
+  }
+}
+
+// The three Excel downloads, read as one control rather than three loose buttons.
+.export-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+
+  &__label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-right: var(--space-1);
+    white-space: nowrap;
+  }
 }
 
 .review-panel__count {
@@ -413,8 +436,18 @@
     @include mixins.scrollbar-thin;
   }
 
+  // Header: tinted like the dashboard's By Payment Type table. Opaque (mixed
+  // into --surface), because pinned header cells cover what scrolls under.
   .p-datatable-thead > tr > th {
     white-space: nowrap;
+    background: color-mix(in srgb, var(--ai-purple) 7%, var(--surface));
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+  }
+
+  .p-datatable-tbody > tr > td {
+    font-size: 0.82rem;
   }
 
   // Pinned columns sit over the ones scrolling beneath them, so they need a
@@ -424,8 +457,9 @@
     background: var(--surface);
   }
 
+  .p-datatable-tbody > tr:hover > td,
   .p-datatable-tbody > tr:hover > .p-datatable-frozen-column {
-    background: linear-gradient(var(--surface-hover), var(--surface-hover)), var(--surface);
+    background: color-mix(in srgb, var(--ai-purple) 5%, var(--surface));
   }
 
   .p-datatable-thead > tr > th.col-reason,
@@ -475,7 +509,9 @@
 }
 
 .type-chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 2px 8px;
   border-radius: var(--r-md);
   font-size: 0.7rem;
@@ -490,8 +526,20 @@
 // Status pills — AC-16: the client's own green/red/orange code (the same
 // rule the exported files use, AC-17 — see status-tone.js on the backend).
 // ---------------------------------------------------------------------
+.type-chip__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
 .status-pill {
   @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
+  gap: 5px;
+
+  i {
+    font-size: 0.62rem;
+  }
 }
 
 .status-pill--green {
@@ -513,7 +561,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -523,31 +571,6 @@
 .status-legend__label {
   font-weight: 600;
   color: var(--text-subtle);
-}
-
-.status-legend__item {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.status-legend__dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex: none;
-}
-
-.status-legend__dot--green {
-  background: var(--status-success-fg);
-}
-
-.status-legend__dot--red {
-  background: var(--status-danger-fg);
-}
-
-.status-legend__dot--orange {
-  background: var(--status-warning-fg);
 }
 
 // ---------------------------------------------------------------------

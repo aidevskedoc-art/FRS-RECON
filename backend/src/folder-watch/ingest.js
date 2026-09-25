@@ -12,16 +12,17 @@
  *   - A file can legitimately be several reports at once — the client's
  *     combined "All Collections" workbook is seven. Every matched report is
  *     a candidate, not just the best one.
- *   - A report with a dry-run preview (the HIS collection reports) is stored
- *     only if that preview is clean (his-preview.js previewIsClean — the same
- *     test the detect route uses for "nothing left for a person to decide").
- *     Anything else — unverified totals, held-back receipts, rows already
- *     stored, a sheet problem — is left for a person, with the reason.
+ *   - A report with a dry-run preview (the HIS collection reports) is
+ *     decided by online-upload/upload-decision.js decideReport — the one rule
+ *     the manual screen also uses. Stored unless storing would be wrong
+ *     (unreadable, nothing new, would double-count); warnings are recorded
+ *     on the run, not left as questions.
  *   - A report without a preview is stored only when the detector is certain
  *     of it; an uncertain file waits for a person, same as on the screen.
  */
-const { detectFileType, CONFIDENT } = require('../online-upload/detect-file-type');
-const { attachHisPreviews, previewIsClean } = require('../online-upload/his-preview');
+const { detectFileType } = require('../online-upload/detect-file-type');
+const { attachHisPreviews } = require('../online-upload/his-preview');
+const { decideFile } = require('../online-upload/upload-decision');
 const db = require('../db');
 
 const ipPaymentsRouter = require('../routes/ip-payments.routes');
@@ -83,40 +84,6 @@ function extractBatches(body) {
   return [];
 }
 
-/**
- * Why a dry-run preview leaves this report for a person — the same checks as
- * previewIsClean, turned into words. Returns { outcome, message }: a report
- * whose rows are ALL already stored is a duplicate, not a review item.
- */
-function previewSkip(p) {
-  if (p.status === 'FAILED') {
-    return { outcome: 'SKIPPED_NEEDS_REVIEW', message: `Could not be read safely: ${(p.notes || []).join(' ') || 'no detail'}` };
-  }
-  if (p.ingest.rows === 0 && p.alreadyStored?.rows) {
-    return { outcome: 'SKIPPED_DUPLICATE', message: 'Every row in this report is already stored from an earlier upload.' };
-  }
-  if (p.ingest.rows === 0) {
-    // The manual screen silently unticks these — nothing for a person to do.
-    return { outcome: 'SKIPPED_EMPTY', message: 'This report holds nothing to store.' };
-  }
-  if (p.overlap?.rows && p.overlap.rows >= p.ingest.rows) {
-    // Every row is already stored — the same report arriving again (e.g. a
-    // file taken again after Retry) is a duplicate, not something to review.
-    return { outcome: 'SKIPPED_DUPLICATE', message: 'Every row in this report is already stored from an earlier upload.' };
-  }
-  if (p.overlap?.rows) {
-    return { outcome: 'SKIPPED_NEEDS_REVIEW', message: `${p.overlap.rows} of its rows are already stored from an earlier upload — upload it from the manual screen to decide.` };
-  }
-  if (p.status === 'UNVERIFIED') {
-    return { outcome: 'SKIPPED_NEEDS_REVIEW', message: 'Its totals could not be checked against the report’s own printed totals — a person needs to confirm it.' };
-  }
-  if (p.heldBack?.length) {
-    return { outcome: 'SKIPPED_NEEDS_REVIEW', message: `${p.heldBack.length} receipt(s) would be held back for review — a person needs to confirm it.` };
-  }
-  const problems = (p.sheets || []).flatMap((s) => s.problems.map((pr) => `${s.sheetName}: ${pr.message}`));
-  return { outcome: 'SKIPPED_NEEDS_REVIEW', message: problems.length ? problems.join(' | ') : 'Needs a person to review it.' };
-}
-
 async function uploadOne(buffer, fileName, type, uploadedByLabel) {
   const target = UPLOAD_HANDLERS[type];
   if (!target) {
@@ -157,35 +124,17 @@ async function ingestOneFile(buffer, fileName, uploadedByLabel) {
   }
 
   const withPreviews = await attachHisPreviews(buffer, matches);
-  const hasPreview = withPreviews.some((m) => m.preview);
+  // The same decision the manual screen gets from /api/uploads/detect.
+  const { decisions } = decideFile(withPreviews, certain);
 
-  if (!hasPreview) {
-    // An ordinary single-report file: stored only when the detector is sure.
-    if (!certain) {
-      const labels = matches.map((m) => m.label).join(', ');
-      return [{
-        type: matches[0].type,
-        outcome: 'SKIPPED_NEEDS_REVIEW',
-        batches: [],
-        message: `Not certain which report this is (${labels}) — upload it from the manual screen to choose.`,
-      }];
-    }
-    return [await uploadOne(buffer, fileName, matches[0].type, uploadedByLabel)];
-  }
-
-  // A HIS workbook: every report in it is decided on its own dry run.
   const results = [];
-  for (const m of withPreviews) {
-    if (m.preview) {
-      if (previewIsClean(m.preview)) {
-        results.push(await uploadOne(buffer, fileName, m.type, uploadedByLabel));
-      } else {
-        results.push({ type: m.type, batches: [], ...previewSkip(m.preview) });
-      }
-    } else if (m.confidence >= CONFIDENT) {
-      results.push(await uploadOne(buffer, fileName, m.type, uploadedByLabel));
+  for (const d of decisions) {
+    if (d.action === 'STORE') {
+      const result = await uploadOne(buffer, fileName, d.type, uploadedByLabel);
+      if (result.outcome === 'INGESTED' && d.message) result.message = d.message;
+      results.push(result);
     } else {
-      results.push({ type: m.type, outcome: 'SKIPPED_NEEDS_REVIEW', batches: [], message: `Only a weak match for ${m.label}.` });
+      results.push({ type: d.type, batches: [], outcome: d.outcome, message: d.message });
     }
   }
   return results;
@@ -209,7 +158,10 @@ async function buildPlanSteps() {
     db.query('SELECT id FROM cheque_collection_upload_batches ORDER BY id'),
     // PayU MPR and EaseBuzz rows share bank_statement_uploads and the same
     // per-batch Generate; leaving them out kept them "Not generated" forever.
-    db.query(`SELECT id, source FROM bank_statement_uploads WHERE source IN ('BANK', 'PAYU_MPR', 'EASEBUZZ') ORDER BY id`),
+    // Grouped Bank, then PayU MPR, then EaseBuzz — the manual screen's order
+    // (planRun). Plain id order interleaved them by upload time instead.
+    db.query(`SELECT id, source FROM bank_statement_uploads WHERE source IN ('BANK', 'PAYU_MPR', 'EASEBUZZ')
+               ORDER BY CASE source WHEN 'BANK' THEN 1 WHEN 'PAYU_MPR' THEN 2 ELSE 3 END, id`),
   ]);
   const bankStep = { BANK: 'Bank Statements', PAYU_MPR: 'PayU MPR', EASEBUZZ: 'EaseBuzz' };
 

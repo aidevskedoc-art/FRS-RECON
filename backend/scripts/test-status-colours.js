@@ -119,7 +119,7 @@ async function readBack(buffer) {
   const pickWb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(pickWb, columnSheet(records, cols), 'IP Payments');
   const picked = (await readBack(await writeXlsx(pickWb)))('IP Payments', 'Match Status');
-  ok('picked: labels', picked.map((c) => c.value).join('|') === 'Matched|Partially Matched|Matched by Auditor|Not Generated', picked.map((c) => c.value));
+  ok('picked: labels', picked.map((c) => c.value).join('|') === 'Matched|Partial Match|Matched by Auditor|Not Generated', picked.map((c) => c.value));
   ok('picked: tones (Not Generated uncoloured)', picked.map((c) => c.tone).join() === 'GREEN,RED,ORANGE,', picked.map((c) => c.tone));
 
   console.log('\n=== untagged workbook is byte-identical to plain SheetJS ===');

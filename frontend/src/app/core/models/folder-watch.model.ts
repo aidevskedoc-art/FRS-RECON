@@ -7,6 +7,10 @@ export interface FolderWatchConfig {
   runTime: string;
   active: boolean;
   uploadedByLabel: string;
+  /** Login for the share; null = the backend server's own Windows account. */
+  shareUsername: string | null;
+  /** The password itself is never sent to the browser. */
+  hasSharePassword: boolean;
   updatedAt: string;
   updatedBy: string | null;
   updatedByName?: string;
@@ -17,6 +21,17 @@ export interface FolderWatchConfigDraft {
   runTime: string;
   active: boolean;
   uploadedByLabel: string;
+  shareUsername: string;
+  /** Blank = keep the saved password. */
+  sharePassword: string;
+}
+
+export interface FolderWatchConnectionTest {
+  ok: boolean;
+  error?: string;
+  usedLogin?: boolean;
+  filesInFolder?: number;
+  spreadsheets?: number;
 }
 
 export type FolderWatchRunStatus = 'RUNNING' | 'COMPLETED' | 'FAILED';
