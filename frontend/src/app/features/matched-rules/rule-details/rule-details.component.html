@@ -1,0 +1,136 @@
+<p-dialog
+  [visible]="visible()"
+  (visibleChange)="visible.set($event)"
+  [modal]="true"
+  [dismissableMask]="true"
+  [draggable]="false"
+  [style]="{ width: '860px', maxWidth: '94vw' }"
+  [header]="explanation()?.name ?? 'Rule details'"
+  styleClass="rule-details-dialog"
+>
+  @if (explanation(); as x) {
+    <div class="rd">
+      <div class="rd__chips">
+        <span class="chip">{{ x.kindLabel }}</span>
+        <span class="chip" [class.chip--success]="x.active" [class.chip--muted]="!x.active">{{ x.active ? 'Active' : 'Inactive' }}</span>
+        <span [class]="'chip chip--' + x.outcome.tone">{{ x.outcome.label }}</span>
+      </div>
+
+      <p class="rd__summary">{{ x.summary }}</p>
+
+      @for (w of x.warnings; track $index) {
+        <div class="rd__warning" role="note">
+          <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+          <span>{{ w }}</span>
+        </div>
+      }
+
+      <section class="rd__section">
+        <h3>{{ x.stepsHeading }}</h3>
+        <ol class="steps">
+          @for (step of x.steps; track $index; let i = $index) {
+            <li class="step">
+              <span class="step__num" aria-hidden="true">{{ i + 1 }}</span>
+              <div class="step__body">
+                <div class="step__title">{{ step.title }}</div>
+                @if (step.options?.length) {
+                  <ul class="step__options">
+                    @for (opt of step.options; track $index; let last = $last) {
+                      <li>
+                        {{ opt }}
+                        @if (!last) {
+                          <span class="step__or">or</span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                }
+                @if (step.detail) {
+                  <div class="step__detail">{{ step.detail }}</div>
+                }
+              </div>
+            </li>
+          }
+        </ol>
+      </section>
+
+      @if (x.outcomes.length) {
+        <section class="rd__section">
+          <h3>What the result can be</h3>
+          <table class="outcomes">
+            <tbody>
+              @for (o of x.outcomes; track $index) {
+                <tr>
+                  <td>{{ o.when }}</td>
+                  <td>
+                    <span [class]="'chip chip--' + o.tone">{{ o.status }}</span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+
+      @for (ex of x.examples; track $index) {
+        <section class="rd__section example">
+          <h3>{{ ex.title }}</h3>
+
+          @for (t of ex.tables; track $index) {
+            <div class="example__table">
+              <div class="example__caption">{{ t.heading }}</div>
+              <div class="example__scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      @for (c of t.columns; track $index) {
+                        <th>{{ c }}</th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of t.rows; track $index) {
+                      <tr>
+                        @for (cell of row; track $index) {
+                          <td>{{ cell }}</td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+
+          <ul class="checks">
+            @for (c of ex.checks; track $index) {
+              <li class="check" [class.check--fail]="!c.ok">
+                <i [class]="c.ok ? 'pi pi-check-circle' : 'pi pi-times-circle'" [attr.aria-label]="c.ok ? 'Passes' : 'Fails'"></i>
+                <span class="check__step">Step {{ c.step }}</span>
+                <span>{{ c.detail }}</span>
+              </li>
+            }
+          </ul>
+
+          @if (ex.note) {
+            <div class="example__note">
+              <i class="pi pi-info-circle" aria-hidden="true"></i>
+              <span>{{ ex.note }}</span>
+            </div>
+          }
+
+          <div [class]="'example__result example__result--' + ex.resultTone">{{ ex.result }}</div>
+        </section>
+      }
+
+      <section class="rd__section">
+        <h3>When it runs</h3>
+        <ul class="run-order">
+          @for (line of x.runOrder; track $index) {
+            <li>{{ line }}</li>
+          }
+        </ul>
+      </section>
+    </div>
+  }
+</p-dialog>

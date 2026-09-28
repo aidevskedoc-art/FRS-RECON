@@ -24,25 +24,37 @@ function nextRunAt(runTimeStr, now = new Date()) {
 }
 
 let timer = null;
+let armGeneration = 0;
+// The slot the timer last fired for. A day-long setTimeout can fire seconds
+// EARLY — Node counts the delay on its own clock while the PC's wall clock
+// gets corrected in between — so re-arming from "now" found that same slot
+// still ahead and scanned a second time seconds later (26/27 Sep 2026: runs at
+// 12:32:50 and 12:32:59 for a 12:33 schedule). Never re-arm onto a served slot.
+let lastFiredSlotMs = 0;
 
 /** Reads the current config and (re-)arms the daily timer. Safe to call repeatedly — always clears any existing timer first. setTimeout's ~24.8 day max delay is never an issue for a daily interval. */
 async function arm() {
+  const generation = ++armGeneration;
   if (timer) {
     clearTimeout(timer);
     timer = null;
   }
   const { rows } = await db.query('SELECT * FROM folder_watch_config ORDER BY id LIMIT 1');
+  // Two overlapping calls (a settings save while a scan re-arms) would each
+  // set a timer after the other's clear, leaving two alive; only the latest arms.
+  if (generation !== armGeneration) return;
   const config = rows[0];
   if (!config || !config.active) {
     console.log('[folder-watch] scheduler idle — no active configuration');
     return;
   }
 
-  const next = nextRunAt(config.run_time);
+  const next = nextRunAt(config.run_time, new Date(Math.max(Date.now(), lastFiredSlotMs)));
   const delayMs = next.getTime() - Date.now();
   console.log(`[folder-watch] next scan at ${next.toISOString()} (in ${Math.round(delayMs / 60000)} min)`);
 
   timer = setTimeout(async () => {
+    lastFiredSlotMs = next.getTime();
     try {
       await runScan();
     } catch (err) {

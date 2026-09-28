@@ -29,6 +29,7 @@
 
 const { tokenize } = require('./matcher');
 const { reconcileByUnit, MATCH, AMOUNT_MISMATCH, PARTIAL_MATCH, AMBIGUOUS_MATCH } = require('./unit-groups');
+const { REFERENCE_CODE_CHEQUE_NUMBERS, MISENTERED_CHEQUE_NUMBERS } = require('./status-tone');
 
 /** Verdicts the unit pass must leave alone — a settled answer, whatever it was settled against. */
 const CLOSED = new Set([MATCH, 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY']);
@@ -36,8 +37,13 @@ const CLOSED = new Set([MATCH, 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY']);
 const DIRECTIONS = ['MIS_TO_BANK', 'BANK_TO_MIS'];
 const SCOPES = ['DIVISION', 'BATCH', 'NONE'];
 
-/** Fields a unit may be keyed on. `trans_id` is absent on purpose — see below. */
-const PAYMENT_REF_FIELDS = ['AUTO', 'transactionRef1', 'transactionRef2', 'transactionRef3', 'receiptNumber', 'yhno', 'ipNo'];
+/**
+ * Fields a unit may be keyed on. `trans_id` is absent on purpose — see below.
+ * `chequeNo` groups cheque collections: one cheque sometimes pays several
+ * receipts (cheque 127760 — 10 OP receipts of one family, one ₹17,355 credit).
+ */
+const PAYMENT_REF_FIELDS = ['AUTO', 'transactionRef1', 'transactionRef2', 'transactionRef3', 'receiptNumber', 'yhno', 'ipNo', 'chequeNo'];
+
 const BANK_REF_FIELDS = ['chqRefNo', 'narration'];
 
 /**
@@ -54,6 +60,13 @@ const BANK_REF_FIELDS = ['chqRefNo', 'narration'];
 function paymentRef(record, field) {
   if (!field || field === 'AUTO') {
     return record.transactionRef1 || record.transactionRef2 || record.transactionRef3 || null;
+  }
+  // 12345 / 123456 are the team's own marker and 1234567 a known mis-entry:
+  // each sits on hundreds of unrelated receipts, so it identifies no cheque and
+  // must never gather them into one unit.
+  if (field === 'chequeNo') {
+    const cheque = record.chequeNo == null ? '' : String(record.chequeNo).trim();
+    if (REFERENCE_CODE_CHEQUE_NUMBERS.has(cheque) || MISENTERED_CHEQUE_NUMBERS.has(cheque)) return null;
   }
   return record[field] ?? null;
 }

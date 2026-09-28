@@ -17,6 +17,7 @@ import {
   ChequeFilterOptions,
   ChequeStatusCounts,
   MatchStatus,
+  chequeStatusLabel,
 } from '../../../core/models';
 
 interface ColumnDef {
@@ -138,7 +139,8 @@ export class ChequeCollectionBatchDetailComponent {
   protected readonly appliedRule = signal('');
   protected readonly dateFrom = signal('');
   protected readonly dateTo = signal('');
-  protected readonly statusFilter = signal<'ALL' | MatchStatus>('ALL');
+  /** YASHODA_REFUND_CHEQUE is a filter-only value: the contra entries with a real cheque number. */
+  protected readonly statusFilter = signal<'ALL' | MatchStatus | 'YASHODA_REFUND_CHEQUE'>('ALL');
 
   protected readonly statusCounts = signal<ChequeStatusCounts | null>(null);
   protected readonly statusOptions = computed(() => {
@@ -147,6 +149,7 @@ export class ChequeCollectionBatchDetailComponent {
     return [
       { label: withCount('All', c?.total), value: 'ALL' as const },
       { label: withCount('Matched', c?.matched), value: 'MATCHED' as const },
+      { label: withCount('Yashoda refund Cheque', c?.yashodaRefund), value: 'YASHODA_REFUND_CHEQUE' as const },
       { label: withCount('Contra Entry', c?.contra), value: 'CONTRA_ENTRY' as const },
       { label: withCount('Partially Matched', c?.partialMatch), value: 'PARTIAL_MATCH' as const },
       { label: withCount('Amount Mismatch', c?.amountMismatch), value: 'AMOUNT_MISMATCH' as const },
@@ -260,7 +263,9 @@ export class ChequeCollectionBatchDetailComponent {
     });
   }
 
-  protected statusLabel(status: MatchStatus): string {
+  /** A contra reads by its cheque number, several receipts on one cheque as "Grouped Matched" (see chequeStatusLabel). */
+  protected statusLabel(status: MatchStatus, chequeNo?: string | null, groupCount?: number | null): string {
+    if (chequeNo !== undefined) return chequeStatusLabel(status, chequeNo, groupCount) ?? STATUS_LABELS[status] ?? status;
     return STATUS_LABELS[status] ?? status;
   }
 

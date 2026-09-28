@@ -351,8 +351,9 @@ mountRuleCrud('/ip-payments', 'ip_payment_matching_rules', ['CNF', 'UNIT_AGGREGA
 mountRuleCrud('/diag-op-payments', 'diag_payment_matching_rules', ['CNF', 'UNIT_AGGREGATION']);
 mountRuleCrud('/upi-payments', 'upi_payment_matching_rules', ['CNF', 'UNIT_AGGREGATION']);
 // Cheque collection is the only table that reconciles against a second
-// document, so it is the only one that accepts a contra rule -- and it has no
-// aggregation requirement, so it does not accept a unit rule.
-mountRuleCrud('/cheque-collections', 'cheque_matching_rules', ['CNF', 'CONTRA_ENTRY']);
+// document, so it is the only one that accepts a contra rule. It also takes a
+// unit rule (2026-09-28): one cheque can pay several receipts — cheque 127760,
+// 10 receipts, one ₹17,355 credit — grouped on the cheque number.
+mountRuleCrud('/cheque-collections', 'cheque_matching_rules', ['CNF', 'UNIT_AGGREGATION', 'CONTRA_ENTRY']);
 
 module.exports = router;

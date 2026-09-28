@@ -80,4 +80,55 @@ async function filterNewRows({ table, identitySql, identityOf, rows }) {
   return { newRows, skipped };
 }
 
-module.exports = { sha256, assertNewFile, filterNewRows };
+const money = (v) => (v === null || v === undefined ? '' : Number(v).toFixed(2));
+
+/** One bank statement line as a string — every column the statement prints. */
+function bankLineIdentity(r) {
+  return [r.txnDate ?? '', r.valueDate ?? '', r.narration ?? '', r.chqRefNo ?? '', money(r.withdrawalAmt), money(r.depositAmt), money(r.closingBalance)].join('§');
+}
+
+// Must build exactly the string bankLineIdentity does. Dates come out of SQL
+// as text, never through a JS Date (a DATE read that way lands a day early in IST).
+const BANK_LINE_IDENTITY_SQL = `
+  COALESCE(to_char(r.txn_date, 'YYYY-MM-DD'), '') || '§' || COALESCE(to_char(r.value_date, 'YYYY-MM-DD'), '') || '§' ||
+  COALESCE(r.narration, '') || '§' || COALESCE(r.chq_ref_no, '') || '§' ||
+  COALESCE(to_char(r.withdrawal_amt, 'FM999999999990.00'), '') || '§' ||
+  COALESCE(to_char(r.deposit_amt, 'FM999999999990.00'), '') || '§' ||
+  COALESCE(to_char(r.closing_balance, 'FM999999999990.00'), '')`;
+
+/**
+ * The lines of one bank statement that an EARLIER upload of the same account
+ * has not already stored — so two statements whose periods overlap store the
+ * shared days once, not twice (a credit stored twice gives the matcher two
+ * candidates for one payment).
+ *
+ * A line is "the same" when the account and every printed column match,
+ * closing balance included. The running balance changes with every
+ * transaction, so two genuinely different lines can never share all of it.
+ *
+ * Unlike filterNewRows, a line repeated WITHIN this statement is kept: this
+ * only removes what an earlier file already holds, so an upload that overlaps
+ * nothing stores exactly what it stored before this check existed.
+ *
+ * @param {string|null} accountNo the statement's account number, as parsed
+ * @param {object[]}    rows      parsed lines (txnDate, valueDate, narration, chqRefNo, amounts)
+ */
+async function filterNewBankLines({ accountNo, rows }) {
+  if (!rows || rows.length === 0) return { newRows: [], skipped: 0 };
+  const dates = rows.map((r) => r.txnDate).filter(Boolean).sort();
+  // Only this account's lines inside this statement's own dates can be the same line.
+  const { rows: existing } = await db.query(
+    `SELECT ${BANK_LINE_IDENTITY_SQL} AS ident
+       FROM bank_statement_records r
+       JOIN bank_statement_uploads u ON u.id = r.batch_id
+      WHERE u.source = 'BANK'
+        AND regexp_replace(COALESCE(u.account_no, ''), '[^0-9]', '', 'g') = $1
+        AND (r.txn_date IS NULL OR r.txn_date BETWEEN $2::date AND $3::date)`,
+    [String(accountNo ?? '').replace(/[^0-9]/g, ''), dates[0] ?? null, dates[dates.length - 1] ?? null],
+  );
+  const stored = new Set(existing.map((e) => e.ident));
+  const newRows = rows.filter((r) => !stored.has(bankLineIdentity(r)));
+  return { newRows, skipped: rows.length - newRows.length };
+}
+
+module.exports = { sha256, assertNewFile, filterNewRows, filterNewBankLines, bankLineIdentity };

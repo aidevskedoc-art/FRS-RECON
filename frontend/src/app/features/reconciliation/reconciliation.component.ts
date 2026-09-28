@@ -10,6 +10,7 @@ import { ReconciliationRunService, UploadedBatch } from '../../core/services/rec
 import { MatchedRulesService } from '../../core/services/matched-rules.service';
 import { AuthService } from '../../core/services/auth.service';
 import { errorMessage } from '../../core/services/policy-document.service';
+import { ScanStatusService } from '../../core/services/scan-status.service';
 import {
   DetectedType,
   ReconciliationSummary,
@@ -192,7 +193,12 @@ export class ReconciliationComponent {
   });
 
   /** Run is available only once every dropped file is settled and nothing unsafe is selected. */
-  protected readonly canRun = computed(() => this.hasFiles() && !this.detecting() && !this.running() && this.blockers().length === 0);
+  /** The shared-folder scan pauses uploads and Generate while it runs — Run waits for it rather than failing file by file. */
+  protected readonly scan = inject(ScanStatusService);
+
+  protected readonly canRun = computed(
+    () => this.hasFiles() && !this.detecting() && !this.running() && this.blockers().length === 0 && !this.scan.running(),
+  );
 
   constructor() {
     this.runner.fetchTypes().subscribe({

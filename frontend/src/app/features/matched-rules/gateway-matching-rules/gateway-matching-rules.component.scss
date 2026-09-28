@@ -1,4 +1,5 @@
 @use 'styles/mixins';
+@use '../rule-details/trigger';
 
 .matching-rules {
   display: flex;
@@ -86,9 +87,11 @@
   // Blanket nowrap keeps the scannable columns tidy — but the Conditions cell
   // opts out with .wrap. Without :not() it inherits nowrap and its one-line
   // width blows the whole table past the content area.
+  // Middle, not top: every cell here is a single line, and top alignment left
+  // the text riding above the taller toggle switch and action buttons.
   .p-datatable-tbody > tr > td:not(.wrap) {
     white-space: nowrap;
-    vertical-align: top;
+    vertical-align: middle;
   }
 
   .p-datatable-tbody > tr > td.wrap {
@@ -163,6 +166,32 @@
 
 .action-icon--danger:hover {
   color: var(--status-danger-fg);
+}
+
+// The top rule can't move up nor the last down — with one rule, neither.
+.action-icon:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: none;
+  color: var(--text-secondary);
+}
+
+.priority {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.priority__num {
+  min-width: 1.25em;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.priority__moves {
+  display: inline-flex;
 }
 
 .empty {
@@ -383,4 +412,16 @@
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   margin-top: calc(var(--space-2) * -1);
+}
+
+.condition-cell__btn {
+  @include trigger.button;
+}
+
+.settings-col__text {
+  display: block;
+}
+
+.rule-details-hint {
+  @include trigger.hint;
 }

@@ -9,7 +9,7 @@
  */
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
-const { statusTone, isMatchedByAuditor } = require('../src/reconciliation/status-tone');
+const { statusTone, statusLabel, recordLabelOptions, isMatchedByAuditor } = require('../src/reconciliation/status-tone');
 const { writeXlsx, TONE_STYLES } = require('../src/excel/write-xlsx');
 const { buildAuditWorkbook } = require('../src/excel/audit-report');
 const { buildReconciliationWorkbook } = require('../src/excel/reconciliation-export');
@@ -59,6 +59,27 @@ async function readBack(buffer) {
   for (const s of ['UNMATCHED', 'AMOUNT_MISMATCH', 'PARTIAL_MATCH', 'AMBIGUOUS_MATCH']) ok(`${s} -> RED`, statusTone(s) === 'RED');
   ok('matched by an auditor -> ORANGE', statusTone('MATCHED', { matchedByAuditor: true }) === 'ORANGE');
   ok('no verdict -> no colour', statusTone(null) === null && statusTone(undefined) === null);
+
+  console.log('\n=== a contra entry is named by its cheque number ===');
+  ok('real cheque number -> "Yashoda refund Cheque"', statusLabel('CONTRA_ENTRY', { chequeNo: '053847' }) === 'Yashoda refund Cheque');
+  ok('reference code 12345 -> plain "Contra Entry"', statusLabel('CONTRA_ENTRY', { chequeNo: '12345' }) === 'Contra Entry');
+  ok('reference code 123456 (padded) -> plain "Contra Entry"', statusLabel('CONTRA_ENTRY', { chequeNo: ' 123456 ' }) === 'Contra Entry');
+  ok('mis-entered 1234567 -> plain "Contra Entry"', statusLabel('CONTRA_ENTRY', { chequeNo: '1234567' }) === 'Contra Entry');
+  ok('blank cheque number -> plain "Contra Entry"', statusLabel('CONTRA_ENTRY', { chequeNo: null }) === 'Contra Entry');
+  ok('no cheque number given (non-cheque sheets) -> plain "Contra Entry"', statusLabel('CONTRA_ENTRY') === 'Contra Entry');
+  ok('other verdicts ignore the cheque number', statusLabel('UNMATCHED', { chequeNo: '053847' }) === 'Unmatched');
+  ok('matched by an auditor still wins', statusLabel('CONTRA_ENTRY', { chequeNo: '053847', matchedByAuditor: true }) === 'Matched by Auditor');
+
+  console.log('\n=== several receipts on one cheque read "Grouped Matched" ===');
+  const groupedCheque = { uploadType: 'CHEQUE_PAYMENT', chequeNo: '127760', matchStatus: 'MATCHED', matchUnitCount: 10 };
+  const singleCheque = { uploadType: 'CHEQUE_PAYMENT', chequeNo: '053500', matchStatus: 'MATCHED', matchUnitCount: null };
+  const groupedIp = { uploadType: 'IP_PAYMENT', matchStatus: 'MATCHED', matchUnitCount: 2 };
+  ok('grouped cheque -> "Grouped Matched"', statusLabel('MATCHED', recordLabelOptions(groupedCheque)) === 'Grouped Matched');
+  ok('single cheque -> "Matched"', statusLabel('MATCHED', recordLabelOptions(singleCheque)) === 'Matched');
+  ok('grouped IP row keeps "Matched" (cheque-only wording)', statusLabel('MATCHED', recordLabelOptions(groupedIp)) === 'Matched');
+  ok('a grouped cheque that is not matched keeps its own status', statusLabel('PARTIAL_MATCH', recordLabelOptions({ ...groupedCheque, matchStatus: 'PARTIAL_MATCH' })) === 'Partial Match');
+  ok('grouped cheque is still green', statusTone('MATCHED') === 'GREEN');
+  ok('auditor approval wins over the group', statusLabel('MATCHED', { ...recordLabelOptions(groupedCheque), matchedByAuditor: true }) === 'Matched by Auditor');
   ok('auditor match needs locked_at AND locked_by', isMatchedByAuditor({ locked_at: new Date(), locked_by: 3 }) && !isMatchedByAuditor({ locked_at: new Date(), locked_by: null }) && !isMatchedByAuditor({}));
 
   console.log('\n=== Audit Working Report ===');

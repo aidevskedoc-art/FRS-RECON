@@ -26,6 +26,7 @@ import {
   MatchStatusFilter,
   STATUS_FILTER_OPTIONS,
   STATUS_LABELS,
+  chequeStatusLabel,
   statusesForTab,
   OnlineMismatchRecord,
   PendingChange,
@@ -893,7 +894,10 @@ export class MismatchReviewComponent {
     // set, so an Auditor can find a locked system match to flag as wrong.
     // 'All' sends no status filter at all — that's the whole point of it.
     const wantsClean = mode === 'matched' || mode === 'matched_by_auditor';
-    let onlineChequeStatuses = mode === 'mismatches' ? MISMATCH_STATUSES : wantsClean ? [...CLEAN_MATCH_STATUSES] : null;
+    // The cheque API splits CONTRA_ENTRY by cheque number, so "every clean
+    // match" has to ask for the Yashoda-refund half too (the online API ignores it).
+    let onlineChequeStatuses =
+      mode === 'mismatches' ? MISMATCH_STATUSES : wantsClean ? [...CLEAN_MATCH_STATUSES, 'YASHODA_REFUND_CHEQUE'] : null;
     let ucrStatuses = mode === 'mismatches' ? UCR_MISMATCH_STATUSES : wantsClean ? UCR_CLEAN_STATUSES : null;
     // An explicit Status pick is narrower than the view mode, so it replaces it
     // rather than adding to it. Narrowed per tab because the two families of
@@ -1085,8 +1089,12 @@ export class MismatchReviewComponent {
    * a verdict that reads one way on screen and another in the download is the
    * kind of thing a client raises as a bug.
    */
-  protected statusLabel(status: string | null, matchedByAuditor = false): string {
+  protected statusLabel(status: string | null, matchedByAuditor = false, chequeNo?: string | null, groupCount?: number | null): string {
     if (matchedByAuditor) return 'Matched by Auditor';
+    // Cheque rows only: a contra reads by its cheque number ("Yashoda refund
+    // Cheque"), several receipts on one cheque as "Grouped Matched".
+    const chequeLabel = chequeNo !== undefined ? chequeStatusLabel(status, chequeNo, groupCount) : null;
+    if (chequeLabel) return chequeLabel;
     // `status` is whatever the API sent, so it is narrowed here rather than
     // trusted — an unknown verdict falls through to its own raw value.
     return STATUS_LABELS[status as MatchStatusFilter] ?? status ?? 'Not Generated';
@@ -1129,7 +1137,12 @@ export class MismatchReviewComponent {
   private detailBase(row: ReviewRow, patientName: string | null, department: string) {
     return {
       status: row.matchStatus,
-      statusLabel: this.statusLabel(row.matchStatus, row.matchedByAuditor),
+      statusLabel: this.statusLabel(
+        row.matchStatus,
+        row.matchedByAuditor,
+        'chequeNo' in row ? row.chequeNo : undefined,
+        'chequeNo' in row ? row.matchUnitCount : undefined,
+      ),
       tone: statusTone(row.matchStatus, row.matchedByAuditor),
       matchedByAuditor: row.matchedByAuditor,
       reason: row.matchReason,

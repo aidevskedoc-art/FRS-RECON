@@ -866,6 +866,12 @@ function flattenChequeRecordRows(results, pastGoLive) {
       group.matchReason,
       !group.excluded && group.bank ? Number(group.bank.recordId) : null,
       !group.excluded && group.contra ? Number(group.contra.refundRecordId) : null,
+      // A grouped cheque (several receipts on one cheque — cheque 127760) keeps
+      // its group, so the row can read "Grouped Matched". Null for every other row.
+      group.unitKey ?? null,
+      group.unitCount ?? null,
+      group.unitTotal ?? null,
+      group.unitDifference ?? null,
       pastGoLive && status !== null && TERMINAL_STATUSES.has(status),
     ];
   });
@@ -873,21 +879,23 @@ function flattenChequeRecordRows(results, pastGoLive) {
 
 /** Chunked bulk UPDATE for cheque collection verdicts — same chunking rationale as bulkUpdateMatchStatus. */
 async function bulkUpdateChequeMatchStatus(client, recordTable, rows, chunkSize = 500) {
-  const cols = 7;
+  const cols = 11;
   for (let start = 0; start < rows.length; start += chunkSize) {
     const chunk = rows.slice(start, start + chunkSize);
     const valuesSql = chunk
       .map(
         (_, i) =>
-          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::text, $${i * cols + 5}::int, $${i * cols + 6}::int, $${i * cols + 7}::boolean)`,
+          `($${i * cols + 1}::int, $${i * cols + 2}::varchar, $${i * cols + 3}::varchar, $${i * cols + 4}::text, $${i * cols + 5}::int, $${i * cols + 6}::int, $${i * cols + 7}::varchar, $${i * cols + 8}::int, $${i * cols + 9}::numeric, $${i * cols + 10}::numeric, $${i * cols + 11}::boolean)`,
       )
       .join(', ');
     await client.query(
       `UPDATE ${recordTable} AS t
        SET match_status = v.status, match_applied_rule = v.rule, match_reason = v.reason,
            match_bank_record_id = v.bank_id, match_refund_record_id = v.refund_id,
+           match_group_base_ref = v.unit_key, match_group_member_count = v.unit_count, match_group_total = v.unit_total,
+           match_group_difference = v.unit_difference,
            locked_at = CASE WHEN v.should_lock THEN now() ELSE NULL END, locked_by = NULL
-       FROM (VALUES ${valuesSql}) AS v(id, status, rule, reason, bank_id, refund_id, should_lock)
+       FROM (VALUES ${valuesSql}) AS v(id, status, rule, reason, bank_id, refund_id, unit_key, unit_count, unit_total, unit_difference, should_lock)
        -- See the same guard + should_lock note in bulkUpdateMatchStatus above.
        WHERE t.id = v.id AND t.locked_at IS NULL`,
       chunk.flat(),

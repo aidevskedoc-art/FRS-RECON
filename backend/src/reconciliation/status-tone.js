@@ -66,11 +66,82 @@ const STATUS_LABEL = Object.freeze({
 /** Maker-checker outranks the engine's own verdict — see AC-16. */
 const AUDITOR_MATCHED_LABEL = 'Matched by Auditor';
 
-/** @param matchedByAuditor stamp the maker-checker label instead of the verdict's own. */
-function statusLabel(status, { matchedByAuditor = false } = {}) {
+/**
+ * Cheque numbers the client's own team deliberately enters as reference codes
+ * to flag this type of transaction — not real instrument numbers, but not a
+ * mistake either. Verified against live data: '12345' appears on 1,500+
+ * refund_records rows and '123456' on 195 cheque_collection_records rows,
+ * each under a different patient — a real cheque number is unique to one
+ * instrument, so this many sharing one literal value is the team's own
+ * marker, entered on purpose. A contra match keyed on one of these is not a
+ * verified "this specific cheque came back" match, so it keeps the generic
+ * label rather than the specific one.
+ */
+const REFERENCE_CODE_CHEQUE_NUMBERS = new Set(['12345', '123456']);
+
+/**
+ * Cheque numbers confirmed by the client as genuine data-entry mistakes (a
+ * human mis-typed a real cheque number as this one) — '1234567' verified
+ * against live data (3 refund_records rows, each a different patient). The
+ * "match" this produces is therefore not a real contra entry at all; the audit
+ * report's DATE OF REALIZATION reads blank for it, as an unmatched row would.
+ */
+const MISENTERED_CHEQUE_NUMBERS = new Set(['1234567']);
+
+/**
+ * What a contra entry is called in a STATUS column, by its cheque number: a
+ * real cheque number is a "Yashoda refund Cheque" (same test as the audit
+ * report's DATE OF REALIZATION, excel/audit-report.js realizationCell).
+ * Anything else — the team's reference codes, the known mis-entry, or no
+ * cheque number — stays plain "Contra Entry" (sriram, 2026-09-28: the status
+ * reads "Contra Entry", not "Credit Contra Entry"; the realization column
+ * keeps its own CREDIT CONTRA ENTRY wording).
+ */
+function contraLabel(chequeNo) {
+  const cheque = chequeNo == null ? '' : String(chequeNo).trim();
+  const realCheque = cheque && !REFERENCE_CODE_CHEQUE_NUMBERS.has(cheque) && !MISENTERED_CHEQUE_NUMBERS.has(cheque);
+  return realCheque ? 'Yashoda refund Cheque' : STATUS_LABEL.CONTRA_ENTRY;
+}
+
+/**
+ * Filter value for the contra entries contraLabel calls "Yashoda refund
+ * Cheque". Not a stored status — every contra is stored as CONTRA_ENTRY — so
+ * a list filter resolves it from the cheque number (see realChequeSql).
+ */
+const YASHODA_REFUND_CHEQUE = 'YASHODA_REFUND_CHEQUE';
+
+/**
+ * SQL twin of contraLabel's "real cheque number" test, so a status filter
+ * returns exactly the rows the status column labels "Yashoda refund Cheque".
+ * The quoted values are the constants above, never request input.
+ */
+function realChequeSql(column) {
+  const notReal = [...REFERENCE_CODE_CHEQUE_NUMBERS, ...MISENTERED_CHEQUE_NUMBERS].map((c) => `'${c}'`).join(', ');
+  return `(NULLIF(trim(${column}), '') IS NOT NULL AND trim(${column}) NOT IN (${notReal}))`;
+}
+
+/**
+ * @param matchedByAuditor stamp the maker-checker label instead of the verdict's own.
+ * @param chequeNo         a cheque row's cheque number — names a contra entry precisely
+ *                         (see contraLabel). Omit it and a contra reads "Contra Entry".
+ * @param groupCount       a CHEQUE row's group size (match_group_member_count). Several
+ *                         receipts matched together on one cheque read "Grouped Matched",
+ *                         like Card/UPI's split payments; the stored status stays MATCHED,
+ *                         so counts, colours and locking are unchanged. Pass it for cheque
+ *                         rows only — grouped IP/Diag matches keep reading "Matched".
+ */
+function statusLabel(status, { matchedByAuditor = false, chequeNo, groupCount } = {}) {
   if (matchedByAuditor) return AUDITOR_MATCHED_LABEL;
   if (!status) return '';
+  if (status === 'CONTRA_ENTRY' && chequeNo !== undefined) return contraLabel(chequeNo);
+  if (status === 'MATCHED' && Number(groupCount) > 1) return STATUS_LABEL.GROUPED_MATCHED;
   return STATUS_LABEL[status] || status;
+}
+
+/** statusLabel's options for one record row — the cheque-only wording applies to cheque rows alone. */
+function recordLabelOptions(r) {
+  if (r.uploadType !== 'CHEQUE_PAYMENT') return {};
+  return { chequeNo: r.chequeNo, groupCount: r.matchUnitCount };
 }
 
 module.exports = {
@@ -79,5 +150,11 @@ module.exports = {
   AUDITOR_MATCHED_LABEL,
   statusTone,
   statusLabel,
+  recordLabelOptions,
+  contraLabel,
+  realChequeSql,
+  YASHODA_REFUND_CHEQUE,
+  REFERENCE_CODE_CHEQUE_NUMBERS,
+  MISENTERED_CHEQUE_NUMBERS,
   isMatchedByAuditor,
 };

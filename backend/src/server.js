@@ -28,6 +28,7 @@ const auditLogsRouter = require('./routes/audit-logs.routes');
 const matchApprovalsRouter = require('./routes/match-approvals.routes');
 const folderWatchRouter = require('./routes/folder-watch.routes');
 const { arm: armFolderWatchScheduler } = require('./folder-watch/scheduler');
+const { pauseWritesDuringScan, scanStatus } = require('./folder-watch/scan-lock');
 const goLiveRouter = require('./routes/go-live.routes');
 
 const app = express();
@@ -69,6 +70,12 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 // The folder automation calls route handlers in-process, not over HTTP, so it
 // is unaffected.
 app.use('/api', requireAuthExcept(['/api/health', '/api/auth/login']));
+
+// While the shared-folder scan runs (a few minutes a day), uploads, deletes and
+// Generate are paused with a 423 so nobody races it; viewing is unaffected.
+// See folder-watch/scan-lock.js. The status is what the frontend banner polls.
+app.use('/api', pauseWritesDuringScan);
+app.get('/api/scan-status', (req, res) => res.json(scanStatus()));
 
 app.use('/api/documents', documentsRouter);
 app.use('/api/documents', extractionRouter);

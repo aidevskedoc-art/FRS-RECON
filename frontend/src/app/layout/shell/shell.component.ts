@@ -18,6 +18,7 @@ import { CursorGlowComponent } from '../../shared/ambient/cursor-glow.component'
 import { SidebarStore } from '../sidebar/sidebar.store';
 import { ReducedMotionService } from '../../core/a11y/reduced-motion';
 import { AiLoaderComponent } from '../../shared/ui/ai-loader.component';
+import { ScanBannerComponent } from '../scan-banner/scan-banner.component';
 
 /** The nav rail's own label for whichever link's path prefixes `path` most specifically — null off-nav (a drill-down/detail route). */
 function navLabelFor(path: string): string | null {
@@ -45,7 +46,7 @@ function navLabelFor(path: string): string | null {
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, SidebarComponent, TopbarComponent, AuroraBackgroundComponent, CursorGlowComponent, AiLoaderComponent],
+  imports: [RouterOutlet, SidebarComponent, TopbarComponent, AuroraBackgroundComponent, CursorGlowComponent, AiLoaderComponent, ScanBannerComponent],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -367,7 +367,7 @@
                 @case ('status') {
                   <span class="status-pill" [class]="statusPillClass(row.matchStatus, row.matchedByAuditor)">
                     <i class="pi" [class]="'pi ' + statusIcon(row.matchStatus, row.matchedByAuditor)"></i>
-                    {{ statusLabel(row.matchStatus, row.matchedByAuditor) }}
+                    {{ statusLabel(row.matchStatus, row.matchedByAuditor, row.chequeNo, row.matchUnitCount) }}
                   </span>
                   @if (row.pendingChange) {
                     <span class="pending-tag" title="A change request is waiting for approval"><i class="pi pi-clock"></i>Pending approval</span>

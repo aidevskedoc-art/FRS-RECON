@@ -32,7 +32,7 @@
 
 const XLSX = require('xlsx');
 const { columnSheet } = require('./write-xlsx');
-const { statusTone, statusLabel, isMatchedByAuditor } = require('../reconciliation/status-tone');
+const { statusTone, statusLabel, recordLabelOptions, isMatchedByAuditor } = require('../reconciliation/status-tone');
 
 /** A date as the client reads it, from a value that may be a Date or a string. */
 const ymd = (v) => {
@@ -54,7 +54,7 @@ const toneOf = (r) => statusTone(r.matchStatus, { matchedByAuditor: isMatchedByA
  */
 const STATUS_COL = {
   label: 'Status',
-  get: (r) => statusLabel(r.matchStatus, { matchedByAuditor: isMatchedByAuditor(r) }),
+  get: (r) => statusLabel(r.matchStatus, { matchedByAuditor: isMatchedByAuditor(r), ...recordLabelOptions(r) }),
   tone: toneOf,
 };
 

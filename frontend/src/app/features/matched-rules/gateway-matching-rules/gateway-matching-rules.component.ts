@@ -8,6 +8,8 @@ import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
+import { RuleDetailsComponent } from '../rule-details/rule-details.component';
+import { explainGatewayRule } from '../rule-details/explain-gateway-rule';
 import { GatewayRulesService } from '../../../core/services/gateway-rules.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import {
@@ -34,7 +36,7 @@ function emptyDraft(target: GatewayTarget): GatewayRuleDraft {
 @Component({
   selector: 'app-gateway-matching-rules',
   standalone: true,
-  imports: [FormsModule, TableModule, ButtonModule, InputTextModule, SelectModule, DialogModule, ToggleSwitchModule, TooltipModule],
+  imports: [FormsModule, TableModule, ButtonModule, InputTextModule, SelectModule, DialogModule, ToggleSwitchModule, TooltipModule, RuleDetailsComponent],
   templateUrl: './gateway-matching-rules.component.html',
   styleUrl: './gateway-matching-rules.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -69,6 +71,14 @@ export class GatewayMatchingRulesComponent {
   protected readonly listError = signal<string | null>(null);
   protected readonly reordering = signal(false);
 
+  // Rule details: held by id, so an edit saved while it is open shows at once.
+  protected readonly detailsOpen = signal(false);
+  private readonly detailsRuleId = signal<string | null>(null);
+  protected readonly details = computed(() => {
+    const rule = this.rules().find((r) => r.id === this.detailsRuleId());
+    return rule ? explainGatewayRule(rule, this.effectiveId()) : null;
+  });
+
   constructor() {
     const fromUrl = String(this.route.snapshot.queryParamMap.get('target') || '').toUpperCase();
     if ((TARGETS as string[]).includes(fromUrl)) this.target.set(fromUrl as GatewayTarget);
@@ -87,6 +97,11 @@ export class GatewayMatchingRulesComponent {
 
   protected onSearchInput(event: Event, table: Table): void {
     table.filterGlobal((event.target as HTMLInputElement).value, 'contains');
+  }
+
+  protected openDetails(rule: GatewayRule): void {
+    this.detailsRuleId.set(rule.id);
+    this.detailsOpen.set(true);
   }
 
   /** Whether a knob applies to the selected target — drives what the dialog shows. */

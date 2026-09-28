@@ -16,6 +16,7 @@ const db = require('../db');
 const { logAction } = require('../audit-log');
 const { ingestOneFile, runReconciliationPlan } = require('./ingest');
 const { connectShare } = require('./share-credentials');
+const { beginScan, endScan } = require('./scan-lock');
 
 const SPREADSHEET_EXT = /\.(xlsx|xls)$/i;
 // A file whose mtime is inside this window might still be mid-copy —
@@ -80,11 +81,27 @@ async function runScan(opts = {}) {
     throw new Error('Folder automation is turned off.');
   }
 
-  const { rows: runRows } = await db.query(
-    `INSERT INTO folder_watch_runs (status, triggered_by) VALUES ('RUNNING', $1) RETURNING *`,
-    [opts.triggeredBy || null],
-  );
-  const run = runRows[0];
+  let run;
+  try {
+    const { rows: runRows } = await db.query(
+      `INSERT INTO folder_watch_runs (status, triggered_by) VALUES ('RUNNING', $1) RETURNING *`,
+      [opts.triggeredBy || null],
+    );
+    run = runRows[0];
+  } catch (err) {
+    // folder_watch_runs_one_running: another scan is mid-way. Refused before
+    // reading anything — two scans at once would store the same new file twice.
+    if (err.code === '23505') {
+      const busy = new Error('A folder scan is already running. Wait for it to finish, then check the run history.');
+      busy.status = 409;
+      throw busy;
+    }
+    throw err;
+  }
+
+  // Pause uploads / deletes / Generate for the length of the scan, after
+  // letting any already under way finish — see scan-lock.js.
+  await beginScan();
 
   const counts = { found: 0, ingested: 0, skipped: 0, failed: 0 };
   let reportsIngested = 0;
@@ -158,6 +175,8 @@ async function runScan(opts = {}) {
       [run.id, counts.found, counts.ingested, counts.skipped, counts.failed, err.message],
     );
     throw err;
+  } finally {
+    endScan();
   }
 
   const { rows: finalRun } = await db.query('SELECT * FROM folder_watch_runs WHERE id = $1', [run.id]);

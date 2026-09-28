@@ -4,7 +4,7 @@
       <h2>Cheque Collection Matching Rules</h2>
       <p>{{ allRules().length }} rule{{ allRules().length === 1 ? '' : 's' }} — evaluated top to bottom; the first that matches wins</p>
     </div>
-    <p-button label="Add Rule" icon="pi pi-plus" (onClick)="openAdd()" />
+    <p-button label="Add Rule" icon="pi pi-plus" size="small" (onClick)="openAdd()" />
   </div>
 
   @if (listError(); as err) {
@@ -50,10 +50,13 @@
             </button>
           </td>
           <td>{{ rule.name }}</td>
-          <td class="mono wrap condition-cell">
-            @for (line of conditionLines(rule); track $index) {
-              <div class="condition-cell__line">{{ line }}</div>
-            }
+          <td class="wrap condition-cell">
+            <button type="button" class="condition-cell__btn" (click)="openDetails(rule)">
+              @for (line of conditionLines(rule); track $index) {
+                <span class="condition-cell__line mono">{{ line }}</span>
+              }
+              <span class="rule-details-hint"><i class="pi pi-question-circle" aria-hidden="true"></i> How this rule works</span>
+            </button>
           </td>
           <td>{{ actionLabel(rule.action) }}</td>
           <td>
@@ -204,6 +207,76 @@
             Candidates are first narrowed to the one closest in date to the receipt; this setting only applies when that
             still leaves more than one.
           </p>
+        </section>
+      }
+
+      @if (draft().kind === 'UNIT_AGGREGATION') {
+        <section class="form-section">
+          <p class="form-section__title">Receipts sharing one cheque</p>
+          <p class="form-section__hint">
+            One cheque sometimes pays several receipts. Receipts with the same cheque number are added
+            together, and the <strong>combined</strong> amount is compared with the one bank credit carrying that
+            cheque number. The team's placeholder numbers (12345, 123456, 1234567) are never grouped. This rule
+            runs after the condition rules, on whatever they left unmatched, and never changes a match they made.
+          </p>
+
+          <label>
+            <span>Group receipts by</span>
+            <p-select
+              [options]="unitPaymentRefOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().unitConfig?.paymentRefField"
+              (ngModelChange)="updateUnitConfig({ paymentRefField: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>A group may never cross</span>
+            <p-select
+              [options]="unitScopeOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().unitConfig?.scope"
+              (ngModelChange)="updateUnitConfig({ scope: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>Bank side matched on</span>
+            <p-select
+              [options]="unitBankRefOptions"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="draft().unitConfig?.bankRefField"
+              (ngModelChange)="updateUnitConfig({ bankRefField: $event })"
+              appendTo="body"
+              styleClass="full-width"
+            />
+          </label>
+
+          <label>
+            <span>Amount tolerance (₹)</span>
+            <input
+              pInputText
+              type="number"
+              min="0"
+              [ngModel]="draft().unitConfig?.tolerance"
+              (ngModelChange)="updateUnitConfig({ tolerance: $event })"
+            />
+          </label>
+
+          <label class="form__switch">
+            <span>Also search the bank narration for the cheque number</span>
+            <p-toggleswitch
+              [ngModel]="draft().unitConfig?.useNarration"
+              (ngModelChange)="updateUnitConfig({ useNarration: $event })"
+            />
+          </label>
         </section>
       }
 
@@ -375,3 +448,5 @@
     </ng-template>
   </p-dialog>
 </div>
+
+<app-rule-details [explanation]="details()" [(visible)]="detailsOpen" />

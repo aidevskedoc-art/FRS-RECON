@@ -7,7 +7,7 @@ const { parseBankStatementWorkbook } = require('../online-upload/bank-statement-
 const { parsePayuMprWorkbook } = require('../online-upload/payu-mpr-parser');
 const { parseEasebuzzWorkbook } = require('../online-upload/easebuzz-parser');
 const { parseEasebuzzSettlementWorkbook } = require('../online-upload/easebuzz-settlement-parser');
-const { assertNewFile } = require('../online-upload/dedupe');
+const { assertNewFile, filterNewBankLines } = require('../online-upload/dedupe');
 const { columnSheet, writeXlsx } = require('../excel/write-xlsx');
 const { statusTone } = require('../reconciliation/status-tone');
 const { assertNotPastGoLive } = require('../go-live');
@@ -197,12 +197,32 @@ router.post('/bank-statement', upload.single('file'), async (req, res, next) => 
 
     const fileHash = await assertNewFile('bank_statement_uploads', req.file.buffer, { column: 'source', value: 'BANK' });
     const { statements, skippedSheets } = parseBankStatementWorkbook(req.file.buffer);
+
+    // Two statements whose periods overlap share their common days. Store those
+    // lines once: a line an earlier upload of the same account already holds is
+    // skipped here (see filterNewBankLines). A statement that overlaps nothing
+    // is stored exactly as before.
+    const pending = [];
+    for (const st of statements) {
+      const { newRows } = await filterNewBankLines({ accountNo: st.accountNo, rows: st.rows });
+      pending.push({ st, newRows });
+    }
+    const rowsInFile = statements.reduce((n, st) => n + st.rows.length, 0);
+    const rowsStored = pending.reduce((n, p) => n + p.newRows.length, 0);
+    if (rowsInFile > 0 && rowsStored === 0) {
+      const err = new Error(`All ${rowsInFile} lines in this file are already present from an earlier upload.`);
+      err.status = 409;
+      throw err;
+    }
+
     const uploadedBy = uploaderOf(req);
     const single = statements.length === 1;
 
     const created = await db.withTransaction(async (client) => {
       const out = [];
-      for (const st of statements) {
+      for (const { st, newRows } of pending) {
+        // Every line of this statement was already stored — nothing to add.
+        if (st.rows.length > 0 && newRows.length === 0) continue;
         // A one-sheet file keeps the original name; a multi-sheet file tags each
         // batch with its sheet so the list is not five identical filenames.
         const fileName = single ? req.file.originalname : `${req.file.originalname} — ${st.sheetName}`;
@@ -210,10 +230,10 @@ router.post('/bank-statement', upload.single('file'), async (req, res, next) => 
           `INSERT INTO bank_statement_uploads (bank_name, account_no, account_branch, statement_from, statement_to, file_name, file_size_bytes, row_count, uploaded_by, file_hash)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
           [st.bankName, st.accountNo, st.accountBranch, st.statementFrom, st.statementTo,
-            fileName, req.file.size, st.rows.length, uploadedBy, fileHash],
+            fileName, req.file.size, newRows.length, uploadedBy, fileHash],
         );
         const batch = batchRows[0];
-        for (const r of st.rows) {
+        for (const r of newRows) {
           await client.query(
             `INSERT INTO bank_statement_records (batch_id, txn_date, narration, chq_ref_no, value_date, withdrawal_amt, deposit_amt, closing_balance)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -226,9 +246,11 @@ router.post('/bank-statement', upload.single('file'), async (req, res, next) => 
     });
 
     // One statement -> the object (unchanged contract). Several -> an array plus
-    // what was skipped, so the upload screen can report both.
-    if (single) return res.status(201).json(bankStatementUploadRowToApi(created[0]));
-    res.status(201).json({ batches: created.map(bankStatementUploadRowToApi), skippedSheets });
+    // what was skipped, so the upload screen can report both. The line counts
+    // are the fields the MIS uploads return too ("N already stored, skipped").
+    const counts = { rowsInFile, rowsStored, rowsSkipped: rowsInFile - rowsStored };
+    if (single) return res.status(201).json({ ...bankStatementUploadRowToApi(created[0]), ...counts });
+    res.status(201).json({ batches: created.map(bankStatementUploadRowToApi), skippedSheets, ...counts });
   } catch (err) {
     next(err);
   }

@@ -14,6 +14,7 @@ const { columnSheet, writeXlsx } = require('../excel/write-xlsx');
 const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, settlementCutoffs, cutoffClause } = require('../scope-filters');
 const { assertNotPastGoLive } = require('../go-live');
 const { pendingChangeColumn, auditDetailColumn } = require('../pending-change');
+const { realChequeSql, YASHODA_REFUND_CHEQUE } = require('../reconciliation/status-tone');
 
 const router = express.Router();
 
@@ -219,13 +220,23 @@ function buildRecordsFilter(query, { bankCutoffs = null } = {}) {
     // Comma-separated = "any of these" — the Mismatch Review screen passes
     // every non-clean-match status at once rather than one call per status.
     const statuses = String(query.matchStatus).split(',').map((s) => s.trim()).filter(Boolean);
-    if (statuses.length > 1) {
-      params.push(statuses);
-      clauses.push(`r.match_status = ANY($${params.length}::text[])`);
-    } else {
-      params.push(statuses[0]);
-      clauses.push(`r.match_status = $${params.length}`);
+    // A contra entry shows as "Yashoda refund Cheque" when its cheque number
+    // is a real one, else "Contra Entry" (status-tone.js contraLabel). Both are
+    // stored as CONTRA_ENTRY, so the two filter values split it the same way —
+    // each returns exactly the rows the status column labels that way.
+    const real = realChequeSql('r.cheque_no');
+    const parts = [];
+    const stored = [];
+    for (const s of statuses) {
+      if (s === YASHODA_REFUND_CHEQUE) parts.push(`(r.match_status = 'CONTRA_ENTRY' AND ${real})`);
+      else if (s === 'CONTRA_ENTRY') parts.push(`(r.match_status = 'CONTRA_ENTRY' AND NOT ${real})`);
+      else stored.push(s);
     }
+    if (stored.length) {
+      params.push(stored);
+      parts.push(`r.match_status = ANY($${params.length}::text[])`);
+    }
+    if (parts.length) clauses.push(parts.length === 1 ? parts[0] : `(${parts.join(' OR ')})`);
   }
   // 'Matched' vs 'Matched by Auditor' split the same clean-match set by who
   // locked it — see status-tone.js's isMatchedByAuditor (both columns, not
@@ -305,18 +316,22 @@ router.get('/records/status-counts', async (req, res, next) => {
     // Count PER status, so the status filter itself must not narrow the set.
     const { matchStatus, ...filterQuery } = req.query;
     const { where, params } = buildRecordsFilter(filterQuery);
+    // A contra entry is counted under the name its status column shows —
+    // "Yashoda refund Cheque" (real cheque number) or "Contra Entry".
     const { rows } = await db.query(
-      `SELECT r.match_status, COUNT(*)::int AS n FROM cheque_collection_records r ${where} GROUP BY r.match_status`,
+      `SELECT r.match_status, (r.match_status = 'CONTRA_ENTRY' AND ${realChequeSql('r.cheque_no')}) AS yashoda_refund, COUNT(*)::int AS n
+         FROM cheque_collection_records r ${where} GROUP BY 1, 2`,
       params,
     );
     // Every status the engine can emit gets a bucket. Without an explicit
     // `contra` bucket the bare else below would count all 195 contra rows as
     // "never generated", which drives a "click Generate" prompt on a batch
     // that was just generated.
-    const counts = { total: 0, matched: 0, contra: 0, partialMatch: 0, amountMismatch: 0, unmatched: 0, ambiguous: 0, notGenerated: 0 };
+    const counts = { total: 0, matched: 0, yashodaRefund: 0, contra: 0, partialMatch: 0, amountMismatch: 0, unmatched: 0, ambiguous: 0, notGenerated: 0 };
     for (const row of rows) {
       counts.total += row.n;
       if (row.match_status === 'MATCHED') counts.matched += row.n;
+      else if (row.match_status === 'CONTRA_ENTRY' && row.yashoda_refund) counts.yashodaRefund += row.n;
       else if (row.match_status === 'CONTRA_ENTRY') counts.contra += row.n;
       else if (row.match_status === 'PARTIAL_MATCH') counts.partialMatch += row.n;
       else if (row.match_status === 'AMOUNT_MISMATCH') counts.amountMismatch += row.n;

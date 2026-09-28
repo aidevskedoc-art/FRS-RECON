@@ -172,7 +172,7 @@
               [pTooltip]="statusTooltip(record)"
               tooltipPosition="top"
             >
-              {{ statusLabel(record.matchStatus) }}
+              {{ statusLabel(record.matchStatus, record.chequeNo, record.matchUnitCount) }}
             </span>
           } @else {
             <span class="status-pill" [pTooltip]="statusTooltip(record)" tooltipPosition="top">

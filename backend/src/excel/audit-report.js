@@ -41,7 +41,13 @@
 
 const XLSX = require('xlsx');
 const { MONTHS_SHORT } = require('../reconciliation/period');
-const { statusTone, STATUS_LABEL, AUDITOR_MATCHED_LABEL } = require('../reconciliation/status-tone');
+const {
+  statusTone,
+  statusLabel,
+  AUDITOR_MATCHED_LABEL,
+  REFERENCE_CODE_CHEQUE_NUMBERS,
+  MISENTERED_CHEQUE_NUMBERS,
+} = require('../reconciliation/status-tone');
 const { tagColumn } = require('./write-xlsx');
 
 const MONTHS_TITLE = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -108,28 +114,9 @@ function txnIdCell(record) {
 // date). CONTRA_ENTRY and UNMATCHED / AMBIGUOUS_MATCH are handled apart.
 const BANK_DATE_STATUSES = new Set(['MATCHED', 'PARTIAL_MATCH', 'EASEBUZZ_MATCHED', 'AMOUNT_MISMATCH']);
 
-/**
- * Cheque numbers the client's own team deliberately enters as reference codes
- * to flag this type of transaction — not real instrument numbers, but not a
- * mistake either. Verified against live data: '12345' appears on 1,500+
- * refund_records rows and '123456' on 195 cheque_collection_records rows,
- * each under a different patient — a real cheque number is unique to one
- * instrument, so this many sharing one literal value is the team's own
- * marker, entered on purpose. A contra match keyed on one of these is not a
- * verified "this specific cheque came back" match, so it keeps the generic
- * label rather than the specific one.
- */
-const REFERENCE_CODE_CHEQUE_NUMBERS = new Set(['12345', '123456']);
-
-/**
- * Cheque numbers confirmed by the client as genuine data-entry mistakes (a
- * human mis-typed a real cheque number as this one) — '1234567' verified
- * against live data (3 refund_records rows, each a different patient). The
- * "match" this produces is therefore not a real contra entry at all; it must
- * not be labelled as either a verified match or even the generic placeholder
- * label — it should read exactly as an ordinary unmatched row would.
- */
-const MISENTERED_CHEQUE_NUMBERS = new Set(['1234567']);
+// REFERENCE_CODE_CHEQUE_NUMBERS / MISENTERED_CHEQUE_NUMBERS live in
+// status-tone.js, shared with the RECONCILIATION STATUS wording so the two
+// columns can never name the same contra entry differently.
 
 /**
  * DATE OF REALIZATION — either a real bank date ('YYYY-MM-DD', the workbook
@@ -366,7 +353,7 @@ const bankAcct = (res) => (res && res.bank ? bankAccountShort(res.bank.accountNo
 const locationCell = (r) => String(r.division || r.unitName || '').toUpperCase();
 const auditorCell = (r) => AUDITOR_BY_LOCATION[locationCell(r)] || '';
 
-// STATUS_LABEL / AUDITOR_MATCHED_LABEL are imported at the top from
+// statusLabel / AUDITOR_MATCHED_LABEL are imported at the top from
 // status-tone.js — one map for the screen, this report and the payment
 // exports, which previously each kept their own and had drifted apart.
 
@@ -374,7 +361,12 @@ const statusCell = (r) => {
   if (!r.__result) return '';
   if (r.__result.excluded) return 'Excluded';
   if (r.__result.matchedByAuditor) return AUDITOR_MATCHED_LABEL;
-  return STATUS_LABEL[r.__result.status] || r.__result.status || '';
+  // Cheque rows name a contra entry by cheque number ("Yashoda refund Cheque"),
+  // matching DATE OF REALIZATION, and read "Grouped Matched" when several
+  // receipts cleared on one cheque. The group is this run's own (__result),
+  // not the stored one, since this report re-runs the engine.
+  const opts = r.uploadType === 'CHEQUE_PAYMENT' ? { chequeNo: r.chequeNo, groupCount: r.__result.unitCount } : {};
+  return statusLabel(r.__result.status, opts) || r.__result.status || '';
 };
 
 // AC-17 colour for the RECONCILIATION STATUS cell — see reconciliation/status-tone.js.
@@ -631,7 +623,7 @@ const UCR_COLUMNS = [
   // --- reconciliation ---
   {
     header: 'RECONCILIATION STATUS',
-    get: (r) => (r.matchedByAuditor ? AUDITOR_MATCHED_LABEL : STATUS_LABEL[r.matchStatus] || r.matchStatus || ''),
+    get: (r) => (r.matchedByAuditor ? AUDITOR_MATCHED_LABEL : statusLabel(r.matchStatus)),
     total: 'count',
     tone: (r) => statusTone(r.matchStatus, { matchedByAuditor: !!r.matchedByAuditor }),
   },

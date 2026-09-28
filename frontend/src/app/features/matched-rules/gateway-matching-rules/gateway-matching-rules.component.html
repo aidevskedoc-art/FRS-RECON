@@ -7,7 +7,7 @@
         the first <strong>active</strong> rule is the one in effect
       </p>
     </div>
-    <p-button label="Add Rule" icon="pi pi-plus" (onClick)="openCreate()" />
+    <p-button label="Add Rule" icon="pi pi-plus" size="small" (onClick)="openCreate()" />
   </div>
 
   @if (listError(); as err) {
@@ -62,17 +62,22 @@
             <div class="priority">
               <span class="priority__num">{{ i + 1 }}</span>
               <span class="priority__moves">
-                <button type="button" [disabled]="i === 0 || reordering()" (click)="move(rule, -1)" pTooltip="Move up">
-                  <i class="pi pi-chevron-up"></i>
+                <button type="button" class="action-icon" [disabled]="i === 0 || reordering()" (click)="move(rule, -1)" pTooltip="Move up">
+                  <i class="pi pi-arrow-up"></i>
                 </button>
-                <button type="button" [disabled]="i === rules().length - 1 || reordering()" (click)="move(rule, 1)" pTooltip="Move down">
-                  <i class="pi pi-chevron-down"></i>
+                <button type="button" class="action-icon" [disabled]="i === rules().length - 1 || reordering()" (click)="move(rule, 1)" pTooltip="Move down">
+                  <i class="pi pi-arrow-down"></i>
                 </button>
               </span>
             </div>
           </td>
           <td>{{ rule.name }}</td>
-          <td class="settings-col">{{ summary(rule.gatewayConfig) }}</td>
+          <td class="settings-col">
+            <button type="button" class="condition-cell__btn" (click)="openDetails(rule)">
+              <span class="settings-col__text">{{ summary(rule.gatewayConfig) }}</span>
+              <span class="rule-details-hint"><i class="pi pi-question-circle" aria-hidden="true"></i> How this rule works</span>
+            </button>
+          </td>
           <td>
             <!-- Storing several policies is allowed; only the first active one
                  runs. Saying so on the row keeps the list from implying
@@ -87,8 +92,8 @@
             <p-toggleSwitch [ngModel]="rule.active" (ngModelChange)="toggleActive(rule)" />
           </td>
           <td class="actions-col">
-            <button type="button" class="icon-btn" (click)="openEdit(rule)" pTooltip="Edit"><i class="pi pi-pencil"></i></button>
-            <button type="button" class="icon-btn icon-btn--danger" (click)="remove(rule)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
+            <button type="button" class="action-icon" (click)="openEdit(rule)" pTooltip="Edit"><i class="pi pi-pencil"></i></button>
+            <button type="button" class="action-icon action-icon--danger" (click)="remove(rule)" pTooltip="Delete"><i class="pi pi-trash"></i></button>
           </td>
         </tr>
       </ng-template>
@@ -241,3 +246,5 @@
     <p-button label="Save" icon="pi pi-check" [loading]="saving()" (onClick)="save()" />
   </ng-template>
 </p-dialog>
+
+<app-rule-details [explanation]="details()" [(visible)]="detailsOpen" />

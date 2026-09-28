@@ -12,7 +12,7 @@
 // Labels come from status-tone.js so this export, the audit report and the
 // screen all call a verdict the same thing — they used to each keep their own
 // map and had drifted apart.
-const { statusTone, STATUS_LABEL } = require('../reconciliation/status-tone');
+const { statusTone, statusLabel, recordLabelOptions, STATUS_LABEL } = require('../reconciliation/status-tone');
 
 const MIS = ['ip', 'diag'];
 
@@ -50,7 +50,8 @@ const PAYMENT_EXPORT_COLUMNS = [
   {
     key: 'matchStatus',
     label: 'Match Status',
-    get: (r) => (r.matchedByAuditor ? 'Matched by Auditor' : r.matchStatus ? STATUS_LABEL[r.matchStatus] || r.matchStatus : 'Not Generated'),
+    // Cheque rows: a contra is named by its cheque number, a group of receipts on one cheque reads "Grouped Matched".
+    get: (r) => (r.matchedByAuditor ? 'Matched by Auditor' : r.matchStatus ? statusLabel(r.matchStatus, recordLabelOptions(r)) : 'Not Generated'),
     // AC-17 colour code, painted by excel/write-xlsx.js.
     tone: (r) => statusTone(r.matchStatus, { matchedByAuditor: !!r.matchedByAuditor }),
   },

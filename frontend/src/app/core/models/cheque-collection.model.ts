@@ -89,6 +89,11 @@ export interface ChequeCollectionRecord {
   matchedBank: MatchedBankInfo | null;
   /** The refund row a Stage-2 contra was evidenced by. */
   matchedRefund: MatchedRefundInfo | null;
+  /**
+   * How many receipts cleared together on this cheque (grouped-total rule —
+   * cheque 127760: 10). Above 1, a Matched row reads "Grouped Matched".
+   */
+  matchUnitCount?: number | null;
 }
 
 export interface ChequeCollectionRecordsPage {
@@ -126,6 +131,9 @@ export interface ChequeCollectionRecordsQuery {
 export interface ChequeStatusCounts {
   total: number;
   matched: number;
+  /** Contra entries with a real cheque number — shown as "Yashoda refund Cheque". */
+  yashodaRefund: number;
+  /** The remaining contra entries (reference-code cheque numbers) — shown as "Contra Entry". */
   contra: number;
   partialMatch: number;
   amountMismatch: number;

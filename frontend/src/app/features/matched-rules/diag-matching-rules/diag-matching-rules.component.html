@@ -4,7 +4,7 @@
       <h2>Diagnostics Payment Matching Rules</h2>
       <p>{{ allRules().length }} rule{{ allRules().length === 1 ? '' : 's' }} — evaluated top to bottom; the first that matches wins</p>
     </div>
-    <p-button label="Add Rule" icon="pi pi-plus" (onClick)="openAdd()" />
+    <p-button label="Add Rule" icon="pi pi-plus" size="small" (onClick)="openAdd()" />
   </div>
 
   @if (listError(); as err) {
@@ -50,10 +50,13 @@
             </button>
           </td>
           <td>{{ rule.name }}</td>
-          <td class="mono wrap condition-cell">
-            @for (line of conditionLines(rule); track $index) {
-              <div class="condition-cell__line">{{ line }}</div>
-            }
+          <td class="wrap condition-cell">
+            <button type="button" class="condition-cell__btn" (click)="openDetails(rule)">
+              @for (line of conditionLines(rule); track $index) {
+                <span class="condition-cell__line mono">{{ line }}</span>
+              }
+              <span class="rule-details-hint"><i class="pi pi-question-circle" aria-hidden="true"></i> How this rule works</span>
+            </button>
           </td>
           <td>{{ actionLabel(rule.action) }}</td>
           <td>
@@ -377,3 +380,5 @@
     </ng-template>
   </p-dialog>
 </div>
+
+<app-rule-details [explanation]="details()" [(visible)]="detailsOpen" />

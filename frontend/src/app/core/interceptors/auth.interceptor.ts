@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { API_BASE_URL } from '../config/api.config';
 import { AuthService } from '../services/auth.service';
+import { ScanStatusService } from '../services/scan-status.service';
 
 /**
  * Attaches the JWT to every /api call and to /uploads (the insurance policy
@@ -14,6 +15,7 @@ import { AuthService } from '../services/auth.service';
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
+  const scanStatus = inject(ScanStatusService);
 
   const token = auth.token();
   const isApiCall = req.url.startsWith(API_BASE_URL) || req.url.startsWith('/api') || req.url.startsWith('/uploads');
@@ -25,6 +27,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         auth.logout();
         router.navigateByUrl('/login');
       }
+      // Paused by the running folder scan: show the banner now rather than at the next poll.
+      if (err instanceof HttpErrorResponse && err.status === 423) scanStatus.refreshNow();
       return throwError(() => err);
     }),
   );

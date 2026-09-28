@@ -7,6 +7,8 @@ import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
+import { RuleDetailsComponent } from '../rule-details/rule-details.component';
+import { explainMatchingRule } from '../rule-details/explain-matching-rule';
 import { MatchingRulesService } from '../../../core/services/matching-rules.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import {
@@ -54,7 +56,7 @@ function emptyDraft(): MatchingRuleDraft {
 @Component({
   selector: 'app-diag-matching-rules',
   standalone: true,
-  imports: [FormsModule, TableModule, ButtonModule, InputTextModule, SelectModule, DialogModule, ToggleSwitchModule, TooltipModule],
+  imports: [FormsModule, TableModule, ButtonModule, InputTextModule, SelectModule, DialogModule, ToggleSwitchModule, TooltipModule, RuleDetailsComponent],
   templateUrl: './diag-matching-rules.component.html',
   styleUrl: './diag-matching-rules.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -87,6 +89,14 @@ export class DiagMatchingRulesComponent {
   protected readonly listError = signal<string | null>(null);
   protected readonly reordering = signal(false);
 
+  // Rule details: held by id, so an edit saved while it is open shows at once.
+  protected readonly detailsOpen = signal(false);
+  private readonly detailsRuleId = signal<string | null>(null);
+  protected readonly details = computed(() => {
+    const rule = this.allRules().find((r) => r.id === this.detailsRuleId());
+    return rule ? explainMatchingRule(rule, 'DIAG', this.allRules()) : null;
+  });
+
   constructor() {
     this.matchingRules.refreshDiagRules().subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
   }
@@ -94,6 +104,11 @@ export class DiagMatchingRulesComponent {
   protected onSearchInput(event: Event, table: Table): void {
     const value = (event.target as HTMLInputElement).value;
     table.filterGlobal(value, 'contains');
+  }
+
+  protected openDetails(rule: MatchingRule): void {
+    this.detailsRuleId.set(rule.id);
+    this.detailsOpen.set(true);
   }
 
   // --- table summaries --------------------------------------------------------

@@ -49,8 +49,8 @@ export type RuleConditionGroup = RuleLeaf[];
 export interface UnitRuleConfig {
   /** MIS_TO_BANK sums payment rows against one credit; BANK_TO_MIS is the reverse. */
   direction: 'MIS_TO_BANK' | 'BANK_TO_MIS';
-  /** EXACT: ACCOUNT001A groups only with ACCOUNT001A. BASE: a trailing letter is stripped first, so A and B combine. */
-  unitKeyMode: 'EXACT' | 'BASE';
+  /** EXACT: ACCOUNT001A groups only with ACCOUNT001A. BASE: a trailing letter is stripped first, so A and B combine. AFFIX: a leading or trailing letter is stripped, so A952497 and B952497 combine. */
+  unitKeyMode: 'EXACT' | 'BASE' | 'AFFIX';
   /** The boundary a unit may never cross. */
   scope: 'DIVISION' | 'BATCH' | 'NONE';
   /** Rupees of slack on the amount comparison. */
@@ -58,7 +58,7 @@ export interface UnitRuleConfig {
   /** Also key bank rows on narration tokens — an inward remittance files its reference only there. */
   useNarration: boolean;
   /** AUTO walks Transaction Id 1 → 2 → 3 and takes the first non-null. */
-  paymentRefField: 'AUTO' | 'transactionRef1' | 'transactionRef2' | 'transactionRef3' | 'receiptNumber' | 'yhno' | 'ipNo';
+  paymentRefField: 'AUTO' | 'transactionRef1' | 'transactionRef2' | 'transactionRef3' | 'receiptNumber' | 'yhno' | 'ipNo' | 'chequeNo';
   bankRefField: 'chqRefNo' | 'narration';
 }
 
@@ -176,6 +176,25 @@ export const UNIT_PAYMENT_REF_OPTIONS = [
   { label: 'YH No', value: 'yhno' as const },
   { label: 'IP No', value: 'ipNo' as const },
 ];
+
+/**
+ * The Cheque tab's grouped rule groups on the cheque number alone: one cheque
+ * can pay several receipts (cheque 127760 — 10 receipts, one ₹17,355 credit).
+ * The team's placeholder numbers 12345 / 123456 / 1234567 never form a group
+ * (backend unit-pass.js paymentRef).
+ */
+export const CHEQUE_UNIT_PAYMENT_REF_OPTIONS = [{ label: 'Cheque No', value: 'chequeNo' as const }];
+
+/** A new grouped rule on the Cheque tab: keyed on the cheque number, matched on the bank's Chq/Ref No., ₹1 like the cheque rule. */
+export const DEFAULT_CHEQUE_UNIT_CONFIG: UnitRuleConfig = {
+  direction: 'MIS_TO_BANK',
+  unitKeyMode: 'EXACT',
+  scope: 'DIVISION',
+  tolerance: 1,
+  useNarration: false,
+  paymentRefField: 'chequeNo',
+  bankRefField: 'chqRefNo',
+};
 
 export const UNIT_BANK_REF_OPTIONS = [
   { label: 'Chq/Ref No.', value: 'chqRefNo' as const },

@@ -26,7 +26,8 @@
     "test-his-mis-rows": "node scripts/test-his-mis-rows.js",
     "test-his-upload-routes": "node scripts/test-his-upload-routes.js",
     "verify-his-mis-parity": "node --env-file=.env scripts/verify-his-mis-parity.js",
-    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js && node scripts/test-payu-settlement.js && node scripts/test-easebuzz-rule.js && node scripts/test-contra-pass.js && node scripts/test-cheque-parsers.js && node scripts/test-audit-report.js && node scripts/test-card-matcher.js && node scripts/test-upi-matcher.js && node scripts/test-detect-file-type.js && node scripts/test-his-report-reader.js && node scripts/test-ucr-upload-route.js && node scripts/test-his-mis-rows.js && node scripts/test-his-upload-routes.js && node scripts/test-gateway-policy.js && node scripts/test-easebuzz-window.js && node scripts/test-status-colours.js",
+    "verify-bank-line-dedupe": "node --env-file=.env scripts/verify-bank-line-dedupe.js",
+    "test-unit": "node scripts/test-unit-rule.js && node scripts/test-unit-pass.js && node scripts/test-payu-settlement.js && node scripts/test-easebuzz-rule.js && node scripts/test-contra-pass.js && node scripts/test-cheque-parsers.js && node scripts/test-audit-report.js && node scripts/test-card-matcher.js && node scripts/test-upi-matcher.js && node scripts/test-detect-file-type.js && node scripts/test-his-report-reader.js && node scripts/test-ucr-upload-route.js && node scripts/test-his-mis-rows.js && node scripts/test-his-upload-routes.js && node scripts/test-gateway-policy.js && node scripts/test-easebuzz-window.js && node scripts/test-status-colours.js && node scripts/test-scan-lock.js",
     "test-gateway-policy": "node scripts/test-gateway-policy.js",
     "test-easebuzz-window": "node scripts/test-easebuzz-window.js",
     "verify-easebuzz-windows": "node scripts/verify-easebuzz-windows.js",
@@ -39,7 +40,8 @@
     "test-match-approvals-route": "node scripts/test-match-approvals-route.js",
     "test-folder-watch": "node scripts/test-folder-watch.js",
     "test-scope-filters": "node scripts/test-scope-filters.js",
-    "test-status-colours": "node scripts/test-status-colours.js"
+    "test-status-colours": "node scripts/test-status-colours.js",
+    "test-scan-lock": "node scripts/test-scan-lock.js"
   },
   "engines": {
     "node": ">=18"

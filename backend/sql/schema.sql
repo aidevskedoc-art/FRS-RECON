@@ -1533,6 +1533,16 @@ ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS locked_by INTEGER
 ALTER TABLE ucr_ip_records            ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP;
 ALTER TABLE ucr_ip_records            ADD COLUMN IF NOT EXISTS locked_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 
+-- Grouped cheques (client mail 2026-09-28, cheque 127760): one cheque paying
+-- several receipts is matched by a grouped-total rule keyed on the cheque
+-- number. Same match_group_* columns as the IP/Diag record tables, so the
+-- shared mapper exposes the group, and a row whose member count is above 1
+-- reads "Grouped Matched".
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS match_group_base_ref VARCHAR(255);
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS match_group_member_count INTEGER;
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS match_group_total NUMERIC(14,2);
+ALTER TABLE cheque_collection_records ADD COLUMN IF NOT EXISTS match_group_difference NUMERIC(14,2);
+
 -- ---------------------------------------------------------------------------
 -- Shared-folder automation (client mail 2026-09-21, point 3): the client
 -- drops files into one network folder; the app checks it at a scheduled
@@ -1584,6 +1594,19 @@ ALTER TABLE folder_watch_runs ADD CONSTRAINT folder_watch_runs_status_chk
   CHECK (status IN ('RUNNING', 'COMPLETED', 'FAILED'));
 
 CREATE INDEX IF NOT EXISTS folder_watch_runs_started_idx ON folder_watch_runs(started_at DESC);
+
+-- At most one scan at a time. Two overlapping scans both see a new file as not
+-- yet taken and both store it: the row-level dedupe reads before it inserts,
+-- so it cannot stop them. A second scan's RUNNING row fails this index and
+-- runScan refuses it before reading any file. A RUNNING row at startup is a
+-- scan the server stopped in the middle of — closed first, so it can't block
+-- every later scan (or this index's creation).
+UPDATE folder_watch_runs
+   SET status = 'FAILED', finished_at = COALESCE(finished_at, now()),
+       error_message = COALESCE(error_message, 'Interrupted — the server stopped before this scan finished.')
+ WHERE status = 'RUNNING';
+CREATE UNIQUE INDEX IF NOT EXISTS folder_watch_runs_one_running
+  ON folder_watch_runs(status) WHERE status = 'RUNNING';
 
 -- The reconciliation that ran after this scan's uploads — the same plan the
 -- manual Upload & Run screen runs (every IP, Diag, Cheque, Bank batch, then

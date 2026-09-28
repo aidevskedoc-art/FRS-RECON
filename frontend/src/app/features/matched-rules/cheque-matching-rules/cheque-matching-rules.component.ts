@@ -8,6 +8,8 @@ import { MultiSelectModule } from 'primeng/multiselect';
 import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
+import { RuleDetailsComponent } from '../rule-details/rule-details.component';
+import { explainMatchingRule } from '../rule-details/explain-matching-rule';
 import { MatchingRulesService } from '../../../core/services/matching-rules.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import {
@@ -35,9 +37,9 @@ import {
   UNIT_DIRECTION_OPTIONS,
   UNIT_KEY_MODE_OPTIONS,
   UNIT_SCOPE_OPTIONS,
-  UNIT_PAYMENT_REF_OPTIONS,
+  CHEQUE_UNIT_PAYMENT_REF_OPTIONS,
   UNIT_BANK_REF_OPTIONS,
-  DEFAULT_UNIT_CONFIG,
+  DEFAULT_CHEQUE_UNIT_CONFIG,
 } from '../../../core/models';
 
 function emptyLeaf(): RuleLeaf {
@@ -71,6 +73,7 @@ function emptyDraft(): MatchingRuleDraft {
     DialogModule,
     ToggleSwitchModule,
     TooltipModule,
+    RuleDetailsComponent,
   ],
   templateUrl: './cheque-matching-rules.component.html',
   styleUrl: './cheque-matching-rules.component.scss',
@@ -84,9 +87,10 @@ export class ChequeMatchingRulesComponent {
   protected readonly actionOptions = RULE_ACTIONS;
   protected readonly leafKindOptions = LEAF_KIND_OPTIONS;
   // Cheque collection reconciles against two documents, so it offers the
-  // contra kind — and has no aggregation requirement, so it does not offer the
-  // unit kind. The backend enforces the same pair for this rule table.
-  protected readonly ruleKindOptions = RULE_KIND_OPTIONS.filter((o) => o.value !== 'UNIT_AGGREGATION');
+  // contra kind. It also offers the unit kind (2026-09-28): one cheque can pay
+  // several receipts, grouped on the cheque number. The backend accepts the
+  // same three kinds for this rule table.
+  protected readonly ruleKindOptions = RULE_KIND_OPTIONS;
   protected readonly contraKeyFieldOptions = CONTRA_KEY_FIELD_OPTIONS;
   protected readonly contraAmountFieldOptions = CONTRA_AMOUNT_FIELD_OPTIONS;
   protected readonly contraScopeOptions = CONTRA_SCOPE_OPTIONS;
@@ -94,7 +98,7 @@ export class ChequeMatchingRulesComponent {
   protected readonly unitDirectionOptions = UNIT_DIRECTION_OPTIONS;
   protected readonly unitKeyModeOptions = UNIT_KEY_MODE_OPTIONS;
   protected readonly unitScopeOptions = UNIT_SCOPE_OPTIONS;
-  protected readonly unitPaymentRefOptions = UNIT_PAYMENT_REF_OPTIONS;
+  protected readonly unitPaymentRefOptions = CHEQUE_UNIT_PAYMENT_REF_OPTIONS;
   protected readonly unitBankRefOptions = UNIT_BANK_REF_OPTIONS;
   protected readonly paymentFieldOptions = PAYMENT_FIELD_OPTIONS;
   protected readonly bankFieldOptions = BANK_STATEMENT_FIELD_OPTIONS;
@@ -109,6 +113,14 @@ export class ChequeMatchingRulesComponent {
   protected readonly listError = signal<string | null>(null);
   protected readonly reordering = signal(false);
 
+  // Rule details: held by id, so an edit saved while it is open shows at once.
+  protected readonly detailsOpen = signal(false);
+  private readonly detailsRuleId = signal<string | null>(null);
+  protected readonly details = computed(() => {
+    const rule = this.allRules().find((r) => r.id === this.detailsRuleId());
+    return rule ? explainMatchingRule(rule, 'CHEQUE', this.allRules()) : null;
+  });
+
   constructor() {
     this.matchingRules.refreshChequeRules().subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
   }
@@ -116,6 +128,11 @@ export class ChequeMatchingRulesComponent {
   protected onSearchInput(event: Event, table: Table): void {
     const value = (event.target as HTMLInputElement).value;
     table.filterGlobal(value, 'contains');
+  }
+
+  protected openDetails(rule: MatchingRule): void {
+    this.detailsRuleId.set(rule.id);
+    this.detailsOpen.set(true);
   }
 
   // --- table summaries --------------------------------------------------------
@@ -214,7 +231,7 @@ export class ChequeMatchingRulesComponent {
   }
 
   protected updateUnitConfig(patch: Partial<UnitRuleConfig>): void {
-    this.draft.update((d) => ({ ...d, unitConfig: { ...(d.unitConfig ?? DEFAULT_UNIT_CONFIG), ...patch } }));
+    this.draft.update((d) => ({ ...d, unitConfig: { ...(d.unitConfig ?? DEFAULT_CHEQUE_UNIT_CONFIG), ...patch } }));
   }
 
   /** Switching kind swaps which payload the draft carries; the other is cleared so a half-filled rule cannot be saved. */
@@ -223,7 +240,7 @@ export class ChequeMatchingRulesComponent {
       ...d,
       kind,
       conditionGroups: kind === 'CNF' ? (d.conditionGroups?.length ? d.conditionGroups : [[emptyLeaf()]]) : [],
-      unitConfig: kind === 'UNIT_AGGREGATION' ? (d.unitConfig ?? { ...DEFAULT_UNIT_CONFIG }) : null,
+      unitConfig: kind === 'UNIT_AGGREGATION' ? (d.unitConfig ?? { ...DEFAULT_CHEQUE_UNIT_CONFIG }) : null,
       contraConfig: kind === 'CONTRA_ENTRY' ? (d.contraConfig ?? { ...DEFAULT_CONTRA_CONFIG }) : null,
     }));
   }
@@ -325,7 +342,7 @@ export class ChequeMatchingRulesComponent {
       action: rule.action,
       active: rule.active,
       kind: rule.kind ?? 'CNF',
-      unitConfig: rule.unitConfig ? { ...DEFAULT_UNIT_CONFIG, ...rule.unitConfig } : null,
+      unitConfig: rule.unitConfig ? { ...DEFAULT_CHEQUE_UNIT_CONFIG, ...rule.unitConfig } : null,
       // Never set on this rule table (contra rules belong to cheque
       // collection), but carried through so an edit cannot blank it.
       contraConfig: rule.contraConfig ? { ...DEFAULT_CONTRA_CONFIG, ...rule.contraConfig } : null,

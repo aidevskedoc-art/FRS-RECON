@@ -106,7 +106,9 @@ export type MatchStatusFilter =
   | 'MATCHED'
   | 'GROUPED_MATCHED'
   | 'EASEBUZZ_MATCHED'
-  | 'CONTRA_ENTRY';
+  | 'CONTRA_ENTRY'
+  /** Not a stored status: the contra entries whose cheque number is a real one (see contraLabel). The backend resolves it from the cheque number. */
+  | 'YASHODA_REFUND_CHEQUE';
 
 /**
  * What each verdict is CALLED wherever the client reads it — screen, Excel,
@@ -128,7 +130,37 @@ export const STATUS_LABELS: Readonly<Record<MatchStatusFilter, string>> = {
   AMOUNT_MISMATCH: 'Amount Mismatch',
   AMBIGUOUS_MATCH: 'Multiple Matches Found',
   UNMATCHED: 'Unmatched',
+  YASHODA_REFUND_CHEQUE: 'Yashoda refund Cheque',
 };
+
+/** The team's own reference codes, and the known mis-entry — twins of backend status-tone.js. */
+const REFERENCE_CODE_CHEQUE_NUMBERS = new Set(['12345', '123456']);
+const MISENTERED_CHEQUE_NUMBERS = new Set(['1234567']);
+
+/**
+ * A contra entry named by its cheque number: a real cheque number is a
+ * "Yashoda refund Cheque"; anything else (the team's reference codes, the
+ * known mis-entry, no cheque number) stays "Contra Entry". Same rule as
+ * backend reconciliation/status-tone.js contraLabel — keep the two in step.
+ * The status FILTER keeps plain "Contra Entry", since it covers both kinds.
+ */
+/**
+ * A cheque row's status in words: a contra by its cheque number (contraLabel),
+ * and a Matched row that several receipts cleared together on one cheque as
+ * "Grouped Matched". Twin of backend status-tone.js statusLabel's cheque
+ * options — the stored status is unchanged (MATCHED / CONTRA_ENTRY).
+ */
+export function chequeStatusLabel(status: string | null, chequeNo: string | null | undefined, groupCount?: number | null): string | null {
+  if (status === 'CONTRA_ENTRY') return contraLabel(chequeNo);
+  if (status === 'MATCHED' && Number(groupCount) > 1) return STATUS_LABELS.GROUPED_MATCHED;
+  return null;
+}
+
+export function contraLabel(chequeNo: string | null | undefined): string {
+  const cheque = chequeNo == null ? '' : String(chequeNo).trim();
+  const realCheque = !!cheque && !REFERENCE_CODE_CHEQUE_NUMBERS.has(cheque) && !MISENTERED_CHEQUE_NUMBERS.has(cheque);
+  return realCheque ? 'Yashoda refund Cheque' : STATUS_LABELS.CONTRA_ENTRY;
+}
 
 export const STATUS_FILTER_OPTIONS: {
   value: MatchStatusFilter;
@@ -142,6 +174,9 @@ export const STATUS_FILTER_OPTIONS: {
   { value: 'MATCHED', label: STATUS_LABELS.MATCHED, streams: ['online', 'cheque', 'card', 'upi'] },
   { value: 'GROUPED_MATCHED', label: STATUS_LABELS.GROUPED_MATCHED, streams: ['card', 'upi'] },
   { value: 'EASEBUZZ_MATCHED', label: STATUS_LABELS.EASEBUZZ_MATCHED, streams: ['online'] },
+  // The two contra filters split one stored status by cheque number, exactly
+  // as the status column names each row (contraLabel) — pick both for every contra.
+  { value: 'YASHODA_REFUND_CHEQUE', label: STATUS_LABELS.YASHODA_REFUND_CHEQUE, streams: ['cheque'] },
   { value: 'CONTRA_ENTRY', label: STATUS_LABELS.CONTRA_ENTRY, streams: ['cheque'] },
 ];
 

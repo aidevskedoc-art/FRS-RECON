@@ -150,5 +150,35 @@ bnk = [bank(9, 'REF902', 1000, 'Somajiguda')];
 res = runRules([SAME_UNIT], recs, bnk, recs.map(r => verdict(r.id, 'UNMATCHED')));
 ok('left unmatched', res.every(r => r.status === 'UNMATCHED'), JSON.stringify(res.map(r => r.status)));
 
+// --- Grouped cheques (client mail 2026-09-28): cheque 127760 paid 10 receipts
+// of one family, ₹17,355 in one bank credit whose Chq/Ref No. is zero-padded.
+console.log('\n=== one cheque paying several receipts is grouped on the cheque number ===');
+const CHEQUE_RULE = { name: 'Receipts sharing one cheque (same unit)', direction: 'MIS_TO_BANK', unitKeyMode: 'EXACT', scope: 'DIVISION', tolerance: 1, useNarration: false, paymentRefField: 'chequeNo', bankRefField: 'chqRefNo' };
+const chq = (id, chequeNo, amount, division) => ({
+  id, chequeNo, billAmount: amount, chequeAmount: amount, division: division || 'Secunderabad', batchId: '207',
+});
+const AMOUNTS_127760 = [7255, 2060, 999, 999, 999, 200, 413, 3550, 440, 440];
+let cheques = AMOUNTS_127760.map((a, i) => chq(9222 + i, '127760', a));
+let chequeBank = [bank(797991, '0000000000127760', 17355, 'Secunderabad', 'CHQ DEP - HYDERABAD - CTS CLG2 - WBO HYD: AMIDYALA LINGAIAH :STATE BANK OF INDIA')];
+out = runUnitPass({ groupResults: cheques.map((r) => verdict(r.id, 'UNMATCHED')), records: cheques, bankRecords: chequeBank, rule: CHEQUE_RULE });
+ok('cheque 127760: all 10 receipts patched', out.patches.size === 10, out.patches.size);
+ok('cheque 127760: MATCHED, 10 in the group, total 17,355', [...out.patches.values()].every((p) => p.status === 'MATCHED' && p.unitCount === 10 && p.unitTotal === 17355));
+ok('cheque 127760: points at the bank credit (zero-padded Chq/Ref No.)', [...out.patches.values()].every((p) => p.bankRecordId === '797991'));
+
+out = runUnitPass({ groupResults: cheques.map((r) => verdict(r.id, 'UNMATCHED')), records: cheques.slice(0, 9), bankRecords: chequeBank, rule: CHEQUE_RULE });
+ok('one receipt missing: Partial Match, not a match', [...out.patches.values()].every((p) => p.status === 'PARTIAL_MATCH'), JSON.stringify([...out.patches.values()].map((p) => p.status)));
+
+console.log('\n=== placeholder cheque numbers never form a group ===');
+for (const placeholder of ['12345', '123456', '1234567']) {
+  const same = [chq(1, placeholder, 500), chq(2, placeholder, 500)];
+  out = runUnitPass({ groupResults: same.map((r) => verdict(r.id, 'UNMATCHED')), records: same, bankRecords: [bank(9, placeholder, 1000, 'Secunderabad')], rule: CHEQUE_RULE });
+  ok(`cheque no ${placeholder}: unrelated receipts are left alone`, out.patches.size === 0, out.patches.size);
+}
+
+console.log('\n=== a grouped cheque stays within its unit ===');
+cheques = [chq(1, '553001', 600, 'Secunderabad'), chq(2, '553001', 400, 'Secunderabad')];
+out = runUnitPass({ groupResults: cheques.map((r) => verdict(r.id, 'UNMATCHED')), records: cheques, bankRecords: [bank(9, '553001', 1000, 'Hitech City')], rule: CHEQUE_RULE });
+ok('credit in another unit: no match', out.patches.size === 0, out.patches.size);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

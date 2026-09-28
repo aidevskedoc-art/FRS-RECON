@@ -283,7 +283,12 @@
         [disabled]="!canRun()"
         (onClick)="run()"
       />
-      @if (hasFiles() && blockers().length) {
+      @if (scan.running()) {
+        <span class="actions__blocked" role="status">
+          <i class="pi pi-sync pi-spin" aria-hidden="true"></i>
+          Paused — automatic reconciliation is running. Run is available again in a few minutes.
+        </span>
+      } @else if (hasFiles() && blockers().length) {
         <span class="actions__blocked">
           <i class="pi pi-exclamation-circle"></i>
           {{ blockers().join(' · ') }}

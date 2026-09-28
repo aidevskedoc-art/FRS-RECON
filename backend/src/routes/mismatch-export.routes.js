@@ -23,7 +23,7 @@ const { writeXlsx } = require('../excel/write-xlsx');
 const { onlineMismatchRowToApi, chequeCollectionRecordRowToApi } = require('../mappers');
 const { ucrIpRecordRowToApi } = require('../ucr-mappers');
 const { parseUpTo, settlementCutoffs } = require('../scope-filters');
-const { MATCHED_STATUSES } = require('../reconciliation/status-tone');
+const { MATCHED_STATUSES, YASHODA_REFUND_CHEQUE } = require('../reconciliation/status-tone');
 
 const router = express.Router();
 
@@ -59,7 +59,10 @@ const MAX_ROWS_PER_SHEET = 50000;
  * The two vocabularies do NOT overlap fully, so a status the reviewer picks is
  * intersected with each stream's own before it is sent.
  */
-const ONLINE_CLEAN = ['MATCHED', 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY'];
+// The cheque filter splits CONTRA_ENTRY by cheque number (cheque-collections
+// buildRecordsFilter): CONTRA_ENTRY is the "Contra Entry" rows only, so every
+// contra needs the Yashoda-refund value alongside it. The online tables ignore it.
+const ONLINE_CLEAN = ['MATCHED', 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY', YASHODA_REFUND_CHEQUE];
 const ONLINE_MISMATCH = ['UNMATCHED', 'AMOUNT_MISMATCH', 'PARTIAL_MATCH', 'AMBIGUOUS_MATCH'];
 const UCR_CLEAN = ['MATCHED', 'GROUPED_MATCHED'];
 const UCR_MISMATCH = ['UNMATCHED', 'AMOUNT_MISMATCH'];
