@@ -456,7 +456,7 @@ function paginate(results, page, pageSize) {
  * live GET below drops them, the Generate endpoint persists them as
  * "excluded, no status"). Read-only — does not touch the DB beyond reading.
  */
-async function computeMatchResults({ recordTable, rowToApi, rulesTable, paymentModeField, batchTable, batchId, dateFrom, dateTo, fullBankPool = false }) {
+async function computeMatchResults({ recordTable, rowToApi, rulesTable, paymentModeField, batchTable, batchId, dateFrom, dateTo, receiptCutoffs, fullBankPool = false }) {
   const clauses = [];
   const params = [];
   if (batchId) {
@@ -471,9 +471,13 @@ async function computeMatchResults({ recordTable, rowToApi, rulesTable, paymentM
     params.push(dateTo);
     clauses.push(`receipt_date < ($${params.length}::date + interval '1 day')`);
   }
+  // AC-12 per-branch cut-off (settlementCutoffs('BANK')): the same predicate
+  // Mismatch Review's lists apply, so a count computed here covers the same rows.
+  const cut = receiptCutoffs ? cutoffClause(batchTable, receiptCutoffs, params) : null;
+  if (cut) clauses.push(cut);
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
-  const { rows } = await db.query(`SELECT * FROM ${recordTable} ${where}`, params);
+  const { rows } = await db.query(`SELECT r.* FROM ${recordTable} r ${where}`, params);
   const records = rows.map(rowToApi);
 
   // Each record's own division, resolved from its batch's unit name — a rule
@@ -1589,8 +1593,18 @@ router.get('/summary', async (req, res, next) => {
     // see (confirmed live: 1,981 here vs 425 there, same underlying data).
     // Only applied when the caller did not ask for a specific range — an
     // explicit dateFrom/dateTo (e.g. a future "as of" picker) is honoured as-is.
-    const bankCutoffDateTo = dateTo ? dateTo : (await settlementCutoffs('BANK')).fallback || undefined;
+    // Each row is cut at its OWN branch's bank date, exactly as Mismatch Review's
+    // "till bank upload" does — one latest date for every branch counted a
+    // lagging branch's not-yet-banked receipts here but not there.
+    const receiptCutoffs = dateTo ? undefined : await settlementCutoffs('BANK');
 
+    // fullBankPool: the date window limits which RECEIPTS are counted, never
+    // which bank / MPR lines they may match — Generate (generateForBatch), whose
+    // stored verdict every other screen shows, loads the whole pool too. A
+    // date-scoped pool also drops every line with no txn_date: on 2026-09-28
+    // 19,562 UPI MPR lines had none (their settlement date is blank), and 18,305
+    // receipts Generate had matched to them were counted here as unmatched —
+    // 20,205 "need attention" on the dashboard against 1,895 on Mismatch Review.
     const [ipResults, diagResults, chequeResults] = await Promise.all([
       computeMatchResults({
         recordTable: 'ip_payment_records',
@@ -1599,7 +1613,9 @@ router.get('/summary', async (req, res, next) => {
         paymentModeField: 'paymentMode',
         batchTable: 'ip_payment_upload_batches',
         dateFrom,
-        dateTo: bankCutoffDateTo,
+        dateTo,
+        receiptCutoffs,
+        fullBankPool: true,
       }),
       computeMatchResults({
         recordTable: 'diag_op_payment_records',
@@ -1608,9 +1624,11 @@ router.get('/summary', async (req, res, next) => {
         paymentModeField: 'payMode',
         batchTable: 'diag_op_upload_batches',
         dateFrom,
-        dateTo: bankCutoffDateTo,
+        dateTo,
+        receiptCutoffs,
+        fullBankPool: true,
       }),
-      computeMatchResults({ ...CHEQUE_OPTS, dateFrom, dateTo: bankCutoffDateTo }),
+      computeMatchResults({ ...CHEQUE_OPTS, dateFrom, dateTo, receiptCutoffs, fullBankPool: true }),
     ]);
     // One engine per type over all its rows. The "UPI" figure below is a
     // reporting slice of those same results by payment mode, not a separate run.

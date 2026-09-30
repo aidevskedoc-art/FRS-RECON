@@ -1,6 +1,6 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
-import { Observable, tap } from 'rxjs';
+import { Observable, catchError, from, switchMap, tap, throwError } from 'rxjs';
 import {
   FolderWatchConfig,
   FolderWatchConfigDraft,
@@ -60,6 +60,22 @@ export class FolderWatchService {
     return this.http.get<FolderWatchRunFile[]>(`${API_BASE_URL}/folder-watch/runs/${runId}/files`);
   }
 
+  /** GET /api/folder-watch/files/:id/download — the raw file, read from the shared folder now. */
+  downloadFile(fileId: string, fileName: string): Observable<Blob> {
+    return this.http.get(`${API_BASE_URL}/folder-watch/files/${fileId}/download`, { responseType: 'blob' }).pipe(
+      tap((blob) => saveBlob(blob, fileName)),
+      catchError((err: HttpErrorResponse) => from(blobErrorToJson(err)).pipe(switchMap((e) => throwError(() => e)))),
+    );
+  }
+
+  /**
+   * DELETE /api/folder-watch/runs/:id — removes the run from the history; files
+   * it was the only holder of are read again on the next scan.
+   */
+  deleteRun(runId: string): Observable<{ id: string; filesReleased: number }> {
+    return this.http.delete<{ id: string; filesReleased: number }>(`${API_BASE_URL}/folder-watch/runs/${runId}`);
+  }
+
   /** POST /api/folder-watch/files/retry — the next scan reads this file again. */
   retryFile(fileName: string): Observable<{ fileName: string; rowsSuperseded: number }> {
     return this.http.post<{ fileName: string; rowsSuperseded: number }>(`${API_BASE_URL}/folder-watch/files/retry`, { fileName });
@@ -68,5 +84,28 @@ export class FolderWatchService {
   /** POST /api/folder-watch/run-now — runs inline, returns the completed (or failed) run. */
   runNow(): Observable<FolderWatchRun> {
     return this.http.post<FolderWatchRun>(`${API_BASE_URL}/folder-watch/run-now`, {});
+  }
+}
+
+function saveBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * A blob request's error body is a Blob too — parse it back into
+ * { error: '...' } so errorMessage() shows the backend's own message
+ * ("… is no longer in the shared folder") instead of "404 Not Found".
+ */
+async function blobErrorToJson(err: HttpErrorResponse): Promise<unknown> {
+  if (!(err.error instanceof Blob)) return err;
+  try {
+    return { status: err.status, message: err.message, error: JSON.parse(await err.error.text()) };
+  } catch {
+    return err;
   }
 }

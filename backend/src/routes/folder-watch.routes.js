@@ -11,6 +11,7 @@ const { runScan } = require('../folder-watch/scanner');
 const { arm } = require('../folder-watch/scheduler');
 const { encryptSecret, connectShare } = require('../folder-watch/share-credentials');
 const fs = require('fs/promises');
+const path = require('path');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -133,6 +134,114 @@ router.get('/runs/:id/files', async (req, res, next) => {
       [req.params.id],
     );
     res.json(rows.map(folderWatchRunFileRowToApi));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/folder-watch/files/:id/download — the raw file as it sits in the
+// shared folder NOW. Nothing is kept at scan time, so a file since removed
+// can't be served, and one since overwritten comes back as its new version.
+// The name comes from the stored run-file row (never from the request), and
+// must be a bare file name — so this can only ever serve from the folder.
+router.get('/files/:id/download', async (req, res, next) => {
+  try {
+    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Invalid file id' });
+    const { rows: fileRows } = await db.query('SELECT file_name FROM folder_watch_run_files WHERE id = $1', [req.params.id]);
+    if (!fileRows[0]) return res.status(404).json({ error: 'File not found in the run history' });
+    const fileName = fileRows[0].file_name;
+    if (path.basename(fileName) !== fileName || fileName.includes('..')) {
+      return res.status(400).json({ error: 'Stored file name is not a plain file name' });
+    }
+
+    const { rows: configRows } = await db.query('SELECT * FROM folder_watch_config ORDER BY id LIMIT 1');
+    const config = configRows[0];
+    if (!config) return res.status(400).json({ error: 'Folder automation has not been configured yet.' });
+    const fullPath = path.join(config.folder_path, fileName);
+
+    // Read straight away — the share is usually still open from the last scan
+    // or test. Only log in (net use) when that fails, so a download never
+    // re-opens the share under a scan that is reading from it.
+    let buffer;
+    try {
+      buffer = await fs.readFile(fullPath);
+    } catch (firstErr) {
+      if (firstErr.code === 'ENOENT') {
+        return res.status(404).json({ error: `"${fileName}" is no longer in the shared folder.` });
+      }
+      await connectShare(config);
+      try {
+        buffer = await fs.readFile(fullPath);
+      } catch (err) {
+        if (err.code === 'ENOENT') return res.status(404).json({ error: `"${fileName}" is no longer in the shared folder.` });
+        throw err;
+      }
+    }
+
+    await logAction({
+      actorUserId: req.user.sub, entityType: 'folder_watch_file', entityId: req.params.id,
+      action: 'FOLDER_WATCH_FILE_DOWNLOADED', details: { fileName, bytes: buffer.length }, req,
+    });
+
+    res.attachment(fileName); // Content-Disposition (safely encoded) + Content-Type from the extension
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/folder-watch/runs/:id
+// Removes a run and its per-file results from the history. A file counts as
+// "already taken" only while some run still holds a result for it, so every
+// file this run was the last holder of is read again on the next scan — the
+// way to re-take files whose uploaded data was deleted. Rows already stored
+// are still skipped on that re-read. Uploaded data itself is never touched.
+router.delete('/runs/:id', async (req, res, next) => {
+  try {
+    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Invalid run id' });
+
+    const result = await db.withTransaction(async (client) => {
+      const { rows } = await client.query('SELECT * FROM folder_watch_runs WHERE id = $1 FOR UPDATE', [req.params.id]);
+      const run = rows[0];
+      if (!run) return { status: 404, body: { error: 'Run not found' } };
+      if (run.status === 'RUNNING') {
+        return { status: 409, body: { error: 'This scan is still running. Wait for it to finish, then delete it.' } };
+      }
+
+      // Files that stop counting as taken once this run's rows are gone —
+      // held here and by no other run.
+      const { rows: released } = await client.query(
+        `SELECT DISTINCT f.file_name
+           FROM folder_watch_run_files f
+          WHERE f.run_id = $1 AND f.outcome != 'FAILED' AND NOT f.superseded
+            AND NOT EXISTS (
+              SELECT 1 FROM folder_watch_run_files o
+               WHERE o.file_name = f.file_name AND o.run_id != $1
+                 AND o.outcome != 'FAILED' AND NOT o.superseded
+            )
+          ORDER BY f.file_name`,
+        [run.id],
+      );
+
+      await client.query('DELETE FROM folder_watch_runs WHERE id = $1', [run.id]); // run files cascade
+      return { status: 200, run, filesReleased: released.map((r) => r.file_name) };
+    });
+
+    if (result.status !== 200) return res.status(result.status).json(result.body);
+
+    const { run, filesReleased } = result;
+    await logAction({
+      actorUserId: req.user.sub, entityType: 'folder_watch_run', entityId: run.id,
+      action: 'FOLDER_WATCH_RUN_DELETED',
+      details: {
+        startedAt: run.started_at, status: run.status,
+        filesFound: run.files_found, filesIngested: run.files_ingested,
+        filesSkipped: run.files_skipped, filesFailed: run.files_failed,
+        filesReleased,
+      },
+      req,
+    });
+    res.json({ id: String(run.id), filesReleased: filesReleased.length });
   } catch (err) {
     next(err);
   }

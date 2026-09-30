@@ -106,6 +106,56 @@
   color: var(--text-muted);
 }
 
+.action-icon {
+  padding: var(--space-1) var(--space-2);
+  margin-right: var(--space-1);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+
+  &:hover:not(:disabled) {
+    background: var(--surface-hover);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.action-icon--danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+// ---------------------------------------------------------------------
+// Delete confirmation
+// ---------------------------------------------------------------------
+.confirm-copy {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-muted);
+
+  strong {
+    color: var(--text);
+  }
+}
+
+// The confirm button carries the destructive colour, not the brand's.
+.confirm-delete {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(239, 68, 68, 0.35);
+
+  &:hover:not(:disabled) {
+    background: var(--danger);
+    filter: brightness(0.94);
+  }
+}
+
 .status-pill {
   @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
 }
@@ -154,6 +204,17 @@
   font-weight: 600;
   color: var(--text);
   word-break: break-all;
+}
+
+.file-list__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.notice--spaced {
+  margin-bottom: var(--space-3);
 }
 
 .file-list__item--superseded {

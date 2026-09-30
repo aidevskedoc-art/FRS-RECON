@@ -137,6 +137,13 @@
     </div>
   </div>
 
+  @if (deleteNote(); as note) {
+    <div class="notice notice--info">
+      <i class="pi pi-info-circle"></i>
+      {{ note }}
+    </div>
+  }
+
   <div class="folder-watch__table-wrap glass-card glass-card--static">
     <p-table
       [value]="folderWatch.runsPage().runs"
@@ -159,7 +166,7 @@
           <th class="num">Ingested</th>
           <th class="num">Skipped</th>
           <th class="num">Failed</th>
-          <th class="actions-col">Detail</th>
+          <th class="actions-col">Actions</th>
         </tr>
       </ng-template>
       <ng-template #body let-run>
@@ -171,7 +178,19 @@
           <td class="num">{{ run.filesIngested }}</td>
           <td class="num">{{ run.filesSkipped }}</td>
           <td class="num" [class.has-failures]="run.filesFailed > 0">{{ run.filesFailed }}</td>
-          <td class="actions-col"><i class="pi pi-angle-right"></i></td>
+          <td class="actions-col">
+            <button
+              type="button"
+              class="action-icon action-icon--danger"
+              [disabled]="run.status === 'RUNNING'"
+              (click)="requestDelete(run, $event)"
+              pTooltip="Delete run"
+              aria-label="Delete run"
+            >
+              <i class="pi pi-trash"></i>
+            </button>
+            <i class="pi pi-angle-right"></i>
+          </td>
         </tr>
       </ng-template>
       <ng-template #emptymessage>
@@ -211,6 +230,13 @@
         </div>
       }
 
+      @if (downloadError(); as err) {
+        <div class="notice notice--danger notice--spaced">
+          <i class="pi pi-times-circle"></i>
+          {{ err }}
+        </div>
+      }
+
       @if (detailLoading()) {
         <div class="activity-loading"><span class="btn-spinner btn-spinner--dark"></span> Loading…</div>
       } @else if (detailGroups().length === 0) {
@@ -222,15 +248,26 @@
             <li [class.file-list__item--superseded]="g.superseded">
               <div class="file-list__head">
                 <span class="file-list__name">{{ g.fileName }}</span>
-                @if (g.superseded) {
-                  <span class="file-list__retried">Will be read again</span>
-                } @else if (g.canRetry) {
-                  <button type="button" class="btn btn-ghost btn-sm" [disabled]="retrying() === g.fileName" (click)="retry(g)"
-                    pTooltip="Read this file again on the next check — rows already stored are skipped, only new ones are added">
-                    <i class="pi pi-refresh"></i>
-                    <span>Retry</span>
+                <div class="file-list__actions">
+                  <button type="button" class="btn btn-ghost btn-sm" [disabled]="downloading() === g.fileName" (click)="download(g)"
+                    pTooltip="Download the original file from the shared folder, as it is there now">
+                    @if (downloading() === g.fileName) {
+                      <span class="btn-spinner btn-spinner--dark"></span>
+                    } @else {
+                      <i class="pi pi-download"></i>
+                    }
+                    <span>Download</span>
                   </button>
-                }
+                  @if (g.superseded) {
+                    <span class="file-list__retried">Will be read again</span>
+                  } @else if (g.canRetry) {
+                    <button type="button" class="btn btn-ghost btn-sm" [disabled]="retrying() === g.fileName" (click)="retry(g)"
+                      pTooltip="Read this file again on the next check — rows already stored are skipped, only new ones are added">
+                      <i class="pi pi-refresh"></i>
+                      <span>Retry</span>
+                    </button>
+                  }
+                </div>
               </div>
               <ul class="report-list">
                 @for (r of g.reports; track r.id) {
@@ -267,5 +304,40 @@
         <p class="field-hint">Nothing new was stored on this run, so the reconciliation was not re-run.</p>
       }
     </p-dialog>
+  }
+
+  <!-- Destructive actions never fire from a single click. -->
+  @if (pendingDelete(); as run) {
+    <div class="modal-overlay" (click)="cancelDelete()">
+      <div class="modal" role="alertdialog" aria-modal="true" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h2>Delete this run?</h2>
+          <button type="button" class="modal-close" (click)="cancelDelete()" aria-label="Close">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-copy">
+            The run of <strong>{{ run.startedAt | date: 'd MMM y, h:mm a' }}</strong>
+            ({{ run.filesFound }} found, {{ run.filesIngested }} ingested) will be removed from the history.
+          </p>
+          <p class="confirm-copy">
+            The data it uploaded is <strong>not</strong> deleted. Files it read that are still in the shared folder
+            will be read again on the next check — rows already stored are skipped, only missing ones are added.
+          </p>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" [disabled]="deleting()" (click)="cancelDelete()">Cancel</button>
+          <button type="button" class="btn btn-primary confirm-delete" [disabled]="deleting()" (click)="confirmDelete()">
+            @if (deleting()) {
+              <span class="btn-spinner"></span>
+            } @else {
+              <i class="pi pi-trash"></i>
+            }
+            <span>Delete run</span>
+          </button>
+        </div>
+      </div>
+    </div>
   }
 </div>

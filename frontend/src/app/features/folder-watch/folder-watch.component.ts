@@ -67,12 +67,19 @@ export class FolderWatchComponent {
 
   protected readonly listError = signal<string | null>(null);
 
+  // ---- delete a run from the history -------------------------------------------------
+  protected readonly pendingDelete = signal<FolderWatchRun | null>(null);
+  protected readonly deleting = signal(false);
+  protected readonly deleteNote = signal<string | null>(null);
+
   // ---- run detail dialog -----------------------------------------------------------
   protected readonly detailRun = signal<FolderWatchRun | null>(null);
   protected readonly detailFiles = signal<FolderWatchRunFile[]>([]);
   protected readonly detailLoading = signal(false);
   protected readonly retrying = signal<string | null>(null);
   protected readonly retryNote = signal<string | null>(null);
+  protected readonly downloading = signal<string | null>(null);
+  protected readonly downloadError = signal<string | null>(null);
 
   protected readonly detailGroups = computed<FileGroup[]>(() => {
     const byName = new Map<string, FolderWatchRunFile[]>();
@@ -214,9 +221,24 @@ export class FolderWatchComponent {
     });
   }
 
+  /** The raw file from the shared folder — any of the group's rows names the same file. */
+  protected download(group: FileGroup): void {
+    if (this.downloading()) return;
+    this.downloading.set(group.fileName);
+    this.downloadError.set(null);
+    this.folderWatch.downloadFile(group.reports[0].id, group.fileName).subscribe({
+      next: () => this.downloading.set(null),
+      error: (err) => {
+        this.downloading.set(null);
+        this.downloadError.set(errorMessage(err));
+      },
+    });
+  }
+
   protected openRunDetail(run: FolderWatchRun): void {
     this.detailRun.set(run);
     this.retryNote.set(null);
+    this.downloadError.set(null);
     this.detailLoading.set(true);
     this.detailFiles.set([]);
     this.folderWatch.fetchRunFiles(run.id).subscribe({
@@ -230,5 +252,46 @@ export class FolderWatchComponent {
 
   protected closeDetail(): void {
     this.detailRun.set(null);
+  }
+
+  protected requestDelete(run: FolderWatchRun, event: Event): void {
+    event.stopPropagation(); // the row itself opens the detail dialog
+    this.deleteNote.set(null);
+    this.pendingDelete.set(run);
+  }
+
+  protected cancelDelete(): void {
+    this.pendingDelete.set(null);
+  }
+
+  /** Only reachable from the confirm modal — deletion is never one click. */
+  protected confirmDelete(): void {
+    const run = this.pendingDelete();
+    if (!run || this.deleting()) return;
+    this.deleting.set(true);
+    this.folderWatch.deleteRun(run.id).subscribe({
+      next: ({ filesReleased }) => {
+        this.deleting.set(false);
+        this.pendingDelete.set(null);
+        this.deleteNote.set(
+          filesReleased > 0
+            ? `Run deleted. ${filesReleased} file(s) will be read again on the next check — press Run Now to do it now.`
+            : 'Run deleted.',
+        );
+        this.reloadAfterDelete();
+      },
+      error: (err) => {
+        this.deleting.set(false);
+        this.pendingDelete.set(null);
+        this.listError.set(errorMessage(err));
+      },
+    });
+  }
+
+  /** Stay on the current page, or step back one if the delete emptied it. */
+  private reloadAfterDelete(): void {
+    const { page, pageSize, runs } = this.folderWatch.runsPage();
+    const target = runs.length === 1 && page > 1 ? page - 1 : page;
+    this.folderWatch.refreshRuns(target, pageSize).subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
   }
 }
