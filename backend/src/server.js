@@ -30,6 +30,7 @@ const folderWatchRouter = require('./routes/folder-watch.routes');
 const { arm: armFolderWatchScheduler } = require('./folder-watch/scheduler');
 const { pauseWritesDuringScan, scanStatus } = require('./folder-watch/scan-lock');
 const goLiveRouter = require('./routes/go-live.routes');
+const apiConfigsRouter = require('./routes/api-configs.routes');
 
 const app = express();
 
@@ -102,6 +103,8 @@ app.use('/api/audit-logs', auditLogsRouter);
 app.use('/api/match-approvals', matchApprovalsRouter);
 app.use('/api/folder-watch', folderWatchRouter);
 app.use('/api/go-live', goLiveRouter);
+// HIS API connections + field mapping (Master Data → API Config / API Field Mapping).
+app.use('/api/api-configs', apiConfigsRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });

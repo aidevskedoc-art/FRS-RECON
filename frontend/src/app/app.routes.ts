@@ -314,6 +314,22 @@ export const routes: Routes = [
         title: 'Location Master — Master Data',
       },
       {
+        // HIS API connections and their field mapping. Admin-only by role:
+        // every api-configs.routes.js endpoint requires role='Admin'.
+        path: 'master-data/api-configs',
+        canActivate: [frsAdminGuard],
+        loadComponent: () =>
+          import('./features/master-data/api-configs/api-configs.component').then((m) => m.ApiConfigsComponent),
+        title: 'API Config — Master Data',
+      },
+      {
+        path: 'master-data/api-mappings',
+        canActivate: [frsAdminGuard],
+        loadComponent: () =>
+          import('./features/master-data/api-mappings/api-mappings.component').then((m) => m.ApiMappingsComponent),
+        title: 'API Field Mapping — Master Data',
+      },
+      {
         // Admin-only by role: every users.routes.js endpoint requires role='Admin'.
         path: 'master-data/users',
         canActivate: [frsAdminGuard],

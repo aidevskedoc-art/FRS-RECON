@@ -41,7 +41,8 @@
     "test-folder-watch": "node scripts/test-folder-watch.js",
     "test-scope-filters": "node scripts/test-scope-filters.js",
     "test-status-colours": "node scripts/test-status-colours.js",
-    "test-scan-lock": "node scripts/test-scan-lock.js"
+    "test-scan-lock": "node scripts/test-scan-lock.js",
+    "test-api-sync": "node scripts/test-api-sync.js"
   },
   "engines": {
     "node": ">=18"

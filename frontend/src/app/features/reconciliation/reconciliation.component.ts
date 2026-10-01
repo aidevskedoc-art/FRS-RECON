@@ -20,6 +20,7 @@ import {
   UploadZone,
 } from '../../core/models';
 import { SummaryPanelComponent } from './summary-panel/summary-panel.component';
+import { IpSyncCardComponent } from './ip-sync-card/ip-sync-card.component';
 
 /** One line in the live progress list shown while a Run is in flight. */
 interface RunStep {
@@ -132,7 +133,7 @@ async function fileHash(file: File): Promise<string> {
 @Component({
   selector: 'app-reconciliation',
   standalone: true,
-  imports: [RouterLink, FormsModule, DecimalPipe, ButtonModule, MultiSelectModule, TooltipModule, SummaryPanelComponent],
+  imports: [RouterLink, FormsModule, DecimalPipe, ButtonModule, MultiSelectModule, TooltipModule, SummaryPanelComponent, IpSyncCardComponent],
   templateUrl: './reconciliation.component.html',
   styleUrl: './reconciliation.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -196,9 +197,21 @@ export class ReconciliationComponent {
   /** The shared-folder scan pauses uploads and Generate while it runs — Run waits for it rather than failing file by file. */
   protected readonly scan = inject(ScanStatusService);
 
+  /** Batches stored by "Sync IP Collection" since the last Run — enough on their own to make Run worth pressing. */
+  protected readonly syncedSinceRun = signal(0);
+
   protected readonly canRun = computed(
-    () => this.hasFiles() && !this.detecting() && !this.running() && this.blockers().length === 0 && !this.scan.running(),
+    () =>
+      (this.hasFiles() || this.syncedSinceRun() > 0) &&
+      !this.detecting() &&
+      !this.running() &&
+      this.blockers().length === 0 &&
+      !this.scan.running(),
   );
+
+  protected onIpSynced(): void {
+    this.syncedSinceRun.update((n) => n + 1);
+  }
 
   constructor() {
     this.runner.fetchTypes().subscribe({
@@ -412,6 +425,8 @@ export class ReconciliationComponent {
     this.running.set(true);
     this.error.set(null);
     this.runFinishedAt.set(null);
+    // planRun reads every batch on the server, synced ones included.
+    this.syncedSinceRun.set(0);
 
     // One job per (file × chosen type). A workbook that is genuinely several
     // reports is uploaded once per report; each endpoint reads only its own

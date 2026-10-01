@@ -41,6 +41,8 @@
     </div>
   }
 
+  <app-ip-sync-card [disabled]="running() || scan.running()" (synced)="onIpSynced()" />
+
   <div class="card">
     <div class="card__head">
       <h3>Upload Reports</h3>

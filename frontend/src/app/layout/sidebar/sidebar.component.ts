@@ -81,6 +81,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Division & Bank A/C', icon: 'pi pi-sitemap', path: '/master-data/division-bank-accounts', screenKey: 'division-bank-accounts' },
       { label: 'Location Master', icon: 'pi pi-map-marker', path: '/master-data/locations', adminOnly: true },
+      { label: 'API Config', icon: 'pi pi-server', path: '/master-data/api-configs', adminOnly: true },
+      { label: 'API Field Mapping', icon: 'pi pi-arrow-right-arrow-left', path: '/master-data/api-mappings', adminOnly: true },
       { label: 'User Management', icon: 'pi pi-users', path: '/master-data/users', adminOnly: true },
     ],
   },

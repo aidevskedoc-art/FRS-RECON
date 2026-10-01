@@ -43,6 +43,8 @@ export class LocationsComponent {
   protected readonly dialogVisible = signal(false);
   protected readonly editingId = signal<string | null>(null);
   protected readonly draftName = signal('');
+  /** The HIS API `loc` code, as typed — '' means not set. */
+  protected readonly draftHisLocCode = signal('');
   protected readonly formError = signal<string | null>(null);
   protected readonly saving = signal(false);
   protected readonly listError = signal<string | null>(null);
@@ -61,6 +63,7 @@ export class LocationsComponent {
   protected openAdd(): void {
     this.editingId.set(null);
     this.draftName.set('');
+    this.draftHisLocCode.set('');
     this.formError.set(null);
     this.dialogVisible.set(true);
   }
@@ -68,6 +71,7 @@ export class LocationsComponent {
   protected openEdit(location: FrsLocation): void {
     this.editingId.set(location.id);
     this.draftName.set(location.name);
+    this.draftHisLocCode.set(location.hisLocCode === null || location.hisLocCode === undefined ? '' : String(location.hisLocCode));
     this.formError.set(null);
     this.dialogVisible.set(true);
   }
@@ -75,12 +79,17 @@ export class LocationsComponent {
   protected save(): void {
     const name = this.draftName().trim();
     if (!name) return this.formError.set('Name is required');
+    const codeText = String(this.draftHisLocCode() ?? '').trim();
+    if (codeText && !/^\d+$/.test(codeText)) return this.formError.set('HIS Loc Code must be a whole number');
+    const hisLocCode = codeText ? Number(codeText) : null;
 
     this.saving.set(true);
     this.formError.set(null);
 
     const editingId = this.editingId();
-    const request = editingId ? this.masterData.updateLocation(editingId, { name }) : this.masterData.addLocation(name);
+    const request = editingId
+      ? this.masterData.updateLocation(editingId, { name, hisLocCode })
+      : this.masterData.addLocation(name, hisLocCode);
 
     request.subscribe({
       next: () => {

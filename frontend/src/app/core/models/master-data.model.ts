@@ -24,6 +24,8 @@ export interface FrsLocation {
   id: string;
   name: string;
   active: boolean;
+  /** The HIS API's `loc` code for this unit (Secunderabad 1, Somajiguda 5, Malakpet 3, Hitech City 9); null when not set. */
+  hisLocCode: number | null;
   createdAt: string;
   updatedAt: string;
 }

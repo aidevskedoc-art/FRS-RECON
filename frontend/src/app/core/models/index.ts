@@ -16,3 +16,4 @@ export * from './mismatch-review.model';
 export * from './match-approval.model';
 export * from './folder-watch.model';
 export * from './go-live.model';
+export * from './api-config.model';

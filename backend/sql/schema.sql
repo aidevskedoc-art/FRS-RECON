@@ -1723,3 +1723,148 @@ BEGIN
        WHERE u.role = 'Auditor';
   END IF;
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- HIS API sync (Master Data → API Config / API Field Mapping, and "Sync IP
+-- Collection" on Upload & Run). The HIS SOAP service returns the same rows as
+-- the ADVANCES_YH.RPT sheet of the "All Collections" workbook; the sync stores
+-- them in ip_payment_records exactly as the file upload does.
+--
+-- api_configs is created inside a DO block so the IpCollection config and its
+-- default mapping are seeded ONLY when the table is first created: an Admin who
+-- later edits or deletes them is never overridden by a restart. The API key is
+-- never seeded — it is entered on the API Config screen and stored AES-GCM
+-- encrypted (auth_key_enc), the same scheme as the shared-folder password.
+-- ---------------------------------------------------------------------------
+
+DO $$
+DECLARE
+  cfg_id INTEGER;
+BEGIN
+  IF to_regclass('public.api_configs') IS NULL THEN
+    CREATE TABLE api_configs (
+      id              SERIAL PRIMARY KEY,
+      name            VARCHAR(100) NOT NULL UNIQUE,
+      description     TEXT,
+      url             TEXT NOT NULL,
+      soap_action     TEXT,
+      soap_method     VARCHAR(100) NOT NULL,
+      soap_namespace  TEXT NOT NULL DEFAULT 'http://tempuri.org/',
+      auth_param      VARCHAR(100),
+      auth_key_enc    TEXT,
+      date_param      VARCHAR(100) NOT NULL,
+      date_format     VARCHAR(20) NOT NULL DEFAULT 'dd/MM/yyyy',
+      loc_param       VARCHAR(100) NOT NULL,
+      response_root   VARCHAR(100),
+      total_field     VARCHAR(100),
+      target_table    VARCHAR(64) NOT NULL DEFAULT 'ip_payment_records',
+      row_filter      JSONB NOT NULL DEFAULT '[]'::jsonb,
+      timeout_ms      INTEGER NOT NULL DEFAULT 60000,
+      tls_insecure    BOOLEAN NOT NULL DEFAULT false,
+      active          BOOLEAN NOT NULL DEFAULT true,
+      created_by      VARCHAR(255),
+      created_at      TIMESTAMP NOT NULL DEFAULT now(),
+      updated_by      VARCHAR(255),
+      updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS api_field_mappings (
+      id              SERIAL PRIMARY KEY,
+      api_config_id   INTEGER NOT NULL REFERENCES api_configs(id) ON DELETE CASCADE,
+      db_column       VARCHAR(64) NOT NULL,
+      source_field    VARCHAR(100),
+      transform       VARCHAR(30) NOT NULL DEFAULT 'DIRECT',
+      transform_arg   JSONB,
+      condition       JSONB,
+      sort_order      INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (api_config_id, db_column)
+    );
+
+    INSERT INTO api_configs (
+      name, description, url, soap_action, soap_method, soap_namespace, auth_param,
+      date_param, date_format, loc_param, response_root, total_field, target_table, row_filter, created_by
+    ) VALUES (
+      'IpCollection',
+      'HIS IP collection (advances) for one unit and one day',
+      'https://yhapi.yashodahospital.com:8021/Service.asmx?op=IpCollection',
+      'http://tempuri.org/IpCollection', 'IpCollection', 'http://tempuri.org/', 'htuayek',
+      'trandate', 'dd/MM/yyyy', 'loc', 'IPcollectionv', 'Total', 'ip_payment_records',
+      '[{"field":"BILL_IND","op":"in","values":["D"]},
+        {"field":"CNCL_IND","op":"in","values":["N"]},
+        {"field":"TCD_CHQ_BANK","op":"in","values":["UPI","ONL","MANUALUPI"]}]'::jsonb,
+      'system'
+    ) RETURNING id INTO cfg_id;
+
+    INSERT INTO api_field_mappings (api_config_id, db_column, source_field, transform, transform_arg, condition, sort_order) VALUES
+      (cfg_id, 'receipt_number',   'BILL_SEQ',            'RECEIPT_MONTH_PREFIX', '{"dateField":"BILL_DT","dateFormat":"dd-MM-yyyy HH:mm:ss"}', NULL, 1),
+      (cfg_id, 'receipt_date',     'BILL_DT',             'DATETIME', '{"format":"dd-MM-yyyy HH:mm:ss"}', NULL, 2),
+      (cfg_id, 'yhno',             'PIN',                 'DIRECT', NULL, NULL, 3),
+      (cfg_id, 'ip_no',            'ADM_NO',              'DIRECT', NULL, NULL, 4),
+      (cfg_id, 'patient_name',     'NAME',                'TRIM_SPACES', NULL, NULL, 5),
+      (cfg_id, 'transaction_id_1', 'TCD_ONLINE_TRANS_ID', 'DIRECT', NULL, '{"field":"TCD_CHQ_BANK","op":"notIn","values":["UPI"]}', 6),
+      (cfg_id, 'transaction_id_2', 'UPI_CHECK_REFID',     'DIRECT', NULL, NULL, 7),
+      (cfg_id, 'payment_mode',     'TCD_CHQ_BANK',        'LOOKUP', '{"map":{"UPI":"UPI","MANUALUPI":"ManualUPI","ONL":"Online"}}', NULL, 8),
+      (cfg_id, 'pay_type',         'TCD_CHQ_BANK',        'LOOKUP', '{"map":{"UPI":"UPI","MANUALUPI":"MANUALUPI"}}', NULL, 9),
+      (cfg_id, 'remarks',          'TCD_CHQ_BANK',        'LOOKUP', '{"map":{"UPI":"UPI"}}', NULL, 10),
+      (cfg_id, 'payment_remarks',  'TCD_CHQ_BANK',        'LOOKUP', '{"map":{"UPI":"UPI PAYMENT INTEGRATION"}}', NULL, 11),
+      (cfg_id, 'bill_amount',      'TR_CH_AMT',           'NUMBER', NULL, NULL, 12),
+      (cfg_id, 'online_amount',    'TR_CH_AMT',           'NUMBER', NULL, NULL, 13),
+      (cfg_id, 'user_id',          'BILL_USR',            'DIRECT', NULL, NULL, 14),
+      (cfg_id, 'user_name',        'APP_USR_NAME',        'TRIM_SPACES', NULL, NULL, 15);
+  END IF;
+END $$;
+
+-- Re-stated outside the DO block so a database where api_configs already
+-- existed (but this table somehow did not) still gets it. No-op otherwise.
+CREATE TABLE IF NOT EXISTS api_field_mappings (
+  id              SERIAL PRIMARY KEY,
+  api_config_id   INTEGER NOT NULL REFERENCES api_configs(id) ON DELETE CASCADE,
+  db_column       VARCHAR(64) NOT NULL,
+  source_field    VARCHAR(100),
+  transform       VARCHAR(30) NOT NULL DEFAULT 'DIRECT',
+  transform_arg   JSONB,
+  condition       JSONB,
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (api_config_id, db_column)
+);
+
+-- One row per Sync press: history, "last synced", and the in-flight guard.
+CREATE TABLE IF NOT EXISTS api_sync_runs (
+  id              SERIAL PRIMARY KEY,
+  api_config_id   INTEGER REFERENCES api_configs(id) ON DELETE SET NULL,
+  api_name        VARCHAR(100),
+  location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+  unit_name       VARCHAR(64),
+  trans_date      DATE NOT NULL,
+  status          VARCHAR(20) NOT NULL DEFAULT 'RUNNING', -- RUNNING | SUCCESS | NO_DATA | DUPLICATE | FAILED
+  rows_received   INTEGER,
+  rows_kept       INTEGER,
+  rows_stored     INTEGER,
+  rows_skipped    INTEGER,
+  batch_id        INTEGER,
+  error_message   TEXT,
+  started_by      VARCHAR(255),
+  started_at      TIMESTAMP NOT NULL DEFAULT now(),
+  finished_at     TIMESTAMP
+);
+
+-- Two people pressing Sync for the same API/unit/day at once: the second is refused.
+CREATE UNIQUE INDEX IF NOT EXISTS api_sync_runs_one_running
+  ON api_sync_runs (api_config_id, location_id, trans_date) WHERE status = 'RUNNING';
+CREATE INDEX IF NOT EXISTS api_sync_runs_started_at_idx ON api_sync_runs (started_at DESC);
+
+-- The HIS service's `loc` code per unit. Seeded once (only while unset, and
+-- only if no other location already holds the code) so an Admin's edit on the
+-- Location Master screen sticks.
+ALTER TABLE locations ADD COLUMN IF NOT EXISTS his_loc_code INTEGER;
+CREATE UNIQUE INDEX IF NOT EXISTS locations_his_loc_code_key ON locations(his_loc_code) WHERE his_loc_code IS NOT NULL;
+UPDATE locations l
+   SET his_loc_code = v.code
+  FROM (VALUES ('Secunderabad', 1), ('Somajiguda', 5), ('Malakpet', 3), ('Hitech City', 9)) AS v(name, code)
+ WHERE l.name = v.name
+   AND l.his_loc_code IS NULL
+   AND NOT EXISTS (SELECT 1 FROM locations o WHERE o.his_loc_code = v.code);
+
+-- Where an IP batch came from: an uploaded file, or an API sync run.
+ALTER TABLE ip_payment_upload_batches ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'FILE'; -- 'FILE' | 'API'
+ALTER TABLE ip_payment_upload_batches ADD COLUMN IF NOT EXISTS api_sync_run_id INTEGER REFERENCES api_sync_runs(id) ON DELETE SET NULL;

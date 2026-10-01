@@ -65,14 +65,14 @@ export class MasterDataService {
   }
 
   /** POST /api/master/locations */
-  addLocation(name: string): Observable<FrsLocation> {
+  addLocation(name: string, hisLocCode: number | null = null): Observable<FrsLocation> {
     return this.http
-      .post<FrsLocation>(`${API_BASE_URL}/master/locations`, { name })
+      .post<FrsLocation>(`${API_BASE_URL}/master/locations`, { name, hisLocCode })
       .pipe(tap((created) => this._locations.update((locs) => [...locs, created])));
   }
 
   /** PATCH /api/master/locations/:id */
-  updateLocation(id: string, patch: { name?: string; active?: boolean }): Observable<FrsLocation> {
+  updateLocation(id: string, patch: { name?: string; active?: boolean; hisLocCode?: number | null }): Observable<FrsLocation> {
     return this.http.patch<FrsLocation>(`${API_BASE_URL}/master/locations/${id}`, patch).pipe(
       tap((updated) => this._locations.update((locs) => locs.map((l) => (l.id === id ? updated : l)))),
     );

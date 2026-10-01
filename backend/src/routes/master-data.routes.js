@@ -122,14 +122,26 @@ router.get('/locations', requireAuth, async (req, res, next) => {
   }
 });
 
+/** HIS API `loc` code: a whole number, or null/'' to clear. Returns { value } or { error }. */
+function parseHisLocCode(raw) {
+  if (raw === null || raw === '') return { value: null };
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) return { error: 'hisLocCode must be a whole number' };
+  return { value: n };
+}
+
+const LOCATION_CONFLICT = 'This location name or HIS Loc Code is already in use';
+
 router.post('/locations', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const name = req.body?.name;
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
+    const code = req.body?.hisLocCode === undefined ? { value: null } : parseHisLocCode(req.body.hisLocCode);
+    if (code.error) return res.status(400).json({ error: code.error });
 
     const { rows } = await db.query(
-      'INSERT INTO locations (name) VALUES ($1) RETURNING *',
-      [String(name).trim()],
+      'INSERT INTO locations (name, his_loc_code) VALUES ($1, $2) RETURNING *',
+      [String(name).trim(), code.value],
     );
     await logAction({
       actorUserId: req.user.sub, entityType: 'location', entityId: rows[0].id,
@@ -137,18 +149,24 @@ router.post('/locations', requireAuth, requireAdmin, async (req, res, next) => {
     });
     res.status(201).json(locationRowToApi(rows[0]));
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'This location already exists' });
+    if (err.code === '23505') return res.status(409).json({ error: LOCATION_CONFLICT });
     next(err);
   }
 });
 
 router.patch('/locations/:id', requireAuth, requireAdmin, async (req, res, next) => {
   try {
-    const { name, active } = req.body || {};
+    const { name, active, hisLocCode } = req.body || {};
     const setClauses = [];
     const values = [req.params.id];
     if (name !== undefined) { values.push(String(name).trim()); setClauses.push(`name = $${values.length}`); }
     if (active !== undefined) { values.push(!!active); setClauses.push(`active = $${values.length}`); }
+    if (hisLocCode !== undefined) {
+      const code = parseHisLocCode(hisLocCode);
+      if (code.error) return res.status(400).json({ error: code.error });
+      values.push(code.value);
+      setClauses.push(`his_loc_code = $${values.length}`);
+    }
     if (setClauses.length === 0) return res.status(400).json({ error: 'No recognized fields in request body' });
 
     const { rows } = await db.query(
@@ -162,7 +180,7 @@ router.patch('/locations/:id', requireAuth, requireAdmin, async (req, res, next)
     });
     res.json(locationRowToApi(rows[0]));
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'This location already exists' });
+    if (err.code === '23505') return res.status(409).json({ error: LOCATION_CONFLICT });
     next(err);
   }
 });

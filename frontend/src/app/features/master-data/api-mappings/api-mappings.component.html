@@ -1,0 +1,254 @@
+<div class="api-mappings">
+  <app-page-header
+    icon="pi pi-arrow-right-arrow-left"
+    title="API Field Mapping"
+    subtitle="Choose an API by name, then pick the API field that fills each column of the table it stores into."
+  />
+
+  <div class="toolbar glass-card glass-card--static">
+    <label class="field">
+      <span class="field-label">API</span>
+      <p-select
+        [options]="configOptions()"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="selectedId()"
+        (ngModelChange)="select($event)"
+        placeholder="Select an API"
+        appendTo="body"
+      />
+    </label>
+    @if (selected(); as config) {
+      <div class="toolbar__info">
+        <span>Stores into <code>{{ config.targetTable }}</code></span>
+        <span>{{ mappedCount() }} of {{ rows().length }} columns mapped</span>
+        <a routerLink="/master-data/api-configs" class="link">Connection settings</a>
+      </div>
+    }
+  </div>
+
+  @if (!configOptions().length) {
+    <div class="empty-state glass-card glass-card--static">
+      <i class="pi pi-server"></i>
+      <strong>No APIs configured</strong>
+      <p>Add one on <a routerLink="/master-data/api-configs">API Config</a> first.</p>
+    </div>
+  }
+
+  @if (error(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (selected()) {
+    <div class="call-bar glass-card glass-card--static">
+      <div class="call-bar__text">
+        <strong>Load fields / preview</strong>
+        <span class="field-hint">Calls the API once with the mapping below (saved or not) — lists its fields and shows the rows as they would be stored. Nothing is stored.</span>
+      </div>
+      <p-select
+        [options]="unitOptions()"
+        optionLabel="label"
+        optionValue="value"
+        [ngModel]="unitId()"
+        (ngModelChange)="unitId.set($event)"
+        placeholder="Unit"
+        appendTo="body"
+      />
+      <p-datepicker
+        [ngModel]="date()"
+        (ngModelChange)="date.set($event)"
+        dateFormat="dd/mm/yy"
+        [maxDate]="today"
+        [showIcon]="true"
+        iconDisplay="input"
+        appendTo="body"
+      />
+      <button type="button" class="btn btn-ghost" [disabled]="calling() || !unitId()" (click)="callApi()">
+        @if (calling()) {
+          <span class="btn-spinner btn-spinner--dark"></span>
+        } @else {
+          <i class="pi pi-download"></i>
+        }
+        <span>Call API</span>
+      </button>
+    </div>
+
+    <div class="mapping glass-card glass-card--static">
+      <div class="mapping__head">
+        <span>DB column</span>
+        <span>API field</span>
+        <span>Convert</span>
+        <span>Settings</span>
+        <span>Only when (optional)</span>
+        <span></span>
+      </div>
+
+      @if (loading()) {
+        <div class="mapping__loading"><span class="btn-spinner btn-spinner--dark"></span> Loading mapping…</div>
+      }
+
+      @for (row of rows(); track row.column; let i = $index) {
+        <div class="mapping__row" [class.mapping__row--unmapped]="!row.sourceField && row.transform !== 'CONSTANT'">
+          <div class="col-name">
+            <strong>{{ row.label }}</strong>
+            @if (row.required) {
+              <span class="req" pTooltip="Required">*</span>
+            }
+            <code>{{ row.column }}</code>
+          </div>
+
+          <div>
+            @if (row.transform !== 'CONSTANT') {
+              <p-select
+                [options]="fieldOptions()"
+                optionLabel="label"
+                optionValue="value"
+                [editable]="true"
+                [showClear]="true"
+                [ngModel]="row.sourceField"
+                (ngModelChange)="update(i, { sourceField: $event || null })"
+                placeholder="— not mapped —"
+                appendTo="body"
+              />
+            } @else {
+              <span class="muted">fixed value</span>
+            }
+          </div>
+
+          <div>
+            <p-select
+              [options]="transformOptions()"
+              optionLabel="label"
+              optionValue="value"
+              [ngModel]="row.transform"
+              (ngModelChange)="update(i, { transform: $event })"
+              appendTo="body"
+            />
+          </div>
+
+          <div class="settings">
+            @switch (row.transform) {
+              @case ('DATETIME') {
+                <input pInputText type="text" [ngModel]="row.format" (ngModelChange)="update(i, { format: $event })" placeholder="dd-MM-yyyy HH:mm:ss" pTooltip="Format of the API value" />
+              }
+              @case ('DATE') {
+                <input pInputText type="text" [ngModel]="row.format" (ngModelChange)="update(i, { format: $event })" placeholder="dd-MM-yyyy" pTooltip="Format of the API value" />
+              }
+              @case ('RECEIPT_MONTH_PREFIX') {
+                <input pInputText type="text" [ngModel]="row.dateField" (ngModelChange)="update(i, { dateField: $event })" placeholder="Date field, e.g. BILL_DT" pTooltip="API field the month is read from" />
+                <input pInputText type="text" [ngModel]="row.dateFormat" (ngModelChange)="update(i, { dateFormat: $event })" placeholder="dd-MM-yyyy HH:mm:ss" pTooltip="Format of that date" />
+              }
+              @case ('LOOKUP') {
+                <textarea
+                  pInputText
+                  rows="3"
+                  [ngModel]="row.lookup"
+                  (ngModelChange)="update(i, { lookup: $event })"
+                  placeholder="UPI = UPI&#10;ONL = Online"
+                  pTooltip="One per line: API value = stored value. Anything not listed is stored empty."
+                ></textarea>
+              }
+              @case ('CONSTANT') {
+                <input pInputText type="text" [ngModel]="row.constant" (ngModelChange)="update(i, { constant: $event })" placeholder="Value to store" />
+              }
+              @default {
+                <span class="muted">—</span>
+              }
+            }
+          </div>
+
+          <div class="settings settings--cond">
+            <input pInputText type="text" [ngModel]="row.condField" (ngModelChange)="update(i, { condField: $event })" placeholder="API field" />
+            @if (row.condField) {
+              <p-select
+                [options]="opOptions"
+                optionLabel="label"
+                optionValue="value"
+                [ngModel]="row.condOp"
+                (ngModelChange)="update(i, { condOp: $event })"
+                appendTo="body"
+              />
+              <input pInputText type="text" [ngModel]="row.condValues" (ngModelChange)="update(i, { condValues: $event })" placeholder="values, comma-separated" />
+            }
+          </div>
+
+          <div>
+            <button type="button" class="action-icon action-icon--danger" (click)="clear(i)" pTooltip="Unmap this column" aria-label="Unmap column">
+              <i class="pi pi-times"></i>
+            </button>
+          </div>
+        </div>
+      }
+
+      <div class="mapping__foot">
+        @if (savedAt() && !dirty()) {
+          <span class="saved"><i class="pi pi-check-circle"></i> Saved</span>
+        } @else if (dirty()) {
+          <span class="muted">Unsaved changes</span>
+        }
+        <button type="button" class="btn btn-ghost" [disabled]="saving() || !dirty()" (click)="revert()">Revert</button>
+        <button type="button" class="btn btn-primary" [disabled]="saving() || loading()" (click)="save()">
+          @if (saving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-check"></i>
+          }
+          <span>Save mapping</span>
+        </button>
+      </div>
+    </div>
+
+    @if (preview(); as p) {
+      <div class="preview glass-card glass-card--static">
+        <div class="preview__summary">
+          <strong>Preview — {{ p.unitName }}, sent "{{ p.requestDate }}"</strong>
+          <span>{{ p.rowsReceived }} received · {{ p.rowsKept }} kept by the API's rules</span>
+          <span>
+            Total check:
+            <span class="status-pill" [class.status-pill--active]="p.verification === 'VERIFIED'" [class.status-pill--danger]="p.verification === 'FAILED'">{{ p.verification }}</span>
+          </span>
+        </div>
+        @if (p.errorCount) {
+          <div class="notice notice--danger">
+            <i class="pi pi-times-circle"></i>
+            <div>
+              {{ p.errorCount }} value(s) could not be read — a sync with this mapping would store nothing.
+              <ul>
+                @for (e of p.errors.slice(0, 5); track $index) {
+                  <li>row {{ e.index + 1 }} · {{ e.column }}: {{ e.message }}</li>
+                }
+              </ul>
+            </div>
+          </div>
+        }
+        @if (p.mappedRows.length) {
+          <div class="sample-wrap">
+            <table class="sample-table">
+              <thead>
+                <tr>
+                  @for (c of previewColumns(); track c) {
+                    <th>{{ c }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of p.mappedRows; track $index) {
+                  <tr>
+                    @for (c of previewColumns(); track c) {
+                      <td>{{ cell(row[c]) }}</td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="muted">No rows kept for this unit and day.</p>
+        }
+      </div>
+    }
+  }
+</div>

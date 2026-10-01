@@ -1,0 +1,450 @@
+<div class="api-configs">
+  <app-page-header
+    icon="pi pi-server"
+    title="API Config"
+    subtitle="HIS API connections. Each API is known by its name; its field mapping is set on API Field Mapping."
+  >
+    <button actions type="button" class="ai-button-primary" (click)="openAdd()">
+      <i class="pi pi-plus"></i>
+      <span>Add API</span>
+    </button>
+  </app-page-header>
+
+  @if (listError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="api-configs__table-wrap glass-card glass-card--static">
+    <p-table [value]="api.configs()" dataKey="id" styleClass="p-datatable-sm api-configs-table">
+      <ng-template #header>
+        <tr>
+          <th>Name</th>
+          <th>Stores Into</th>
+          <th>URL</th>
+          <th>API Key</th>
+          <th>Active</th>
+          <th>Updated</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-config>
+        <tr>
+          <td>
+            <strong>{{ config.name }}</strong>
+            @if (config.description) {
+              <div class="muted">{{ config.description }}</div>
+            }
+          </td>
+          <td>{{ targetLabel(config.targetTable) }}</td>
+          <td class="url-cell" [pTooltip]="config.url">{{ config.url }}</td>
+          <td>
+            @if (!config.authParam) {
+              <span class="status-pill">Not needed</span>
+            } @else if (config.hasAuthKey) {
+              <span class="status-pill status-pill--active">Saved</span>
+            } @else {
+              <span class="status-pill status-pill--danger">Missing</span>
+            }
+          </td>
+          <td>
+            <button
+              type="button"
+              class="status-pill status-pill--button"
+              [class.status-pill--active]="config.active"
+              (click)="toggleActive(config)"
+              [pTooltip]="config.active ? 'Click to deactivate' : 'Click to activate'"
+            >
+              {{ config.active ? 'Active' : 'Inactive' }}
+            </button>
+          </td>
+          <td class="muted">{{ config.updatedAt | date: 'dd-MMM-yyyy HH:mm' }}</td>
+          <td class="actions-col">
+            <button type="button" class="action-icon" (click)="openTest(config)" pTooltip="Test call" aria-label="Test API">
+              <i class="pi pi-play"></i>
+            </button>
+            <a class="action-icon" routerLink="/master-data/api-mappings" [queryParams]="{ api: config.id }" pTooltip="Field mapping" aria-label="Field mapping">
+              <i class="pi pi-arrow-right-arrow-left"></i>
+            </a>
+            <button type="button" class="action-icon" (click)="openEdit(config)" pTooltip="Edit" aria-label="Edit API">
+              <i class="pi pi-pencil"></i>
+            </button>
+            <button
+              type="button"
+              class="action-icon action-icon--danger"
+              (click)="pendingDelete.set(config)"
+              pTooltip="Delete"
+              aria-label="Delete API"
+            >
+              <i class="pi pi-trash"></i>
+            </button>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="7">
+            <div class="empty-state">
+              <i class="pi pi-server"></i>
+              <strong>No APIs configured</strong>
+              <p>Add the HIS API to sync collections without uploading files.</p>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  <!-- Add / edit -->
+  <p-dialog
+    [header]="editing() ? 'Edit API — ' + editing()!.name : 'Add API'"
+    [visible]="dialogVisible()"
+    (visibleChange)="dialogVisible.set($event)"
+    [modal]="true"
+    [style]="{ width: '46rem' }"
+    [breakpoints]="{ '768px': '95vw' }"
+  >
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+
+      <h3 class="form-section">Connection</h3>
+      <div class="grid-2">
+        <label class="field">
+          <span class="field-label">Name *</span>
+          <input pInputText type="text" placeholder="IpCollection" [ngModel]="draft().name" (ngModelChange)="updateDraft({ name: $event })" />
+          <span class="field-hint">How mappings and the sync find this API.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Stores Into *</span>
+          <p-select
+            [options]="targetOptions()"
+            optionLabel="label"
+            optionValue="value"
+            [ngModel]="draft().targetTable"
+            (ngModelChange)="updateDraft({ targetTable: $event })"
+            appendTo="body"
+          />
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">Description</span>
+        <input pInputText type="text" [ngModel]="draft().description" (ngModelChange)="updateDraft({ description: $event })" />
+      </label>
+      <label class="field">
+        <span class="field-label">URL *</span>
+        <input
+          pInputText
+          type="text"
+          placeholder="https://yhapi.yashodahospital.com:8021/Service.asmx?op=IpCollection"
+          [ngModel]="draft().url"
+          (ngModelChange)="updateDraft({ url: $event })"
+        />
+      </label>
+      <div class="grid-2">
+        <label class="field">
+          <span class="field-label">SOAP Method *</span>
+          <input pInputText type="text" placeholder="IpCollection" [ngModel]="draft().soapMethod" (ngModelChange)="updateDraft({ soapMethod: $event })" />
+        </label>
+        <label class="field">
+          <span class="field-label">SOAPAction Header</span>
+          <input
+            pInputText
+            type="text"
+            placeholder="http://tempuri.org/IpCollection"
+            [ngModel]="draft().soapAction"
+            (ngModelChange)="updateDraft({ soapAction: $event })"
+          />
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">Namespace</span>
+        <input pInputText type="text" [ngModel]="draft().soapNamespace" (ngModelChange)="updateDraft({ soapNamespace: $event })" />
+      </label>
+
+      <h3 class="form-section">Request Parameters</h3>
+      <div class="grid-3">
+        <label class="field">
+          <span class="field-label">Unit Param *</span>
+          <input pInputText type="text" placeholder="loc" [ngModel]="draft().locParam" (ngModelChange)="updateDraft({ locParam: $event })" />
+          <span class="field-hint">Sent the unit's HIS Loc Code (Location Master).</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Date Param *</span>
+          <input pInputText type="text" placeholder="trandate" [ngModel]="draft().dateParam" (ngModelChange)="updateDraft({ dateParam: $event })" />
+        </label>
+        <label class="field">
+          <span class="field-label">Date Format</span>
+          <p-select
+            [options]="dateFormatOptions()"
+            optionLabel="label"
+            optionValue="value"
+            [ngModel]="draft().dateFormat"
+            (ngModelChange)="updateDraft({ dateFormat: $event })"
+            appendTo="body"
+          />
+        </label>
+      </div>
+      <div class="grid-2">
+        <label class="field">
+          <span class="field-label">Auth Param</span>
+          <input pInputText type="text" placeholder="htuayek" [ngModel]="draft().authParam" (ngModelChange)="updateDraft({ authParam: $event })" />
+          <span class="field-hint">Leave blank if the API needs no key.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">API Key</span>
+          <input
+            pInputText
+            type="password"
+            autocomplete="new-password"
+            [disabled]="clearKey()"
+            [placeholder]="editing()?.hasAuthKey ? '•••••••• saved — leave blank to keep' : 'Enter the API key'"
+            [ngModel]="draft().authKey"
+            (ngModelChange)="updateDraft({ authKey: $event })"
+          />
+          <span class="field-hint">Stored encrypted. It is never shown again, even to admins.</span>
+          @if (editing()?.hasAuthKey) {
+            <span class="inline-check">
+              <input type="checkbox" id="clear-key" [checked]="clearKey()" (change)="clearKey.set($any($event.target).checked)" />
+              <label for="clear-key">Remove the saved key</label>
+            </span>
+          }
+        </label>
+      </div>
+
+      <h3 class="form-section">Response</h3>
+      <div class="grid-3">
+        <label class="field">
+          <span class="field-label">Rows List Key</span>
+          <input pInputText type="text" placeholder="IPcollectionv" [ngModel]="draft().responseRoot" (ngModelChange)="updateDraft({ responseRoot: $event })" />
+        </label>
+        <label class="field">
+          <span class="field-label">Total Field</span>
+          <input pInputText type="text" placeholder="Total" [ngModel]="draft().totalField" (ngModelChange)="updateDraft({ totalField: $event })" />
+          <span class="field-hint">Checked against the rows received.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Timeout (ms)</span>
+          <input pInputText type="number" min="5000" step="5000" [ngModel]="draft().timeoutMs" (ngModelChange)="updateDraft({ timeoutMs: $event })" />
+        </label>
+      </div>
+
+      <h3 class="form-section">
+        Rows To Keep
+        <button type="button" class="btn btn-ghost btn-sm" (click)="addRule()"><i class="pi pi-plus"></i> Add rule</button>
+      </h3>
+      <p class="field-hint">Every rule must match for a row to be stored. Values comma-separated.</p>
+      @for (rule of rules(); track $index) {
+        <div class="rule-row">
+          <input pInputText type="text" placeholder="API field, e.g. TCD_CHQ_BANK" [ngModel]="rule.field" (ngModelChange)="updateRule($index, { field: $event })" />
+          <p-select
+            [options]="opOptions"
+            optionLabel="label"
+            optionValue="value"
+            [ngModel]="rule.op"
+            (ngModelChange)="updateRule($index, { op: $event })"
+            appendTo="body"
+          />
+          <input pInputText type="text" placeholder="UPI, ONL, MANUALUPI" [ngModel]="rule.values" (ngModelChange)="updateRule($index, { values: $event })" />
+          <button type="button" class="action-icon action-icon--danger" (click)="removeRule($index)" aria-label="Remove rule">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+      } @empty {
+        <p class="muted">No rules — every row the API returns is stored.</p>
+      }
+
+      <div class="grid-2 switches">
+        <label class="field field--switch">
+          <span class="field-label">Active</span>
+          <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
+        </label>
+        <label class="field field--switch">
+          <span class="field-label" pTooltip="Only for an internal server with a self-signed HTTPS certificate">Allow self-signed certificate</span>
+          <p-toggleswitch [ngModel]="draft().tlsInsecure" (ngModelChange)="updateDraft({ tlsInsecure: $event })" />
+        </label>
+      </div>
+    </div>
+
+    <ng-template #footer>
+      <button type="button" class="btn btn-ghost" [disabled]="saving()" (click)="dialogVisible.set(false)">Cancel</button>
+      <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+        @if (saving()) {
+          <span class="btn-spinner"></span>
+        } @else {
+          <i class="pi pi-check"></i>
+        }
+        <span>{{ editing() ? 'Save' : 'Add API' }}</span>
+      </button>
+    </ng-template>
+  </p-dialog>
+
+  <!-- Test call -->
+  <p-dialog
+    [header]="'Test — ' + (testing()?.name ?? '')"
+    [visible]="!!testing()"
+    (visibleChange)="!$event && testing.set(null)"
+    [modal]="true"
+    [style]="{ width: '64rem' }"
+    [breakpoints]="{ '1024px': '95vw' }"
+  >
+    <div class="form">
+      <p class="field-hint">Calls the API for one unit and day and shows what came back. Nothing is stored.</p>
+      <div class="test-bar">
+        <label class="field">
+          <span class="field-label">Unit</span>
+          <p-select
+            [options]="unitOptions()"
+            optionLabel="label"
+            optionValue="value"
+            [ngModel]="testUnitId()"
+            (ngModelChange)="testUnitId.set($event)"
+            placeholder="Select unit"
+            appendTo="body"
+          />
+        </label>
+        <label class="field">
+          <span class="field-label">Date</span>
+          <p-datepicker
+            [ngModel]="testDate()"
+            (ngModelChange)="testDate.set($event)"
+            dateFormat="dd/mm/yy"
+            [maxDate]="today"
+            [showIcon]="true"
+            iconDisplay="input"
+            appendTo="body"
+          />
+        </label>
+        <button type="button" class="btn btn-primary" [disabled]="testRunning() || !testUnitId()" (click)="runTest()">
+          @if (testRunning()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-play"></i>
+          }
+          <span>Call API</span>
+        </button>
+      </div>
+      @if (!unitOptions().length) {
+        <div class="notice notice--warn">
+          <i class="pi pi-exclamation-triangle"></i>
+          No unit has an HIS Loc Code yet — set one on <a routerLink="/master-data/locations">Location Master</a>.
+        </div>
+      }
+
+      @if (testError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+
+      @if (testResult(); as r) {
+        <div class="test-summary">
+          <span><strong>{{ r.rowsReceived }}</strong> rows received</span>
+          <span><strong>{{ r.rowsKept }}</strong> kept by the rules</span>
+          <span>
+            Total check:
+            <span class="status-pill" [class.status-pill--active]="r.verification === 'VERIFIED'" [class.status-pill--danger]="r.verification === 'FAILED'">
+              {{ r.verification }}
+            </span>
+          </span>
+          <span class="muted">{{ r.unitName }} · sent date "{{ r.requestDate }}" · {{ r.durationMs }} ms</span>
+        </div>
+        @if (r.errorCount) {
+          <div class="notice notice--danger">
+            <i class="pi pi-times-circle"></i>
+            {{ r.errorCount }} value(s) could not be read with the saved mapping — a sync would store nothing. First: row {{ r.errors[0].index + 1 }}
+            {{ r.errors[0].column }}: {{ r.errors[0].message }}
+          </div>
+        }
+
+        <h3 class="form-section">Fields in the response ({{ r.fields.length }})</h3>
+        <div class="chips">
+          @for (f of r.fields; track f) {
+            <code class="chip">{{ f }}</code>
+          }
+        </div>
+
+        @if (r.sampleRows.length) {
+          <h3 class="form-section">First {{ r.sampleRows.length }} rows as received</h3>
+          <div class="sample-wrap">
+            <table class="sample-table">
+              <thead>
+                <tr>
+                  @for (c of sampleColumns(); track c) {
+                    <th>{{ c }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of r.sampleRows; track $index) {
+                  <tr>
+                    @for (c of sampleColumns(); track c) {
+                      <td>{{ cell(row[c]) }}</td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+
+        @if (r.mappedRows.length) {
+          <h3 class="form-section">First {{ r.mappedRows.length }} kept rows after mapping (as they would be stored)</h3>
+          <div class="sample-wrap">
+            <table class="sample-table">
+              <thead>
+                <tr>
+                  @for (c of mappedColumns(); track c) {
+                    <th>{{ c }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of r.mappedRows; track $index) {
+                  <tr>
+                    @for (c of mappedColumns(); track c) {
+                      <td>{{ cell(row[c]) }}</td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      }
+    </div>
+  </p-dialog>
+
+  @if (pendingDelete(); as config) {
+    <div class="modal-overlay" (click)="pendingDelete.set(null)">
+      <div class="modal" role="alertdialog" aria-modal="true" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h2>Delete API?</h2>
+          <button type="button" class="modal-close" (click)="pendingDelete.set(null)" aria-label="Close">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-copy">
+            <strong>{{ config.name }}</strong> and its field mapping will be deleted, including the saved API key. Batches already synced
+            stay as they are. To stop syncing without losing the setup, set it Inactive instead.
+          </p>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" [disabled]="deleting()" (click)="pendingDelete.set(null)">Cancel</button>
+          <button type="button" class="btn btn-danger confirm-delete" [disabled]="deleting()" (click)="confirmDelete()">
+            @if (deleting()) {
+              <span class="btn-spinner"></span>
+            } @else {
+              <i class="pi pi-trash"></i>
+            }
+            <span>Delete API</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

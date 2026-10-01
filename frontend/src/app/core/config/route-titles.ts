@@ -43,6 +43,8 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
 
   ['/master-data/division-bank-accounts', { title: 'Division & Bank A/C', subtitle: 'Master data' }],
   ['/master-data/locations', { title: 'Location Master', subtitle: 'Master data' }],
+  ['/master-data/api-configs', { title: 'API Config', subtitle: 'Master data' }],
+  ['/master-data/api-mappings', { title: 'API Field Mapping', subtitle: 'Master data' }],
   ['/master-data/users', { title: 'User Management', subtitle: 'Master data' }],
 
   ['/change-password', { title: 'Change Password', subtitle: 'Account' }],

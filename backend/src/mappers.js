@@ -258,6 +258,7 @@ function ipPaymentBatchRowToApi(row) {
     uploadedAt: toIso(row.uploaded_at),
     unitName: row.unit_name,
     matchedAt: toIso(row.matched_at),
+    source: row.source || 'FILE',
   };
 }
 
@@ -663,6 +664,7 @@ function locationRowToApi(row) {
     id: String(row.id),
     name: row.name,
     active: row.active,
+    hisLocCode: row.his_loc_code ?? null,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
