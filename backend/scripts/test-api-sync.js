@@ -15,6 +15,8 @@ const assert = require('assert');
 const fs = require('fs');
 const { callSoapApi, extractJson } = require('../src/api-sync/soap-client');
 const { filterRows, mapRows, formatRequestDate, parseDateParts } = require('../src/api-sync/apply-mapping');
+const { SEEDS } = require('../src/api-sync/seed-configs');
+const { CHEQUE_COLLECTION, REFUND } = require('../src/online-upload/mis-identities');
 
 // Keep in step with the seed in sql/schema.sql (api_configs / api_field_mappings).
 const ROW_FILTER = [
@@ -166,6 +168,54 @@ function testMapping() {
   console.log('  ok mapping');
 }
 
+/** The filter operators and transforms beyond in / notIn and plain NUMBER. */
+function testOperatorsAndTransforms() {
+  const rows = [
+    row({ BILL_SEQ: 'IDE1/26', CARD_AMT: '84793', CCD_AUTH_NO: '198938' }),
+    row({ BILL_SEQ: 'IDE2/26', CASH_AMT: '5940' }),
+    row({ BILL_SEQ: 'IRF3', BILL_IND: 'F', CHEQUE_AMT: '-50000', CD_CHQ_NO: '023360' }),
+    row({ BILL_SEQ: 'ODE4/26', CARD_AMT: '', CASH_AMT: '10.50', CHEQUE_AMT: '1,200' }),
+    row({ BILL_SEQ: 'IDE5/26', CARD_AMT: 'n/a' }),
+  ];
+  const seqs = (rule) => filterRows(rows, [rule]).map((r) => r.BILL_SEQ);
+
+  // "This row has a card amount" — every row carries the column, "0" where unused.
+  assert.deepStrictEqual(seqs({ field: 'CARD_AMT', op: 'nonZero', values: [] }), ['IDE1/26']);
+  assert.deepStrictEqual(seqs({ field: 'CHEQUE_AMT', op: 'nonZero', values: [] }), ['IRF3', 'ODE4/26']);
+  // A blank is zero; text that is not a number is neither zero nor non-zero.
+  assert.deepStrictEqual(seqs({ field: 'CARD_AMT', op: 'isZero', values: [] }), ['IDE2/26', 'IRF3', 'ODE4/26']);
+  assert.deepStrictEqual(seqs({ field: 'BILL_SEQ', op: 'startsWith', values: ['ODE', 'IRF'] }), ['IRF3', 'ODE4/26']);
+  assert.deepStrictEqual(seqs({ field: 'BILL_SEQ', op: 'notStartsWith', values: ['ODE', 'IRF'] }), ['IDE1/26', 'IDE2/26', 'IDE5/26']);
+  // An empty prefix list matches nothing (startsWith) / excludes nothing (notStartsWith).
+  assert.deepStrictEqual(seqs({ field: 'BILL_SEQ', op: 'startsWith', values: [] }), []);
+  assert.strictEqual(seqs({ field: 'BILL_SEQ', op: 'notStartsWith', values: [''] }).length, rows.length);
+  // The two original operators are unchanged.
+  assert.deepStrictEqual(seqs({ field: 'BILL_IND', op: 'in', values: ['F'] }), ['IRF3']);
+  assert.strictEqual(seqs({ field: 'BILL_IND', op: 'notIn', values: ['F'] }).length, 4);
+
+  const one = (source, transform, transformArg) =>
+    mapRows([source], [{ dbColumn: 'bill_amount', sourceField: transformArg?.fields ? null : 'AMT', transform, transformArg }], 'ip_payment_records');
+  const value = (...args) => one(...args).records[0].billAmount;
+  const required = (e) => e.column !== 'bill_amount'; // receipt_number / receipt_date are unmapped here
+
+  assert.strictEqual(value({ AMT: '-50000' }, 'NUMBER_ABS'), 50000);
+  assert.strictEqual(value({ AMT: '50,000.50' }, 'NUMBER_ABS'), 50000.5);
+  assert.strictEqual(value({ AMT: '1628' }, 'NUMBER_NEGATIVE'), -1628);
+  assert.strictEqual(value({ AMT: '-1628' }, 'NUMBER_NEGATIVE'), -1628);
+  assert.ok(Object.is(value({ AMT: '0' }, 'NUMBER_NEGATIVE'), 0), 'zero must stay 0, not -0');
+  assert.strictEqual(value({ AMT: '' }, 'NUMBER_ABS'), null);
+  assert.ok(one({ AMT: 'abc' }, 'NUMBER_NEGATIVE').errors.some((e) => e.column === 'bill_amount' && /not a number/.test(e.message)));
+
+  // A sum reads its own list of fields: no source field, and still applied.
+  const sumArg = { fields: ['CASH_AMT', 'CARD_AMT', 'CHEQUE_AMT'] };
+  assert.strictEqual(value({ CASH_AMT: '10.50', CARD_AMT: '', CHEQUE_AMT: '1,200' }, 'SUM', sumArg), 1210.5);
+  assert.strictEqual(value({ CASH_AMT: '0.1', CARD_AMT: '0.2', CHEQUE_AMT: '0' }, 'SUM', sumArg), 0.3);
+  assert.strictEqual(value({}, 'SUM', sumArg), 0);
+  const badSum = one({ CASH_AMT: '5', CARD_AMT: 'n/a', CHEQUE_AMT: '0' }, 'SUM', sumArg);
+  assert.deepStrictEqual(badSum.errors.filter((e) => !required(e)), [{ index: 0, column: 'bill_amount', message: 'CARD_AMT "n/a" is not a number' }]);
+  console.log('  ok operators and transforms');
+}
+
 function testRealOutput(file) {
   const json = extractJson(fs.readFileSync(file, 'utf8'), 'IpCollection');
   const rows = json.IPcollectionv;
@@ -181,12 +231,40 @@ function testRealOutput(file) {
   console.log(`  ok real output: ${rows.length} received, ${records.length} kept ${JSON.stringify(byMode)}, online total ${sum.toLocaleString('en-IN')}`);
 }
 
+/** The configs the app seeds (seed-configs.js) over the same real answer: what each would store, and in what shape. */
+function testRealSeeds(file) {
+  const rows = extractJson(fs.readFileSync(file, 'utf8'), 'IpCollection').IPcollectionv;
+  const SHAPE = {
+    ucr_ip_records: (r) => /^\d{2}\/IDE\d+\/\d{2}$/.test(r.receiptNo) && !!r.referenceId && /^\d{4}-\d{2}-\d{2}$/.test(r.receiptDate),
+    cheque_collection_records: (r) => /^IDE\d+\/\d{2}$/.test(r.receiptNumber) && !!r.chequeNo && /^\d{4}-\d{2}-\d{2}$/.test(r.receiptDate),
+    refund_records: (r) => /^IRF\d+$/.test(r.refundNo) && !!r.chequeNo && /^\d{4}-\d{2}-\d{2}$/.test(r.chequeDate),
+  };
+  // Cheques and refunds are told apart by these when a later sync or file repeats them; Card / UPI rows may repeat.
+  const IDENTITY = { cheque_collection_records: CHEQUE_COLLECTION.identityOf, refund_records: REFUND.identityOf };
+
+  for (const seed of SEEDS) {
+    const kept = filterRows(rows, seed.rowFilter);
+    const { records, errors } = mapRows(kept, seed.mappings, seed.targetTable);
+    assert.deepStrictEqual(errors, [], `${seed.name}: mapping errors: ${JSON.stringify(errors.slice(0, 5))}`);
+    const odd = records.filter((r) => !SHAPE[seed.targetTable](r) || !(r.amount > 0));
+    assert.strictEqual(odd.length, 0, `${seed.name}: ${odd.length} row(s) of an unexpected shape, e.g. ${JSON.stringify({ ...odd[0], patientName: undefined, yhNo: undefined })}`);
+    const identityOf = IDENTITY[seed.targetTable];
+    if (identityOf) assert.strictEqual(new Set(records.map(identityOf)).size, records.length, `${seed.name}: two rows share a duplicate-check identity`);
+    const total = records.reduce((n, r) => n + r.amount, 0);
+    console.log(`  ok real output, ${seed.name}: ${records.length} kept, total ${total.toLocaleString('en-IN')}`);
+  }
+}
+
 (async () => {
   console.log('api-sync');
   await testDates();
   await testSoapCall();
   testMapping();
-  if (process.argv[2]) testRealOutput(process.argv[2]);
+  testOperatorsAndTransforms();
+  if (process.argv[2]) {
+    testRealOutput(process.argv[2]);
+    testRealSeeds(process.argv[2]);
+  }
   console.log('all passed');
 })().catch((err) => {
   console.error(err);

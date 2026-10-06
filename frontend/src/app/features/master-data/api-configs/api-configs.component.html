@@ -243,14 +243,18 @@
         <div class="rule-row">
           <input pInputText type="text" placeholder="API field, e.g. TCD_CHQ_BANK" [ngModel]="rule.field" (ngModelChange)="updateRule($index, { field: $event })" />
           <p-select
-            [options]="opOptions"
+            [options]="opOptions()"
             optionLabel="label"
             optionValue="value"
             [ngModel]="rule.op"
             (ngModelChange)="updateRule($index, { op: $event })"
             appendTo="body"
           />
-          <input pInputText type="text" placeholder="UPI, ONL, MANUALUPI" [ngModel]="rule.values" (ngModelChange)="updateRule($index, { values: $event })" />
+          @if (opTakesValues(rule.op)) {
+            <input pInputText type="text" placeholder="UPI, ONL, MANUALUPI" [ngModel]="rule.values" (ngModelChange)="updateRule($index, { values: $event })" />
+          } @else {
+            <span class="muted">no values needed</span>
+          }
           <button type="button" class="action-icon action-icon--danger" (click)="removeRule($index)" aria-label="Remove rule">
             <i class="pi pi-times"></i>
           </button>

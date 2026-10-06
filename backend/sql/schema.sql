@@ -1868,3 +1868,47 @@ UPDATE locations l
 -- Where an IP batch came from: an uploaded file, or an API sync run.
 ALTER TABLE ip_payment_upload_batches ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'FILE'; -- 'FILE' | 'API'
 ALTER TABLE ip_payment_upload_batches ADD COLUMN IF NOT EXISTS api_sync_run_id INTEGER REFERENCES api_sync_runs(id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------------
+-- API sync into the other stores the IP report feeds (Card / UPI rows, cheque
+-- collections, refunds), and ONE API batch per unit and month.
+--
+-- An API sync appends to its unit's batch for the month instead of creating a
+-- batch per day (src/api-sync/stores.js): thirty daily syncs across four units
+-- and four stores would otherwise be ~480 batches a month. `period_month` is
+-- the first day of that month; file uploads leave it NULL. The unique indexes
+-- are what make two syncs racing to open a new month share one batch. A batch
+-- table that holds several kinds (IP / OP / DIAG) keeps one batch per kind.
+--
+-- The per-sync IP batches created before this (source = 'API', period_month
+-- NULL) are untouched, and NULLs never collide in a unique index.
+--
+-- The refund document names its unit on every ROW (one workbook holds all
+-- four), so its batch never needed one. An API batch is one unit's, so it does.
+-- ---------------------------------------------------------------------------
+ALTER TABLE ucr_ip_upload_batches            ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'FILE'; -- 'FILE' | 'API'
+ALTER TABLE cheque_collection_upload_batches ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'FILE';
+ALTER TABLE refund_upload_batches            ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'FILE';
+ALTER TABLE refund_upload_batches            ADD COLUMN IF NOT EXISTS unit_name VARCHAR(255);
+
+ALTER TABLE ip_payment_upload_batches        ADD COLUMN IF NOT EXISTS period_month DATE;
+ALTER TABLE ucr_ip_upload_batches            ADD COLUMN IF NOT EXISTS period_month DATE;
+ALTER TABLE cheque_collection_upload_batches ADD COLUMN IF NOT EXISTS period_month DATE;
+ALTER TABLE refund_upload_batches            ADD COLUMN IF NOT EXISTS period_month DATE;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ip_payment_upload_batches_api_month_key
+  ON ip_payment_upload_batches (unit_name, period_month) WHERE source = 'API';
+CREATE UNIQUE INDEX IF NOT EXISTS ucr_ip_upload_batches_api_month_key
+  ON ucr_ip_upload_batches (unit_name, period_month, mis_source) WHERE source = 'API';
+CREATE UNIQUE INDEX IF NOT EXISTS cheque_collection_upload_batches_api_month_key
+  ON cheque_collection_upload_batches (unit_name, period_month, collection_kind) WHERE source = 'API';
+CREATE UNIQUE INDEX IF NOT EXISTS refund_upload_batches_api_month_key
+  ON refund_upload_batches (unit_name, period_month) WHERE source = 'API';
+
+-- The API Configs the app adds after its first start (src/api-sync/seed-configs.js),
+-- by key: each is added ONCE, so one an Admin later edits, renames or deletes
+-- is never put back by a restart.
+CREATE TABLE IF NOT EXISTS api_config_seeds (
+  seed_key   VARCHAR(100) PRIMARY KEY,
+  seeded_at  TIMESTAMP NOT NULL DEFAULT now()
+);

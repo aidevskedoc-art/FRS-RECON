@@ -7,7 +7,7 @@ import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
-import { ApiSyncRun, IpSyncOptions, IpSyncResult } from '../../../core/models';
+import { ApiSyncOptions, ApiSyncResult, ApiSyncResultStatus, ApiSyncRun, ApiSyncRunResult } from '../../../core/models';
 
 const STATUS_LABEL: Record<ApiSyncRun['status'], string> = {
   RUNNING: 'Running',
@@ -17,11 +17,21 @@ const STATUS_LABEL: Record<ApiSyncRun['status'], string> = {
   FAILED: 'Failed',
 };
 
+/** How one API's outcome is shown in the result list. */
+const RESULT_LOOK: Record<ApiSyncResultStatus, { icon: string; tone: 'ok' | 'quiet' | 'danger' }> = {
+  SUCCESS: { icon: 'pi-check-circle', tone: 'ok' },
+  NO_DATA: { icon: 'pi-minus-circle', tone: 'quiet' },
+  DUPLICATE: { icon: 'pi-info-circle', tone: 'quiet' },
+  ALREADY_RUNNING: { icon: 'pi-clock', tone: 'quiet' },
+  FAILED: { icon: 'pi-times-circle', tone: 'danger' },
+};
+
 /**
- * "Sync IP Collection" on Upload & Run: pulls one unit-day of IP online/UPI
- * collections from the HIS API straight into IP payments — the same rows the
- * "All Collections" workbook would give — so no file is needed. The synced
- * batch is reconciled by the screen's normal Run, like any uploaded batch.
+ * "Sync IP Collection" on Upload & Run: pulls one unit-day from the HIS API
+ * straight into every store an active API feeds — the same rows the "All
+ * Collections" workbook would give — so no file is needed. One call to the HIS
+ * can feed several stores, so the result is a line per API. What is synced is
+ * reconciled by the screen's normal Run, like any uploaded batch.
  */
 @Component({
   selector: 'app-ip-sync-card',
@@ -37,25 +47,37 @@ export class IpSyncCardComponent {
   /** True while the parent's Run, or the shared-folder scan, is in progress. */
   readonly disabled = input(false);
   /** Fires after a sync that stored rows, so the parent can offer Run. */
-  readonly synced = output<IpSyncResult>();
+  readonly synced = output<ApiSyncRunResult>();
 
-  protected readonly options = signal<IpSyncOptions | null>(null);
+  protected readonly options = signal<ApiSyncOptions | null>(null);
   protected readonly loadError = signal<string | null>(null);
   protected readonly unitId = signal<string | null>(null);
   protected readonly date = signal<Date>(yesterday());
   protected readonly syncing = signal(false);
-  protected readonly result = signal<IpSyncResult | null>(null);
+  protected readonly result = signal<ApiSyncRunResult | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly today = new Date();
   protected readonly statusLabel = STATUS_LABEL;
+  protected readonly look = RESULT_LOOK;
 
-  protected readonly api0 = computed(() => this.options()?.apis[0] ?? null);
+  /** The APIs a sync would run that have no key to call with yet, as `"A", "B"`. */
+  protected readonly notReady = computed(() =>
+    (this.options()?.apis ?? [])
+      .filter((a) => !a.ready)
+      .map((a) => `"${a.name}"`)
+      .join(', '),
+  );
   protected readonly unitOptions = computed(() =>
     (this.options()?.units ?? []).map((u) => ({ label: u.name, value: u.id, code: u.hisLocCode })),
   );
-  protected readonly recentRuns = computed(() => (this.options()?.recentRuns ?? []).slice(0, 5));
+  protected readonly recentRuns = computed(() => (this.options()?.recentRuns ?? []).slice(0, 10));
   protected readonly canSync = computed(
-    () => !this.disabled() && !this.syncing() && !!this.api0()?.ready && !!this.unitId() && !!this.date(),
+    () =>
+      !this.disabled() &&
+      !this.syncing() &&
+      (this.options()?.apis ?? []).some((a) => a.ready) &&
+      !!this.unitId() &&
+      !!this.date(),
   );
 
   constructor() {
@@ -63,7 +85,7 @@ export class IpSyncCardComponent {
   }
 
   private loadOptions(): void {
-    this.api.fetchIpSyncOptions().subscribe({
+    this.api.fetchSyncOptions().subscribe({
       next: (opts) => {
         this.options.set(opts);
         this.loadError.set(null);
@@ -75,16 +97,15 @@ export class IpSyncCardComponent {
 
   protected sync(): void {
     const unitId = this.unitId();
-    const apiId = this.api0()?.id;
     if (!this.canSync() || !unitId) return;
     this.syncing.set(true);
     this.error.set(null);
     this.result.set(null);
-    this.api.syncIp(unitId, toYmd(this.date()), apiId).subscribe({
+    this.api.syncUnitDay(unitId, toYmd(this.date())).subscribe({
       next: (res) => {
         this.syncing.set(false);
         this.result.set(res);
-        if (res.rowsStored > 0) this.synced.emit(res);
+        if (res.results.some((r) => r.rowsStored > 0)) this.synced.emit(res);
         this.loadOptions();
       },
       error: (err) => {
@@ -95,16 +116,30 @@ export class IpSyncCardComponent {
     });
   }
 
-  /** "107 rows saved · 3 already stored, skipped · verified against the API's Total" */
-  protected summary(res: IpSyncResult): string {
-    if (res.status === 'NO_DATA') return res.message ?? 'No IP online/UPI collections for this unit and day';
-    const parts = [`${res.rowsStored.toLocaleString('en-IN')} rows saved`];
-    if (res.rowsSkipped) parts.push(`${res.rowsSkipped.toLocaleString('en-IN')} already stored, skipped`);
-    parts.push(`${res.rowsReceived.toLocaleString('en-IN')} received from HIS`);
-    const v = res.verification?.[0]?.status;
-    if (v === 'VERIFIED') parts.push("verified against the API's Total");
-    if (v === 'UNVERIFIED') parts.push('no Total to check against');
+  /** "242 rows received from HIS · verified against the API's Total" — said once when every API read the same answer. */
+  protected headline(res: ApiSyncRunResult): string {
+    const called = res.results.filter((r) => r.rowsReceived !== null);
+    const received = new Set(called.map((r) => r.rowsReceived));
+    if (received.size !== 1) return '';
+    const parts = [`${(called[0].rowsReceived ?? 0).toLocaleString('en-IN')} rows received from HIS`];
+    if (called.every((r) => r.verification === 'VERIFIED')) parts.push("verified against the API's Total");
+    if (called.every((r) => r.verification === 'UNVERIFIED')) parts.push('no Total to check against');
     return parts.join(' · ');
+  }
+
+  /** One API's line: "107 rows saved · 3 already stored, skipped". */
+  protected line(r: ApiSyncResult): string {
+    const n = (value: number) => value.toLocaleString('en-IN');
+    switch (r.status) {
+      case 'SUCCESS':
+        return [`${n(r.rowsStored)} rows saved`, ...(r.rowsSkipped ? [`${n(r.rowsSkipped)} already stored, skipped`] : [])].join(' · ');
+      case 'NO_DATA':
+        return 'nothing for this day';
+      case 'DUPLICATE':
+        return `all ${n(r.rowsSkipped)} rows already stored`;
+      default:
+        return r.message ?? 'failed';
+    }
   }
 }
 

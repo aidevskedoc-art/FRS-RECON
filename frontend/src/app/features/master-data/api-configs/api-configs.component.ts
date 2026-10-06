@@ -12,13 +12,13 @@ import { TooltipModule } from 'primeng/tooltip';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
 import { MasterDataService } from '../../../core/services/master-data.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
-import { ApiConfig, ApiConfigDraft, ApiConfigMeta, ApiFilterRule, ApiTestResult } from '../../../core/models';
+import { ApiConfig, ApiConfigDraft, ApiConfigMeta, ApiFilterOp, ApiFilterRule, ApiTestResult } from '../../../core/models';
 import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
 
 /** A filter rule as edited: values typed comma-separated. */
 interface RuleDraft {
   field: string;
-  op: 'in' | 'notIn';
+  op: ApiFilterOp;
   values: string;
 }
 
@@ -97,10 +97,12 @@ export class ApiConfigsComponent {
   protected readonly testError = signal<string | null>(null);
 
   protected readonly today = new Date();
-  protected readonly opOptions = [
-    { label: 'is one of', value: 'in' },
-    { label: 'is not one of', value: 'notIn' },
-  ];
+  protected readonly opOptions = computed(() => (this.meta()?.filterOps ?? []).map((o) => ({ label: o.label, value: o.value })));
+
+  /** False for the operators that test the field itself (non-zero, zero) and take no value list. */
+  protected opTakesValues(op: ApiFilterOp): boolean {
+    return this.meta()?.filterOps?.find((o) => o.value === op)?.values ?? true;
+  }
 
   protected readonly targetOptions = computed(() => (this.meta()?.targets ?? []).map((t) => ({ label: t.label, value: t.table })));
   protected readonly dateFormatOptions = computed(() => (this.meta()?.dateFormats ?? []).map((f) => ({ label: f, value: f })));
@@ -199,10 +201,12 @@ export class ApiConfigsComponent {
       .map((r) => ({
         field: r.field.trim(),
         op: r.op,
-        values: r.values
-          .split(',')
-          .map((v) => v.trim())
-          .filter(Boolean),
+        values: this.opTakesValues(r.op)
+          ? r.values
+              .split(',')
+              .map((v) => v.trim())
+              .filter(Boolean)
+          : [],
       }));
     const body: Partial<ApiConfigDraft> = { ...d, rowFilter, timeoutMs: Number(d.timeoutMs) || 60000 };
     if (!d.authKey.trim()) delete body.authKey;

@@ -9,7 +9,17 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { logAction } = require('../audit-log');
-const { TARGETS, TRANSFORMS, TRANSFORM_VALUES, DATE_FORMATS, targetOf } = require('../api-sync/targets');
+const {
+  TARGETS,
+  TRANSFORMS,
+  TRANSFORM_VALUES,
+  SOURCELESS_TRANSFORMS,
+  DATE_FORMATS,
+  FILTER_OPS,
+  FILTER_OP_VALUES,
+  VALUELESS_FILTER_OPS,
+  targetOf,
+} = require('../api-sync/targets');
 const { apiConfigRowToApi, mappingRowToApi, syncRunRowToApi, loadMappings, encryptKey } = require('../api-sync/config-store');
 const { testApi } = require('../api-sync/ip-collection-sync');
 
@@ -46,7 +56,11 @@ function normaliseRules(rules, what) {
   return rules
     .filter((r) => r && !blank(r.field))
     .map((r) => {
-      if (!['in', 'notIn'].includes(r.op)) throw Object.assign(new Error(`${what}: op must be "in" or "notIn"`), { status: 400 });
+      if (!FILTER_OP_VALUES.has(r.op)) {
+        throw Object.assign(new Error(`${what}: op must be one of ${[...FILTER_OP_VALUES].join(', ')}`), { status: 400 });
+      }
+      // A test of the field itself (nonZero / isZero) compares against nothing.
+      if (VALUELESS_FILTER_OPS.has(r.op)) return { field: String(r.field).trim(), op: r.op, values: [] };
       const values = (Array.isArray(r.values) ? r.values : String(r.values ?? '').split(','))
         .map((v) => String(v).trim())
         .filter((v, i, all) => all.indexOf(v) === i);
@@ -111,6 +125,7 @@ router.get('/meta', (req, res) => {
     targets: Object.entries(TARGETS).map(([table, t]) => ({ table, label: t.label, columns: t.columns })),
     transforms: TRANSFORMS,
     dateFormats: DATE_FORMATS,
+    filterOps: FILTER_OPS,
   });
 });
 
@@ -229,14 +244,19 @@ function validateMappings(list, targetTable) {
   const columns = new Set(target.columns.map((c) => c.column));
   const seen = new Set();
   return list
-    .filter((m) => m && !blank(m.dbColumn) && (!blank(m.sourceField) || m.transform === 'CONSTANT'))
+    .filter((m) => m && !blank(m.dbColumn) && (!blank(m.sourceField) || SOURCELESS_TRANSFORMS.has(m.transform)))
     .map((m, i) => {
       if (!columns.has(m.dbColumn)) throw Object.assign(new Error(`"${m.dbColumn}" is not a column of ${targetTable}`), { status: 400 });
       if (seen.has(m.dbColumn)) throw Object.assign(new Error(`"${m.dbColumn}" is mapped twice`), { status: 400 });
       seen.add(m.dbColumn);
       const transform = m.transform || 'DIRECT';
       if (!TRANSFORM_VALUES.has(transform)) throw Object.assign(new Error(`Unknown transform "${transform}"`), { status: 400 });
-      const arg = m.transformArg && typeof m.transformArg === 'object' ? m.transformArg : null;
+      let arg = m.transformArg && typeof m.transformArg === 'object' ? m.transformArg : null;
+      if (transform === 'SUM') {
+        const fields = (Array.isArray(arg?.fields) ? arg.fields : []).map((f) => String(f).trim()).filter(Boolean);
+        if (fields.length === 0) throw Object.assign(new Error(`${m.dbColumn}: a sum needs the API fields to add up`), { status: 400 });
+        arg = { fields };
+      }
       if ((transform === 'DATETIME' || transform === 'DATE') && blank(arg?.format)) {
         throw Object.assign(new Error(`${m.dbColumn}: a date transform needs a format`), { status: 400 });
       }

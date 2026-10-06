@@ -7,7 +7,9 @@ import {
   ApiConfigDraft,
   ApiConfigMeta,
   ApiFieldMapping,
+  ApiSyncOptions,
   ApiSyncRun,
+  ApiSyncRunResult,
   ApiTestResult,
   IpSyncOptions,
   IpSyncResult,
@@ -16,7 +18,7 @@ import {
 /**
  * HIS API connections: the Admin screens (API Config, API Field Mapping —
  * /api/api-configs, Admin only) and the Upload & Run sync card
- * (/api/ip-payments/sync, any signed-in user).
+ * (/api/api-sync, any signed-in user).
  */
 @Injectable({ providedIn: 'root' })
 export class ApiConfigService {
@@ -82,6 +84,16 @@ export class ApiConfigService {
   }
 
   // ---- Upload & Run: sync -------------------------------------------------
+
+  /** GET /api/api-sync/options — the active APIs, the units, recent runs. */
+  fetchSyncOptions(): Observable<ApiSyncOptions> {
+    return this.http.get<ApiSyncOptions>(`${API_BASE_URL}/api-sync/options`);
+  }
+
+  /** POST /api/api-sync/run — one unit, one day, from the HIS into every store an active API feeds. */
+  syncUnitDay(locationId: string, date: string): Observable<ApiSyncRunResult> {
+    return this.http.post<ApiSyncRunResult>(`${API_BASE_URL}/api-sync/run`, { locationId, date });
+  }
 
   /** GET /api/ip-payments/sync/options */
   fetchIpSyncOptions(): Observable<IpSyncOptions> {

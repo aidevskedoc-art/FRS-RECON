@@ -96,6 +96,70 @@
   border: 1px solid var(--status-success-border);
 }
 
+// One line per API a sync ran: its name, then what it stored (or why not).
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+}
+
+.results__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  color: var(--text-secondary);
+
+  strong {
+    color: var(--text-primary);
+  }
+}
+
+.results__row {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(8rem, 14rem) minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: baseline;
+  color: var(--text-secondary);
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1.25rem minmax(0, 1fr);
+
+    span:last-child {
+      grid-column: 2;
+    }
+  }
+}
+
+.results__name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.results__row--ok .pi {
+  color: var(--status-success-fg);
+}
+
+.results__row--quiet .pi {
+  color: var(--text-tertiary);
+}
+
+.results__row--danger {
+  color: var(--status-danger-fg);
+}
+
 .recent {
   font-size: var(--text-xs);
   color: var(--text-secondary);

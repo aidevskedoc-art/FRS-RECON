@@ -91,7 +91,7 @@
       }
 
       @for (row of rows(); track row.column; let i = $index) {
-        <div class="mapping__row" [class.mapping__row--unmapped]="!row.sourceField && row.transform !== 'CONSTANT'">
+        <div class="mapping__row" [class.mapping__row--unmapped]="!isMapped(row)">
           <div class="col-name">
             <strong>{{ row.label }}</strong>
             @if (row.required) {
@@ -101,20 +101,26 @@
           </div>
 
           <div>
-            @if (row.transform !== 'CONSTANT') {
-              <p-select
-                [options]="fieldOptions()"
-                optionLabel="label"
-                optionValue="value"
-                [editable]="true"
-                [showClear]="true"
-                [ngModel]="row.sourceField"
-                (ngModelChange)="update(i, { sourceField: $event || null })"
-                placeholder="— not mapped —"
-                appendTo="body"
-              />
-            } @else {
-              <span class="muted">fixed value</span>
+            @switch (row.transform) {
+              @case ('CONSTANT') {
+                <span class="muted">fixed value</span>
+              }
+              @case ('SUM') {
+                <span class="muted">sum of fields</span>
+              }
+              @default {
+                <p-select
+                  [options]="fieldOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                  [editable]="true"
+                  [showClear]="true"
+                  [ngModel]="row.sourceField"
+                  (ngModelChange)="update(i, { sourceField: $event || null })"
+                  placeholder="— not mapped —"
+                  appendTo="body"
+                />
+              }
             }
           </div>
 
@@ -154,6 +160,16 @@
               @case ('CONSTANT') {
                 <input pInputText type="text" [ngModel]="row.constant" (ngModelChange)="update(i, { constant: $event })" placeholder="Value to store" />
               }
+              @case ('SUM') {
+                <input
+                  pInputText
+                  type="text"
+                  [ngModel]="row.sumFields"
+                  (ngModelChange)="update(i, { sumFields: $event })"
+                  placeholder="CASH_AMT, CARD_AMT, CHEQUE_AMT"
+                  pTooltip="API fields to add up, comma-separated. A blank field counts as 0."
+                />
+              }
               @default {
                 <span class="muted">—</span>
               }
@@ -164,14 +180,16 @@
             <input pInputText type="text" [ngModel]="row.condField" (ngModelChange)="update(i, { condField: $event })" placeholder="API field" />
             @if (row.condField) {
               <p-select
-                [options]="opOptions"
+                [options]="opOptions()"
                 optionLabel="label"
                 optionValue="value"
                 [ngModel]="row.condOp"
                 (ngModelChange)="update(i, { condOp: $event })"
                 appendTo="body"
               />
-              <input pInputText type="text" [ngModel]="row.condValues" (ngModelChange)="update(i, { condValues: $event })" placeholder="values, comma-separated" />
+              @if (opTakesValues(row.condOp)) {
+                <input pInputText type="text" [ngModel]="row.condValues" (ngModelChange)="update(i, { condValues: $event })" placeholder="values, comma-separated" />
+              }
             }
           </div>
 

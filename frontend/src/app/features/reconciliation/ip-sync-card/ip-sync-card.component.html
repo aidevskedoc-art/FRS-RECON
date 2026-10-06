@@ -5,7 +5,7 @@
       Sync IP Collection
     </h3>
     <span class="sync-card__hint">
-      Pulls a day's IP online / UPI collections for one unit straight from HIS — no file needed. Then press Run Reconciliation below.
+      Pulls a day's IP collections for one unit straight from HIS — no file needed. Then press Run Reconciliation below.
     </span>
   </div>
 
@@ -18,12 +18,12 @@
     @if (!opts.apis.length) {
       <div class="notice notice--warning">
         <i class="pi pi-info-circle"></i>
-        No IP collection API is set up yet — ask an Admin to add one on Master Data → API Config.
+        No HIS API is switched on yet — ask an Admin to set one up on Master Data → API Config.
       </div>
-    } @else if (!api0()!.ready) {
+    } @else if (notReady()) {
       <div class="notice notice--warning">
         <i class="pi pi-key"></i>
-        The API key for "{{ api0()!.name }}" is not saved yet — ask an Admin to enter it on Master Data → API Config.
+        The API key for {{ notReady() }} is not saved yet — ask an Admin to enter it on Master Data → API Config.
       </div>
     } @else if (!opts.units.length) {
       <div class="notice notice--warning">
@@ -81,14 +81,22 @@
       </div>
     }
     @if (result(); as res) {
-      <div class="notice" [class.notice--ok]="res.status === 'SUCCESS'" [class.notice--warning]="res.status === 'NO_DATA'">
-        <i class="pi" [class.pi-check-circle]="res.status === 'SUCCESS'" [class.pi-info-circle]="res.status === 'NO_DATA'"></i>
-        <span>
-          @if (res.unitName) {
-            <strong>{{ res.unitName }}:</strong>
+      <div class="results">
+        <div class="results__head">
+          <strong>{{ res.unitName }} · {{ res.date | date: 'dd-MMM-yyyy' }}</strong>
+          @if (headline(res); as text) {
+            <span>{{ text }}</span>
           }
-          {{ summary(res) }}
-        </span>
+        </div>
+        <ul>
+          @for (r of res.results; track r.apiConfigId) {
+            <li class="results__row results__row--{{ look[r.status].tone }}">
+              <i class="pi {{ look[r.status].icon }}"></i>
+              <span class="results__name" [pTooltip]="'Stores into ' + r.targetLabel">{{ r.apiName }}</span>
+              <span>{{ line(r) }}</span>
+            </li>
+          }
+        </ul>
       </div>
     }
 
@@ -99,7 +107,7 @@
           @for (r of recentRuns(); track r.id) {
             <li>
               <span class="recent__when">{{ r.startedAt | date: 'dd-MMM HH:mm' }}</span>
-              <span>{{ r.unitName }} · {{ r.transDate | date: 'dd-MMM-yyyy' }}</span>
+              <span>{{ r.unitName }} · {{ r.transDate | date: 'dd-MMM-yyyy' }} · {{ r.apiName }}</span>
               <span class="recent__status recent__status--{{ r.status.toLowerCase() }}" [pTooltip]="r.errorMessage ?? ''">
                 {{ statusLabel[r.status] }}@if (r.status === 'SUCCESS') { · {{ r.rowsStored }} rows}
               </span>

@@ -31,6 +31,8 @@ const { arm: armFolderWatchScheduler } = require('./folder-watch/scheduler');
 const { pauseWritesDuringScan, scanStatus } = require('./folder-watch/scan-lock');
 const goLiveRouter = require('./routes/go-live.routes');
 const apiConfigsRouter = require('./routes/api-configs.routes');
+const apiSyncRouter = require('./routes/api-sync.routes');
+const { seedApiConfigs } = require('./api-sync/seed-configs');
 
 const app = express();
 
@@ -105,6 +107,8 @@ app.use('/api/folder-watch', folderWatchRouter);
 app.use('/api/go-live', goLiveRouter);
 // HIS API connections + field mapping (Master Data → API Config / API Field Mapping).
 app.use('/api/api-configs', apiConfigsRouter);
+// One unit-day from the HIS into every store an active API feeds (Upload & Run card).
+app.use('/api/api-sync', apiSyncRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });
@@ -123,6 +127,11 @@ async function start() {
   await db.ensureDatabase();
   await db.ensureSchema();
   console.log('Database schema ready.');
+
+  // Inactive until an Admin checks and switches each on; a failure here must not stop the app.
+  await seedApiConfigs()
+    .then((names) => names.length && console.log(`[api-sync] added API config(s), inactive: ${names.join(', ')}`))
+    .catch((err) => console.error('[api-sync] failed to add the seeded API configs:', err.message));
 
   await armFolderWatchScheduler().catch((err) => console.error('[folder-watch] failed to arm scheduler:', err.message));
 

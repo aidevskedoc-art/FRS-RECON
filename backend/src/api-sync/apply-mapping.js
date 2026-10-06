@@ -2,13 +2,13 @@
  * Turns raw API rows into the record objects the existing insert code reads,
  * driven entirely by the saved configuration:
  *
- *   row_filter   [{ field, op: 'in' | 'notIn', values: [...] }]  — every rule must pass
+ *   row_filter   [{ field, op, values: [...] }]  — every rule must pass; ops in targets.js FILTER_OPS
  *   mappings     [{ dbColumn, sourceField, transform, transformArg, condition }]
  *
  * Pure functions, no DB — so the Test/Preview button, the sync and the unit
  * script all run exactly the same code.
  */
-const { targetOf } = require('./targets');
+const { targetOf, SOURCELESS_TRANSFORMS } = require('./targets');
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -117,8 +117,28 @@ function passes(row, rule) {
   if (!rule || !rule.field) return true;
   const value = text(row[rule.field]) ?? '';
   const values = (rule.values || []).map((v) => String(v).trim());
-  const inList = values.includes(value);
-  return rule.op === 'notIn' ? !inList : inList;
+  switch (rule.op) {
+    case 'notIn':
+      return !values.includes(value);
+    case 'startsWith':
+      return values.some((v) => v !== '' && value.startsWith(v));
+    case 'notStartsWith':
+      return !values.some((v) => v !== '' && value.startsWith(v));
+    // The HIS rows carry every amount column on every row ("0" where a
+    // payment type was not used), so "this row has a card amount" is a test of
+    // the amount, not of a list of values. A blank is zero; text that is not a
+    // number is neither zero nor non-zero.
+    case 'nonZero': {
+      const n = toNumber(value);
+      return n !== null && !Number.isNaN(n) && n !== 0;
+    }
+    case 'isZero': {
+      const n = toNumber(value);
+      return n === null || n === 0;
+    }
+    default:
+      return values.includes(value);
+  }
 }
 
 function filterRows(rows, rowFilter) {
@@ -146,6 +166,24 @@ function applyOne(row, mapping) {
       const n = toNumber(raw);
       if (Number.isNaN(n)) return { error: `"${raw}" is not a number` };
       return { value: n };
+    }
+    // A refund is stored positive in the refund document and negative among
+    // the card / UPI rows, whichever sign the API sends it with.
+    case 'NUMBER_ABS':
+    case 'NUMBER_NEGATIVE': {
+      const n = toNumber(raw);
+      if (Number.isNaN(n)) return { error: `"${raw}" is not a number` };
+      if (n === null || n === 0) return { value: n };
+      return { value: mapping.transform === 'NUMBER_ABS' ? Math.abs(n) : -Math.abs(n) };
+    }
+    case 'SUM': {
+      let sum = 0;
+      for (const field of arg.fields || []) {
+        const n = toNumber(row[field]);
+        if (Number.isNaN(n)) return { error: `${field} "${row[field]}" is not a number` };
+        sum += n ?? 0;
+      }
+      return { value: Math.round(sum * 100) / 100 };
     }
     case 'DATETIME':
     case 'DATE': {
@@ -182,7 +220,7 @@ function mapRows(rows, mappings, targetTable) {
   const target = targetOf(targetTable);
   if (!target) throw Object.assign(new Error(`Unknown target table "${targetTable}"`), { status: 400 });
   const byColumn = new Map(target.columns.map((c) => [c.column, c]));
-  const active = (mappings || []).filter((m) => byColumn.has(m.dbColumn) && (m.sourceField || m.transform === 'CONSTANT'));
+  const active = (mappings || []).filter((m) => byColumn.has(m.dbColumn) && (m.sourceField || SOURCELESS_TRANSFORMS.has(m.transform)));
 
   const records = [];
   const errors = [];
@@ -195,8 +233,11 @@ function mapRows(rows, mappings, targetTable) {
       else rec[byColumn.get(m.dbColumn).key] = out.value;
     }
     for (const col of target.columns) {
-      if (col.required && (rec[col.key] === null || rec[col.key] === '')) {
+      const value = rec[col.key];
+      if (col.required && (value === null || value === '')) {
         errors.push({ index, column: col.column, message: `${col.label} is empty` });
+      } else if (col.allowed && value !== null && !col.allowed.includes(value)) {
+        errors.push({ index, column: col.column, message: `${col.label} "${value}" must be one of ${col.allowed.join(', ')}` });
       }
     }
     records.push(rec);

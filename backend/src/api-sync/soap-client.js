@@ -49,7 +49,7 @@ function buildEnvelope(method, namespace, params) {
   );
 }
 
-function post(url, body, { soapAction, timeoutMs, tlsInsecure }) {
+function post(url, body, { soapAction, timeoutMs, tlsInsecure, contentType = 'text/xml; charset=utf-8' }) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const lib = target.protocol === 'http:' ? http : https;
@@ -59,7 +59,7 @@ function post(url, body, { soapAction, timeoutMs, tlsInsecure }) {
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
+          'Content-Type': contentType,
           'Content-Length': payload.length,
           ...(soapAction ? { SOAPAction: soapAction } : {}),
         },
@@ -179,4 +179,4 @@ async function callSoapApi(config, { locValue, dateValue }, transport = post) {
   };
 }
 
-module.exports = { callSoapApi, extractJson, rowsOf, buildEnvelope, redact };
+module.exports = { callSoapApi, extractJson, rowsOf, buildEnvelope, redact, post };

@@ -83,18 +83,36 @@ async function loadMappings(configId) {
   return rows.map(mappingRowToApi);
 }
 
-/** The config row with `authKey` decrypted — for calling the API only, never for a response. */
-async function loadConfigForCall(id) {
-  const { rows } = await db.query('SELECT * FROM api_configs WHERE id = $1', [id]);
-  const config = rows[0];
-  if (!config) throw Object.assign(new Error('API config not found'), { status: 404 });
+/**
+ * A config row with `authKey` decrypted — for calling the API only, never for a response.
+ *
+ * Several configs read one HIS call, each storing a different part of it, and
+ * the key belongs to the call: a config with no key of its own uses the one
+ * saved on another config for the SAME url, method and key parameter. A key is
+ * never sent to an address other than the one it was entered for.
+ */
+async function withAuthKey(config) {
+  let keyEnc = config.auth_key_enc;
+  let owner = config.name;
+  if (!keyEnc && config.auth_param) {
+    const { rows } = await db.query(
+      `SELECT name, auth_key_enc FROM api_configs
+        WHERE id <> $1 AND url = $2 AND soap_method = $3 AND auth_param = $4 AND auth_key_enc IS NOT NULL
+        ORDER BY id LIMIT 1`,
+      [config.id, config.url, config.soap_method, config.auth_param],
+    );
+    if (rows[0]) {
+      keyEnc = rows[0].auth_key_enc;
+      owner = rows[0].name;
+    }
+  }
   let authKey = '';
-  if (config.auth_key_enc) {
+  if (keyEnc) {
     try {
-      authKey = decryptSecret(config.auth_key_enc);
+      authKey = decryptSecret(keyEnc);
     } catch {
       throw Object.assign(
-        new Error(`The saved API key for "${config.name}" could not be decrypted (the server's encryption key changed?) — re-enter it on API Config.`),
+        new Error(`The saved API key for "${owner}" could not be decrypted (the server's encryption key changed?) — re-enter it on API Config.`),
         { status: 422 },
       );
     }
@@ -103,6 +121,12 @@ async function loadConfigForCall(id) {
     throw Object.assign(new Error(`No API key is saved for "${config.name}" — an Admin must enter it on Master Data → API Config.`), { status: 422 });
   }
   return { ...config, authKey };
+}
+
+async function loadConfigForCall(id) {
+  const { rows } = await db.query('SELECT * FROM api_configs WHERE id = $1', [id]);
+  if (!rows[0]) throw Object.assign(new Error('API config not found'), { status: 404 });
+  return withAuthKey(rows[0]);
 }
 
 function encryptKey(plain) {
@@ -114,6 +138,7 @@ module.exports = {
   mappingRowToApi,
   syncRunRowToApi,
   loadMappings,
+  withAuthKey,
   loadConfigForCall,
   encryptKey,
   toYmd,

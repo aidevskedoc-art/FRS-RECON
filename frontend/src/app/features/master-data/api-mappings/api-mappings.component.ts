@@ -8,7 +8,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
 import { MasterDataService } from '../../../core/services/master-data.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
-import { ApiConfigMeta, ApiFieldMapping, ApiTestResult, ApiTransform } from '../../../core/models';
+import { ApiConfigMeta, ApiFieldMapping, ApiFilterOp, ApiTestResult, ApiTransform, isSourcelessTransform } from '../../../core/models';
 import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
 
 /** One DB column's mapping, as edited on screen (every transform argument flattened). */
@@ -25,8 +25,10 @@ interface MappingRow {
   /** LOOKUP pairs, one "API value = stored value" per line. */
   lookup: string;
   constant: string;
+  /** SUM: the API fields to add up, comma-separated. */
+  sumFields: string;
   condField: string;
-  condOp: 'in' | 'notIn';
+  condOp: ApiFilterOp;
   condValues: string;
 }
 
@@ -39,17 +41,24 @@ function blankRow(c: { column: string; label: string; type: string; required?: b
     type: c.type,
     required: !!c.required,
     sourceField: null,
-    transform: c.type === 'number' ? 'NUMBER' : c.type === 'datetime' ? 'DATETIME' : 'DIRECT',
+    transform: c.type === 'number' ? 'NUMBER' : c.type === 'datetime' ? 'DATETIME' : c.type === 'date' ? 'DATE' : 'DIRECT',
     format: DEFAULT_DATETIME_FORMAT,
     dateField: '',
     dateFormat: DEFAULT_DATETIME_FORMAT,
     lookup: '',
     constant: '',
+    sumFields: '',
     condField: '',
     condOp: 'in',
     condValues: '',
   };
 }
+
+const splitList = (text: string): string[] =>
+  text
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
 
 function lookupToText(map: Record<string, unknown> | undefined): string {
   return Object.entries(map ?? {})
@@ -119,12 +128,19 @@ export class ApiMappingsComponent {
       .filter((l) => l.active && l.hisLocCode !== null && l.hisLocCode !== undefined)
       .map((l) => ({ label: `${l.name} (loc ${l.hisLocCode})`, value: l.id })),
   );
-  protected readonly mappedCount = computed(() => this.rows().filter((r) => r.sourceField || r.transform === 'CONSTANT').length);
+  protected readonly mappedCount = computed(() => this.rows().filter((r) => this.isMapped(r)).length);
   protected readonly previewColumns = computed(() => Object.keys(this.preview()?.mappedRows[0] ?? {}));
-  protected readonly opOptions = [
-    { label: 'is one of', value: 'in' },
-    { label: 'is not one of', value: 'notIn' },
-  ];
+  protected readonly opOptions = computed(() => (this.meta()?.filterOps ?? []).map((o) => ({ label: o.label, value: o.value })));
+
+  /** A column with a source field, or a transform that needs none (fixed value, sum of fields). */
+  protected isMapped(row: MappingRow): boolean {
+    return !!row.sourceField || isSourcelessTransform(row.transform);
+  }
+
+  /** False for the operators that test the field itself (non-zero, zero) and take no value list. */
+  protected opTakesValues(op: ApiFilterOp): boolean {
+    return this.meta()?.filterOps?.find((o) => o.value === op)?.values ?? true;
+  }
 
   constructor() {
     this.api.fetchMeta().subscribe({
@@ -172,7 +188,10 @@ export class ApiMappingsComponent {
         const byColumn = new Map(mappings.map((m) => [m.dbColumn, m]));
         this.rows.set(target.columns.map((c) => this.toRow(c, byColumn.get(c.column))));
         this.addKnownFields(
-          mappings.flatMap((m) => [m.sourceField, m.condition?.field, (m.transformArg as { dateField?: string } | null)?.dateField]),
+          mappings.flatMap((m) => {
+            const arg = m.transformArg as { dateField?: string; fields?: string[] } | null;
+            return [m.sourceField, m.condition?.field, arg?.dateField, ...(arg?.fields ?? [])];
+          }),
         );
         this.dirty.set(false);
         this.loading.set(false);
@@ -197,6 +216,7 @@ export class ApiMappingsComponent {
       dateFormat: String(arg['dateFormat'] ?? row.dateFormat),
       lookup: lookupToText(arg['map'] as Record<string, unknown> | undefined),
       constant: arg['value'] === undefined || arg['value'] === null ? '' : String(arg['value']),
+      sumFields: Array.isArray(arg['fields']) ? (arg['fields'] as unknown[]).join(', ') : '',
       condField: m.condition?.field ?? '',
       condOp: m.condition?.op ?? 'in',
       condValues: (m.condition?.values ?? []).join(', '),
@@ -206,20 +226,18 @@ export class ApiMappingsComponent {
   /** Screen rows -> what the API stores. Unmapped columns are left out (stored as null). */
   private toMappings(): ApiFieldMapping[] {
     return this.rows()
-      .filter((r) => r.sourceField || r.transform === 'CONSTANT')
+      .filter((r) => this.isMapped(r))
       .map((r) => {
         let transformArg: Record<string, unknown> | null = null;
         if (r.transform === 'DATETIME' || r.transform === 'DATE') transformArg = { format: r.format.trim() };
         if (r.transform === 'RECEIPT_MONTH_PREFIX') transformArg = { dateField: r.dateField.trim(), dateFormat: r.dateFormat.trim() };
         if (r.transform === 'LOOKUP') transformArg = { map: textToLookup(r.lookup) };
         if (r.transform === 'CONSTANT') transformArg = { value: r.constant };
-        const values = r.condValues
-          .split(',')
-          .map((v) => v.trim())
-          .filter(Boolean);
+        if (r.transform === 'SUM') transformArg = { fields: splitList(r.sumFields) };
+        const values = this.opTakesValues(r.condOp) ? splitList(r.condValues) : [];
         return {
           dbColumn: r.column,
-          sourceField: r.transform === 'CONSTANT' ? null : r.sourceField,
+          sourceField: isSourcelessTransform(r.transform) ? null : r.sourceField,
           transform: r.transform,
           transformArg,
           condition: r.condField.trim() ? { field: r.condField.trim(), op: r.condOp, values } : null,
@@ -269,7 +287,7 @@ export class ApiMappingsComponent {
   protected save(): void {
     const config = this.selected();
     if (!config || this.saving()) return;
-    const missing = this.rows().filter((r) => r.required && !r.sourceField && r.transform !== 'CONSTANT');
+    const missing = this.rows().filter((r) => r.required && !this.isMapped(r));
     if (missing.length) {
       this.error.set(`Map the required column(s): ${missing.map((r) => r.label).join(', ')}`);
       return;

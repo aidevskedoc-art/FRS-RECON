@@ -15,6 +15,7 @@ const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, settl
 const { assertNotPastGoLive } = require('../go-live');
 const { pendingChangeColumn, auditDetailColumn } = require('../pending-change');
 const { realChequeSql, YASHODA_REFUND_CHEQUE } = require('../reconciliation/status-tone');
+const { insertChequeBatch } = require('../online-upload/cheque-collection-store');
 
 const router = express.Router();
 
@@ -33,32 +34,6 @@ const upload = multer({
     cb(null, true);
   },
 });
-
-const RECORD_COLUMNS = [
-  'batch_id', 'collection_kind', 'receipt_number', 'receipt_date', 'cheque_date', 'ip_no', 'diag_no',
-  'patient_name', 'cheque_no', 'pay_type', 'pat_type', 'bank_name', 'branch_name',
-  'cheque_amount', 'receipt_amount', 'user_id', 'user_name',
-];
-
-function recordToRow(batchId, r) {
-  return [
-    batchId, r.collectionKind ?? 'IP', r.receiptNumber ?? null, r.receiptDate ?? null, r.chequeDate ?? null,
-    r.ipNo ?? null, r.diagNo ?? null, r.patientName ?? null, r.chequeNo ?? null, r.payType ?? null,
-    r.patType ?? null, r.bankName ?? null, r.branchName ?? null, r.amount ?? null,
-    r.receiptAmount ?? null, r.userId ?? null, r.userName ?? null,
-  ];
-}
-
-/** Chunked multi-row INSERT — keeps parameter count well under Postgres's ~65535 limit. */
-async function insertRecordsChunked(client, rows, chunkSize = 500) {
-  for (let start = 0; start < rows.length; start += chunkSize) {
-    const chunk = rows.slice(start, start + chunkSize);
-    const valuesSql = chunk
-      .map((row, i) => `(${row.map((_, c) => `$${i * RECORD_COLUMNS.length + c + 1}`).join(', ')})`)
-      .join(', ');
-    await client.query(`INSERT INTO cheque_collection_records (${RECORD_COLUMNS.join(', ')}) VALUES ${valuesSql}`, chunk.flat());
-  }
-}
 
 // POST /api/cheque-collections
 router.post('/', upload.single('file'), async (req, res, next) => {
@@ -99,14 +74,13 @@ router.post('/', upload.single('file'), async (req, res, next) => {
       const out = [];
       for (const sheet of sheets) {
         const fileName = multi ? `${req.file.originalname} — ${sheet.sheetName}` : req.file.originalname;
-        const { rows: batchRows } = await client.query(
-          `INSERT INTO cheque_collection_upload_batches (file_name, file_size_bytes, row_count, uploaded_by, unit_name, collection_kind, file_hash)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-          [fileName, req.file.size, sheet.rows.length, uploadedBy, sheet.unitName, sheet.kind, fileHash],
+        out.push(
+          await insertChequeBatch(
+            client,
+            { fileName, fileSizeBytes: req.file.size, uploadedBy, unitName: sheet.unitName, collectionKind: sheet.kind, fileHash },
+            sheet.rows,
+          ),
         );
-        const created = batchRows[0];
-        await insertRecordsChunked(client, sheet.rows.map((r) => recordToRow(created.id, r)));
-        out.push(created);
       }
       return out;
     });
