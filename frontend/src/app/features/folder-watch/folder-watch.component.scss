@@ -28,6 +28,53 @@
   padding: var(--space-5);
 }
 
+.folder-watch__intro {
+  margin: 0 0 var(--space-4);
+  max-width: 52rem;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+// ---------------------------------------------------------------------
+// Tabs — HIS Data Pull | Shared Folder Check (same look as Match Approvals)
+// ---------------------------------------------------------------------
+.hub-picker {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.hub-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+
+  &:hover {
+    border-color: var(--ai-blue);
+    color: var(--text-primary);
+  }
+}
+
+.hub-option--active {
+  border-color: var(--ai-blue);
+  background: var(--ai-blue-soft);
+  color: var(--ai-blue);
+  font-weight: 600;
+}
+
+.hub-option__title {
+  white-space: nowrap;
+}
+
 .form {
   display: flex;
   flex-direction: column;

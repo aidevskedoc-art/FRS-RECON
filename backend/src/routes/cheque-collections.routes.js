@@ -50,13 +50,9 @@ router.post('/', upload.single('file'), async (req, res, next) => {
 
     let rowsSkipped = 0;
     if (his) {
-      const tagged = sheets.flatMap((s) => s.rows.map((r) => ({ ...r, __sheet: s.sheetName })));
-      const { newRows, skipped } = await filterNewRows({
-        table: 'cheque_collection_records',
-        identitySql: CHEQUE_COLLECTION.identitySql,
-        identityOf: CHEQUE_COLLECTION.identityOf,
-        rows: tagged,
-      });
+      // __unit: the unit of the batch each row is headed for — part of a cheque's identity (mis-identities.js).
+      const tagged = sheets.flatMap((s) => s.rows.map((r) => ({ ...r, __sheet: s.sheetName, __unit: s.unitName })));
+      const { newRows, skipped } = await filterNewRows({ ...CHEQUE_COLLECTION, rows: tagged });
       if (newRows.length === 0) {
         const err = new Error(`All ${tagged.length} cheque collections in this file are already present from an earlier upload.`);
         err.status = 409;

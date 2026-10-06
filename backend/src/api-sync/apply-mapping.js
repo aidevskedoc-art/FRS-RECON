@@ -3,6 +3,7 @@
  * driven entirely by the saved configuration:
  *
  *   row_filter   [{ field, op, values: [...] }]  — every rule must pass; ops in targets.js FILTER_OPS
+ *                (`oncePer` then keeps one row per bill — see filterRows)
  *   mappings     [{ dbColumn, sourceField, transform, transformArg, condition }]
  *
  * Pure functions, no DB — so the Test/Preview button, the sync and the unit
@@ -113,11 +114,17 @@ function toNumber(v) {
 
 // ---- rules -------------------------------------------------------------------
 
+/** A row's value of several fields as one key — what "the same bill" or "the same payment" means. */
+const keyOf = (row, fields) => fields.map((f) => text(row[f]) ?? '').join('\u0001');
+
 function passes(row, rule) {
   if (!rule || !rule.field) return true;
   const value = text(row[rule.field]) ?? '';
   const values = (rule.values || []).map((v) => String(v).trim());
   switch (rule.op) {
+    // Not a test of one row: filterRows applies it over the rows the other rules keep.
+    case 'oncePer':
+      return true;
     case 'notIn':
       return !values.includes(value);
     case 'startsWith':
@@ -141,16 +148,69 @@ function passes(row, rule) {
   }
 }
 
+/**
+ * The rows a config stores from. Every rule that tests a row on its own must
+ * pass; then each `oncePer` rule keeps only the FIRST of the rows left that
+ * share its field's value (and the values of the other fields it lists).
+ *
+ * `oncePer` is for a call that sends one row per LINE of a bill where the
+ * store wants one row per bill: the OP register sends a consultation and its
+ * registration fee as two rows of one bill, paid by one UPI transaction. The
+ * record is built from the first line; SUM_SAME adds up what the lines share.
+ */
 function filterRows(rows, rowFilter) {
-  const rules = Array.isArray(rowFilter) ? rowFilter : [];
-  return rows.filter((row) => rules.every((rule) => passes(row, rule)));
+  const rules = (Array.isArray(rowFilter) ? rowFilter : []).filter((rule) => rule && rule.field);
+  let kept = rows.filter((row) => rules.every((rule) => passes(row, rule)));
+  for (const rule of rules.filter((r) => r.op === 'oncePer')) {
+    const fields = [rule.field, ...(rule.values || []).map((v) => String(v).trim()).filter(Boolean)];
+    const seen = new Set();
+    kept = kept.filter((row) => {
+      const key = keyOf(row, fields);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  return kept;
+}
+
+/**
+ * SUM_SAME: one field added up over every RECEIVED row that shares the given
+ * fields' values with this row — all the lines of its bill, whichever of them
+ * this config keeps. `where` leaves rows out of the sum (a cancelled line).
+ * The sums are worked out once per mapping and kept in `cache`.
+ */
+function sumSame(row, mapping, allRows, cache) {
+  const arg = mapping.transformArg || {};
+  const same = Array.isArray(arg.same) ? arg.same : [];
+  let sums = cache.get(mapping);
+  if (!sums) {
+    sums = new Map();
+    const where = Array.isArray(arg.where) ? arg.where : [];
+    for (const r of allRows) {
+      if (!where.every((rule) => passes(r, rule))) continue;
+      const key = keyOf(r, same);
+      const entry = sums.get(key) || { sum: 0, bad: null };
+      const n = toNumber(r[arg.field]);
+      if (Number.isNaN(n)) entry.bad = r[arg.field];
+      else entry.sum += n ?? 0;
+      sums.set(key, entry);
+    }
+    cache.set(mapping, sums);
+  }
+  const entry = sums.get(keyOf(row, same));
+  if (!entry) return { value: 0 };
+  if (entry.bad !== null) return { error: `${arg.field} "${entry.bad}" is not a number` };
+  return { value: Math.round(entry.sum * 100) / 100 };
 }
 
 /**
  * One mapped value. Returns { value } or { error } — an error is a value the
  * transform could not read (bad date, non-numeric amount), reported per row.
+ * `context` is what SUM_SAME reads beyond the row itself: every received row,
+ * and a cache for its sums (mapRows supplies both).
  */
-function applyOne(row, mapping) {
+function applyOne(row, mapping, context = {}) {
   if (mapping.condition && !passes(row, mapping.condition)) return { value: null };
   const arg = mapping.transformArg || {};
   const raw = mapping.sourceField ? row[mapping.sourceField] : null;
@@ -158,9 +218,23 @@ function applyOne(row, mapping) {
   switch (mapping.transform) {
     case 'CONSTANT':
       return { value: arg.value ?? null };
+    case 'SUM_SAME':
+      return sumSame(row, mapping, context.allRows || [row], context.cache || new Map());
     case 'TRIM_SPACES': {
       const s = text(raw);
       return { value: s === null ? null : s.replace(/\s+/g, ' ') };
+    }
+    // `default` is what a blank stands for: the DIAG call leaves the
+    // organisation blank for a patient the report prints as "Self Paying".
+    case 'UPPER': {
+      const s = text(raw);
+      return { value: s === null ? arg.default ?? null : s.toUpperCase() };
+    }
+    // "ODE4108/26" -> "ODE4108": the Card / UPI rows keep a Diagnostics
+    // receipt number as its report prints it, without the year.
+    case 'RECEIPT_WITHOUT_YEAR': {
+      const no = text(raw);
+      return { value: no === null ? null : no.replace(/\/\d{2}$/, '') };
     }
     case 'NUMBER': {
       const n = toNumber(raw);
@@ -213,14 +287,17 @@ function applyOne(row, mapping) {
 }
 
 /**
+ * @param {object[]} rows       the rows to store from (already through filterRows)
+ * @param {object[]} [allRows]  every row the call received — what SUM_SAME adds up over; default `rows`
  * @returns {{ records: object[], errors: {index:number, column:string, message:string}[] }}
  *   records keyed by the target's record keys (receiptNumber, onlineUpiAmount, …)
  */
-function mapRows(rows, mappings, targetTable) {
+function mapRows(rows, mappings, targetTable, allRows = rows) {
   const target = targetOf(targetTable);
   if (!target) throw Object.assign(new Error(`Unknown target table "${targetTable}"`), { status: 400 });
   const byColumn = new Map(target.columns.map((c) => [c.column, c]));
   const active = (mappings || []).filter((m) => byColumn.has(m.dbColumn) && (m.sourceField || SOURCELESS_TRANSFORMS.has(m.transform)));
+  const context = { allRows, cache: new Map() };
 
   const records = [];
   const errors = [];
@@ -228,7 +305,7 @@ function mapRows(rows, mappings, targetTable) {
     const rec = {};
     for (const col of target.columns) rec[col.key] = null;
     for (const m of active) {
-      const out = applyOne(row, m);
+      const out = applyOne(row, m, context);
       if (out.error) errors.push({ index, column: m.dbColumn, message: out.error });
       else rec[byColumn.get(m.dbColumn).key] = out.value;
     }

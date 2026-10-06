@@ -311,7 +311,7 @@
           that, a <strong>Reconciliation Flow</strong> lane per collection type (Online, Cheque,
           Card, UPI) shows MIS uploaded &rarr; bank/MPR uploaded &rarr; reconciled % &rarr; items
           to review, plus status charts and a Bank &amp; Gateway Files table. Admins also see the
-          last few Shared Folder Automation runs here.
+          last few Shared Folder Check runs here.
         </p>
 
         <h3>Reconciliation Results — nine tabs, one screen</h3>
@@ -594,9 +594,21 @@
       <section id="automation" class="card guide__card">
         <h2>Automation &amp; Go-Live <span class="chip chip--muted">Admin only</span></h2>
 
-        <h3>Shared Folder Automation</h3>
+        <h3>Automation</h3>
         <p>
-          <span class="loc">Reconciliation &rsaquo; Shared Folder Automation</span> checks one
+          <span class="loc">Reconciliation &rsaquo; Automation</span> has two tabs, in the order the
+          day runs.
+        </p>
+        <p>
+          <strong>HIS Data Pull</strong> — every morning at the <strong>Pull Time</strong> (IST) the
+          day before's IP, Diagnostics and OP collections are pulled straight from HIS for every unit and
+          stored, so nobody has to press Sync. If HIS does not answer it tries again; a morning that
+          was missed is caught up on a later one. <strong>Pull Now</strong> pulls a chosen day for
+          every unit immediately — only what is not already pulled — and works while the daily pull
+          is still switched off. Every pull is listed; open one to see each unit and day.
+        </p>
+        <p>
+          <strong>Shared Folder Check</strong> — checks one
           shared network folder on a schedule, pulls in anything new, and reconciles it — no manual
           upload. Configure a <strong>Shared Folder Path</strong> (a UNC path the server can read),
           a daily <strong>Check Time</strong> (IST), and a <strong>Batch "Uploaded By" Label</strong>
@@ -614,8 +626,10 @@
         <div class="notice notice--req">
           <i class="pi pi-info-circle"></i>
           <span>
-            A run that ingests anything re-runs reconciliation automatically afterwards — the same
-            as pressing <strong>Run Reconciliation</strong> by hand.
+            A run that ingests anything — or finds collections pulled from HIS that are not yet
+            reconciled — re-runs reconciliation automatically afterwards, the same as pressing
+            <strong>Run Reconciliation</strong> by hand. Set the folder's Check Time after the HIS
+            Pull Time.
           </span>
         </div>
 
@@ -684,7 +698,7 @@
               <tr><td>Card / UPI row shows <span class="chip chip--danger">No Gateway Row</span></td><td>CARD MPR, Pine Labs, or UPI MPR for that period isn't uploaded yet, or Card / UPI Reconciliation hasn't been generated. Upload it, press Generate on that tab.</td></tr>
               <tr><td><span class="chip chip--info">Pending Approval</span> never clears</td><td>Check Match Approvals &rsaquo; To Review. Nothing shows there unless the requester's Reporting Manager is set correctly in User Management.</td></tr>
               <tr><td>Can't delete an MIS row or a batch</td><td>The Go-Live date has passed and the switch is on — deletes are frozen from that date. Check Go-Live Settings.</td></tr>
-              <tr><td>A file dropped in the shared folder never shows up</td><td>Automation isn't enabled, today's check time hasn't run yet, or the path is wrong. Open Shared Folder Automation and use Run Now to check immediately.</td></tr>
+              <tr><td>A file dropped in the shared folder never shows up</td><td>Automation isn't enabled, today's check time hasn't run yet, or the path is wrong. Open Automation &rsaquo; Shared Folder Check and use Run Now to check immediately.</td></tr>
               <tr><td>"Rules have changed" banner</td><td>Press <strong>Regenerate</strong> on that tab, or re-run everything from Upload &amp; Run.</td></tr>
             </tbody>
           </table>

@@ -1804,6 +1804,12 @@ router.get('/summary', async (req, res, next) => {
     const emptyUcrCounts = () => ({
       total: 0, matched: 0, easebuzzMatched: 0, contra: 0, partialMatch: 0,
       mismatched: 0, unmatched: 0, ambiguous: 0, excluded: 0, notGenerated: 0,
+      // How many of `matched` were matched as a GROUP: several receipts against
+      // one gateway row (a bill's consultation and registration fee paid by
+      // one UPI transaction). Counted inside `matched` — it is a matched
+      // verdict everywhere else in the app (status-tone.js) — and given here
+      // too, so a screen can say how many, and the client can find them.
+      groupedMatched: 0,
       // Same two rupee figures the payment types carry. This module matches a
       // receipt against a gateway row one-for-one, so there is no grouped
       // shortfall to report — balanceAmount is structurally always 0 here.
@@ -1817,9 +1823,19 @@ router.get('/summary', async (req, res, next) => {
       bucket.total += row.n;
       bucket.totalAmount += Number(row.amount_total) || 0;
       if (row.match_status === 'MATCHED') bucket.matched += row.n;
-      else if (row.match_status === 'AMOUNT_MISMATCH') bucket.mismatched += row.n;
+      else if (row.match_status === 'GROUPED_MATCHED') {
+        // Was falling through to "not generated" (2026-10-06: 386 OP UPI rows,
+        // all matched in pairs, shown as "1,031 of 1,417" with a banner asking
+        // for a Generate that had already run).
+        bucket.matched += row.n;
+        bucket.groupedMatched += row.n;
+      } else if (row.match_status === 'AMOUNT_MISMATCH') bucket.mismatched += row.n;
       else if (row.match_status === 'UNMATCHED') bucket.unmatched += row.n;
-      else bucket.notGenerated += row.n; // NULL — never run through Generate
+      else if (row.match_status === null) bucket.notGenerated += row.n; // never run through Generate
+      // A verdict this summary does not know is still a verdict: it has been
+      // through Generate, and it is not a match — so it asks for attention
+      // rather than hiding under "not generated".
+      else bucket.unmatched += row.n;
     }
     card.totalAmount = Math.round(card.totalAmount * 100) / 100;
     upiGateway.totalAmount = Math.round(upiGateway.totalAmount * 100) / 100;

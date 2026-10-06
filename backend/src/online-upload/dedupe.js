@@ -59,12 +59,15 @@ async function assertNewFile(table, buffer, scope) {
  * `identityOf` builds the SAME string from a parsed row. They MUST agree — keep
  * them next to each other in the route.
  *
- * @param {{ table:string, identitySql:string, identityOf:(row:any)=>string, rows:any[] }} opts
+ * `from` replaces the bare table where the identity needs a second table (a
+ * cheque row's unit is its batch's — mis-identities.js).
+ *
+ * @param {{ table:string, from?:string, identitySql:string, identityOf:(row:any)=>string, rows:any[] }} opts
  * @returns {Promise<{ newRows:any[], skipped:number }>}
  */
-async function filterNewRows({ table, identitySql, identityOf, rows }) {
+async function filterNewRows({ table, from, identitySql, identityOf, rows }) {
   if (!rows || rows.length === 0) return { newRows: [], skipped: 0 };
-  const { rows: existing } = await db.query(`SELECT DISTINCT ${identitySql} AS ident FROM ${table}`);
+  const { rows: existing } = await db.query(`SELECT DISTINCT ${identitySql} AS ident FROM ${from || table}`);
   const seen = new Set(existing.map((r) => r.ident));
   const newRows = [];
   let skipped = 0;

@@ -40,7 +40,7 @@ async function fetchAndMap(config, location, date, mappingsOverride) {
     dateValue: formatRequestDate(date, config.date_format),
   });
   const kept = filterRows(call.rows, config.row_filter);
-  const { records, errors } = mapRows(kept, mappings, config.target_table);
+  const { records, errors } = mapRows(kept, mappings, config.target_table, call.rows);
   const verification =
     call.total === null ? 'UNVERIFIED' : call.total === call.rows.length ? 'VERIFIED' : 'FAILED';
   return { call, kept, records, errors, verification, mappings };
@@ -69,7 +69,8 @@ async function syncIpCollection({ locationId, date, apiConfigId, uploadedBy, req
     syncRunId: r.syncRunId,
   };
   if (r.status === 'NO_DATA') {
-    return { status: 'NO_DATA', message: `No IP online/UPI collections for ${unitName} on ${displayDate(date)}`, ...counts, rowCount: 0 };
+    const message = r.emptyAnswer ? r.message : `No IP online/UPI collections for ${unitName} on ${displayDate(date)}`;
+    return { status: 'NO_DATA', message, emptyAnswer: r.emptyAnswer, ...counts, rowCount: 0 };
   }
   if (r.status !== 'SUCCESS') throw httpError(r.httpStatus || 500, r.message);
 

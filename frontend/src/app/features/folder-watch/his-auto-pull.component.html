@@ -1,0 +1,276 @@
+<div class="his-pull glass-card glass-card--static">
+  <p class="his-pull__intro">
+    Every morning, pulls the day before's collections for every unit straight from HIS and stores them — nobody has to press Sync.
+    The Shared Folder Check then brings in the statements and runs the reconciliation.
+  </p>
+
+  @if (loadError(); as err) {
+    <div class="notice notice--danger">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  @if (schedule(); as s) {
+    <div class="covers">
+      <div class="covers__row">
+        <span class="covers__label">Units</span>
+        @for (u of s.units; track u) {
+          <span class="chip">{{ u }}</span>
+        } @empty {
+          <span class="chip chip--warn">No unit has a HIS Loc Code — set it on Master Data → Location Master</span>
+        }
+      </div>
+      <div class="covers__row">
+        <span class="covers__label">From HIS</span>
+        @for (src of sourcesOn(); track src.method) {
+          <span class="chip">{{ src.label }} — {{ src.on }} of {{ src.total }} APIs on</span>
+        }
+        @for (src of sourcesOff(); track src.method) {
+          <span class="chip chip--warn">{{ src.label }} — switched off, not pulled</span>
+        }
+        @if (!s.sources.length) {
+          <span class="chip chip--warn">No API is set up — Master Data → API Config</span>
+        }
+        <span class="field-hint">Switch IP, Diagnostics and OP on or off on Master Data → API Config.</span>
+      </div>
+    </div>
+
+    <div class="form">
+      @if (formError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+
+      <label class="field">
+        <span class="field-label">Pull Time (IST, daily)</span>
+        <input pInputText type="time" class="time-input" [ngModel]="draft().runTime" (ngModelChange)="updateDraft({ runTime: $event })" />
+        <span class="field-hint">Always the day before: the pull of 06-Oct at 08:00 brings 05-Oct, the whole day.</span>
+      </label>
+
+      <div class="field">
+        <span class="field-label">If HIS does not answer</span>
+        <div class="inline-numbers">
+          <span>try again</span>
+          <input
+            pInputText
+            type="number"
+            class="number-input"
+            [min]="s.limits.retryCount[0]"
+            [max]="s.limits.retryCount[1]"
+            [ngModel]="draft().retryCount"
+            (ngModelChange)="updateDraft({ retryCount: $event })"
+          />
+          <span>time(s),</span>
+          <input
+            pInputText
+            type="number"
+            class="number-input"
+            [min]="s.limits.retryMinutes[0]"
+            [max]="s.limits.retryMinutes[1]"
+            [ngModel]="draft().retryMinutes"
+            (ngModelChange)="updateDraft({ retryMinutes: $event })"
+          />
+          <span>minutes apart</span>
+        </div>
+        <span class="field-hint">A retry asks only for what did not come the first time.</span>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Catch up a missed day</span>
+        <div class="inline-numbers">
+          <span>up to</span>
+          <input
+            pInputText
+            type="number"
+            class="number-input"
+            [min]="s.limits.catchUpDays[0]"
+            [max]="s.limits.catchUpDays[1]"
+            [ngModel]="draft().catchUpDays"
+            (ngModelChange)="updateDraft({ catchUpDays: $event })"
+          />
+          <span>day(s) back</span>
+        </div>
+        <span class="field-hint">
+          If a morning's pull never happened — server off, HIS down all morning — that day is pulled on a later morning. Never further back
+          than the day before the pull was switched on. 0 = only ever the day before.
+        </span>
+      </div>
+
+      <label class="field field--switch">
+        <span class="field-label">Automatic Pull Enabled</span>
+        <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
+      </label>
+
+      @if (orderWarning(); as warning) {
+        <div class="notice notice--warning">
+          <i class="pi pi-exclamation-triangle"></i>
+          {{ warning }}
+        </div>
+      }
+
+      <div class="his-pull__actions">
+        <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+          @if (saving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-check"></i>
+          }
+          <span>Save Settings</span>
+        </button>
+        @if (saved()) {
+          <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
+        }
+        <span class="next-pull">
+          @if (s.active && s.nextRunAt) {
+            Next pull: <strong>{{ s.nextRunAt | date: 'd MMM y, h:mm a' }}</strong> — for {{ nextPullDay() | date: 'dd-MMM-yyyy' }}
+          } @else {
+            Switched off — nothing is pulled on its own.
+          }
+        </span>
+      </div>
+    </div>
+
+    <div class="pull-now">
+      <label class="field">
+        <span class="field-label">Collection Day</span>
+        <input pInputText type="date" class="date-input" [max]="maxDay" [ngModel]="pullDay()" (ngModelChange)="pullDay.set($event)" />
+      </label>
+      <button
+        type="button"
+        class="btn btn-ghost"
+        [disabled]="pulling() || !pullDay()"
+        (click)="pullNow()"
+        pTooltip="Pull this day for every unit right now — only what is not already pulled. Works while the schedule is switched off."
+      >
+        @if (pulling()) {
+          <span class="btn-spinner btn-spinner--dark"></span>
+        } @else {
+          <i class="pi pi-play"></i>
+        }
+        <span>Pull Now</span>
+      </button>
+      @if (pulling()) {
+        <span class="field-hint">Asking HIS for every unit — this can take a minute or two.</span>
+      }
+    </div>
+
+    @if (pullError(); as err) {
+      <div class="notice notice--danger">
+        <i class="pi pi-times-circle"></i>
+        {{ err }}
+      </div>
+    }
+    @if (pullNote(); as note) {
+      <div class="notice notice--info">
+        <i class="pi pi-info-circle"></i>
+        Pull finished: {{ note }}.
+      </div>
+    }
+  }
+
+  <div class="his-pull__runs">
+    <p-table
+      [value]="runsPage().runs"
+      dataKey="id"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="runsPage().total > runsPage().pageSize"
+      [rows]="runsPage().pageSize"
+      [first]="(runsPage().page - 1) * runsPage().pageSize"
+      [totalRecords]="runsPage().total"
+      [loading]="runsLoading()"
+      (onLazyLoad)="onPageChange($event)"
+      styleClass="p-datatable-sm runs-table"
+    >
+      <ng-template #header>
+        <tr>
+          <th>Pulled At</th>
+          <th>Trigger</th>
+          <th>Collection Day</th>
+          <th>Status</th>
+          <th class="num">Unit-days</th>
+          <th class="num">Rows Stored</th>
+          <th class="num">APIs Not Pulled</th>
+          <th class="actions-col"></th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-run>
+        <tr class="clickable-row" (click)="detailRun.set(run)">
+          <td class="nowrap">{{ run.startedAt | date: 'd MMM y, h:mm a' }}</td>
+          <td>{{ trigger(run) }}</td>
+          <td class="nowrap">
+            @if (run.dayFrom !== run.dayTo) {
+              {{ run.dayFrom | date: 'dd-MMM' }} to
+            }
+            {{ run.dayTo | date: 'dd-MMM-yyyy' }}
+          </td>
+          <td><span class="status-pill" [class]="statusPillClass(run.status)">{{ statusLabel(run.status) }}</span></td>
+          <td class="num">{{ run.unitDays | number }}</td>
+          <td class="num">{{ run.rowsStored | number }}</td>
+          <td class="num" [class.has-failures]="run.apisFailed > 0">{{ run.apisFailed | number }}</td>
+          <td class="actions-col"><i class="pi pi-angle-right"></i></td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="8">
+            <div class="empty-state">
+              <i class="pi pi-sync"></i>
+              <strong>No pulls yet</strong>
+              <p>Use "Pull Now" to try it for one day, then switch the daily pull on.</p>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  <!-- One pull — every unit-day it asked for, and what came -->
+  @if (detailRun(); as run) {
+    <p-dialog
+      [header]="'Pull — ' + (run.startedAt | date: 'd MMM y, h:mm a')"
+      [visible]="true"
+      (visibleChange)="detailRun.set(null)"
+      [modal]="true"
+      [style]="{ width: '44rem' }"
+    >
+      <p class="detail-line">
+        <strong>{{ trigger(run) }}</strong> · {{ statusLabel(run.status) }} · {{ outcome(run) }}
+      </p>
+      @if (run.errorMessage && !run.summary.length) {
+        <div class="notice notice--danger">
+          <i class="pi pi-times-circle"></i>
+          {{ run.errorMessage }}
+        </div>
+      }
+      @if (run.summary.length) {
+        <ul class="unit-days">
+          @for (u of run.summary; track u.unitName + u.date) {
+            <li [class.unit-days__item--failed]="u.apisFailed > 0">
+              <div class="unit-days__head">
+                <span class="unit-days__name">{{ u.unitName }} · {{ u.date | date: 'dd-MMM-yyyy' }}</span>
+                <span class="unit-days__rows">{{ u.rowsStored | number }} stored@if (u.rowsSkipped) { · {{ u.rowsSkipped | number }} already stored}</span>
+              </div>
+              @if (received(u); as line) {
+                <p class="unit-days__received">From HIS: {{ line }}</p>
+              }
+              @for (f of u.failures; track $index) {
+                <p class="unit-days__failure">
+                  <i class="pi pi-times-circle"></i>
+                  @if (f.source) { <strong>{{ f.source }}</strong> — }{{ f.message }}
+                  @if (f.apis.length) { <span class="unit-days__apis">({{ f.apis.join(', ') }})</span> }
+                </p>
+              }
+              @for (n of u.notes ?? []; track $index) {
+                <p class="unit-days__note"><i class="pi pi-info-circle"></i> <strong>{{ n.source }}</strong> — {{ n.message }}</p>
+              }
+            </li>
+          }
+        </ul>
+        <p class="field-hint">Each API's own line — rows received, kept, stored — is under History on the Upload &amp; Run screen's Sync from HIS card.</p>
+      } @else if (run.status === 'COMPLETED') {
+        <p class="field-hint">Every unit already had this day pulled in full, so HIS was not asked again.</p>
+      }
+    </p-dialog>
+  }
+</div>

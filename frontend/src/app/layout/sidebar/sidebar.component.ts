@@ -68,7 +68,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Upload & Run', icon: 'pi pi-play-circle', path: '/reconciliation', screenKey: 'upload-run' },
       { label: 'Mismatch Review', icon: 'pi pi-exclamation-triangle', path: '/reconciliation/mismatches', screenKey: 'mismatch-review' },
       { label: 'Match Approvals', icon: 'pi pi-verified', path: '/reconciliation/approvals', screenKey: 'match-approvals' },
-      { label: 'Shared Folder Automation', icon: 'pi pi-cloud-download', path: '/reconciliation/folder-watch', adminOnly: true },
+      { label: 'Automation', icon: 'pi pi-cloud-download', path: '/reconciliation/folder-watch', adminOnly: true },
       { label: 'Go-Live Settings', icon: 'pi pi-lock', path: '/reconciliation/go-live-settings', adminOnly: true },
       { label: 'Statements', icon: 'pi pi-book', path: '/upload-online/statements', screenKey: 'statements' },
       { label: 'Reconciliation Results', icon: 'pi pi-chart-bar', path: '/matched-rules/results', screenKey: 'reconciliation-results' },

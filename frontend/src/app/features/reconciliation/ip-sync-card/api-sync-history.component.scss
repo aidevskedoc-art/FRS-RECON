@@ -1,0 +1,91 @@
+@use 'styles/mixins';
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.history__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+
+  ::ng-deep .p-select,
+  ::ng-deep .p-datepicker {
+    min-width: 11rem;
+  }
+}
+
+.history__clear {
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  background: none;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.history__total {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.history__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--status-danger-fg);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+}
+
+.history__table {
+  @include mixins.scrollbar-thin;
+  overflow: auto;
+}
+
+.history__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--text-tertiary);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.num {
+  text-align: right;
+}
+
+.pill {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
+  white-space: nowrap;
+
+  .pi {
+    margin-left: var(--space-1);
+    font-size: 0.75em;
+  }
+}
+
+.pill--ok {
+  @include mixins.status-chip(var(--status-success-fg), var(--status-success-bg), var(--status-success-border));
+}
+
+.pill--failed {
+  @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
+}
+
+.pill--running {
+  @include mixins.status-chip(var(--status-warning-fg), var(--status-warning-bg), var(--status-warning-border));
+}

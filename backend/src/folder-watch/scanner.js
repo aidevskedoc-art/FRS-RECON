@@ -17,6 +17,8 @@ const { logAction } = require('../audit-log');
 const { ingestOneFile, runReconciliationPlan } = require('./ingest');
 const { connectShare } = require('./share-credentials');
 const { beginScan, endScan } = require('./scan-lock');
+const { pullIdle } = require('../api-sync/auto-pull');
+const { unreconciledApiBatches } = require('../api-sync/sync-unit-day');
 
 const SPREADSHEET_EXT = /\.(xlsx|xls)$/i;
 // A file whose mtime is inside this window might still be mid-copy —
@@ -59,15 +61,17 @@ function fileOutcome(results) {
 }
 
 /**
- * @param {{ triggeredBy?: number|null, reconcile?: () => Promise<object[]>, config?: object }} [opts]
+ * @param {{ triggeredBy?: number|null, reconcile?: () => Promise<object[]>, config?: object, hisRowsWaiting?: () => Promise<number> }} [opts]
  *   triggeredBy = a users.id for a manual "Run Now", omitted/null for the
  *   scheduler. reconcile and config default to the real reconciliation plan
  *   and the saved folder_watch_config row — both replaceable so a test can
  *   scan its own folder, and check WHEN reconciliation runs, without touching
- *   the real settings or re-running Generate over real batches.
+ *   the real settings or re-running Generate over real batches. hisRowsWaiting
+ *   likewise stands in for the count of HIS batches not yet reconciled.
  */
 async function runScan(opts = {}) {
   const reconcile = opts.reconcile || runReconciliationPlan;
+  const hisRowsWaiting = opts.hisRowsWaiting || unreconciledApiBatches;
   let config = opts.config;
   if (!config) {
     const { rows: configRows } = await db.query('SELECT * FROM folder_watch_config ORDER BY id LIMIT 1');
@@ -107,6 +111,10 @@ async function runScan(opts = {}) {
   let reportsIngested = 0;
 
   try {
+    // A pull from the HIS that is storing right now finishes first, so the
+    // reconciliation below sees all of it (api-sync/auto-pull.js).
+    await pullIdle();
+
     await connectShare(config); // no-op unless a share user ID is saved
     const candidates = await listCandidateFiles(config.folder_path);
     counts.found = candidates.length;
@@ -149,13 +157,20 @@ async function runScan(opts = {}) {
     }
 
     // ---- phase 2: reconcile, once, only if something new came in -----------
+    // "New" is a file this scan stored — or rows from the HIS (the morning's
+    // pull, or a person's Sync from HIS) that no reconciliation has been
+    // through yet, on a day when no file arrived to set one off.
     let generateSummary = null;
-    if (reportsIngested > 0) {
+    const hisBatchesWaiting = reportsIngested > 0 ? 0 : await hisRowsWaiting();
+    if (reportsIngested > 0 || hisBatchesWaiting > 0) {
       generateSummary = await reconcile();
       await logAction({
         entityType: 'folder_watch_run', entityId: run.id,
         action: 'FOLDER_WATCH_RECONCILIATION_RUN',
-        details: { steps: generateSummary.length, failedSteps: generateSummary.filter((s) => s.error).length },
+        details: {
+          steps: generateSummary.length, failedSteps: generateSummary.filter((s) => s.error).length,
+          ...(hisBatchesWaiting > 0 ? { hisBatchesWaiting } : {}),
+        },
       });
     }
 

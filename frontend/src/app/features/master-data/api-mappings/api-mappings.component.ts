@@ -27,6 +27,16 @@ interface MappingRow {
   constant: string;
   /** SUM: the API fields to add up, comma-separated. */
   sumFields: string;
+  /** SUM_SAME: the one field to add up, and the field(s) the rows it is added over share. */
+  sameField: string;
+  sameShare: string;
+  /**
+   * The saved transform and its argument, untouched. An argument has parts this
+   * screen does not edit (a blank's default, a sum's "leave out" rule); they are
+   * sent back as saved for as long as the transform itself is not changed.
+   */
+  savedTransform: ApiTransform | null;
+  savedArg: Record<string, unknown> | null;
   condField: string;
   condOp: ApiFilterOp;
   condValues: string;
@@ -48,6 +58,10 @@ function blankRow(c: { column: string; label: string; type: string; required?: b
     lookup: '',
     constant: '',
     sumFields: '',
+    sameField: '',
+    sameShare: '',
+    savedTransform: null,
+    savedArg: null,
     condField: '',
     condOp: 'in',
     condValues: '',
@@ -189,8 +203,8 @@ export class ApiMappingsComponent {
         this.rows.set(target.columns.map((c) => this.toRow(c, byColumn.get(c.column))));
         this.addKnownFields(
           mappings.flatMap((m) => {
-            const arg = m.transformArg as { dateField?: string; fields?: string[] } | null;
-            return [m.sourceField, m.condition?.field, arg?.dateField, ...(arg?.fields ?? [])];
+            const arg = m.transformArg as { dateField?: string; fields?: string[]; field?: string; same?: string[] } | null;
+            return [m.sourceField, m.condition?.field, arg?.dateField, arg?.field, ...(arg?.fields ?? []), ...(arg?.same ?? [])];
           }),
         );
         this.dirty.set(false);
@@ -217,6 +231,10 @@ export class ApiMappingsComponent {
       lookup: lookupToText(arg['map'] as Record<string, unknown> | undefined),
       constant: arg['value'] === undefined || arg['value'] === null ? '' : String(arg['value']),
       sumFields: Array.isArray(arg['fields']) ? (arg['fields'] as unknown[]).join(', ') : '',
+      sameField: typeof arg['field'] === 'string' ? arg['field'] : '',
+      sameShare: Array.isArray(arg['same']) ? (arg['same'] as unknown[]).join(', ') : '',
+      savedTransform: m.transform,
+      savedArg: m.transformArg,
       condField: m.condition?.field ?? '',
       condOp: m.condition?.op ?? 'in',
       condValues: (m.condition?.values ?? []).join(', '),
@@ -228,12 +246,15 @@ export class ApiMappingsComponent {
     return this.rows()
       .filter((r) => this.isMapped(r))
       .map((r) => {
-        let transformArg: Record<string, unknown> | null = null;
+        // What was saved, kept under whatever is edited here — only while the transform is the saved one.
+        const saved = r.transform === r.savedTransform ? r.savedArg ?? {} : {};
+        let transformArg: Record<string, unknown> | null = Object.keys(saved).length ? { ...saved } : null;
         if (r.transform === 'DATETIME' || r.transform === 'DATE') transformArg = { format: r.format.trim() };
         if (r.transform === 'RECEIPT_MONTH_PREFIX') transformArg = { dateField: r.dateField.trim(), dateFormat: r.dateFormat.trim() };
-        if (r.transform === 'LOOKUP') transformArg = { map: textToLookup(r.lookup) };
+        if (r.transform === 'LOOKUP') transformArg = { ...saved, map: textToLookup(r.lookup) };
         if (r.transform === 'CONSTANT') transformArg = { value: r.constant };
         if (r.transform === 'SUM') transformArg = { fields: splitList(r.sumFields) };
+        if (r.transform === 'SUM_SAME') transformArg = { ...saved, field: r.sameField.trim(), same: splitList(r.sameShare) };
         const values = this.opTakesValues(r.condOp) ? splitList(r.condValues) : [];
         return {
           dbColumn: r.column,

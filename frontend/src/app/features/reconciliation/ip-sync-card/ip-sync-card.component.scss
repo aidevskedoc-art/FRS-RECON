@@ -1,5 +1,16 @@
 @use 'styles/mixins';
 
+// The History popup: solid instead of the frosted glass other dialogs use
+// (_primeng-bridge.scss) — a wide table read closely, and the page showing
+// through behind it made the rows hard to read. Same as the Rule details
+// dialog. var(--surface) is #fff in light mode and the normal dark surface in
+// dark mode, so the text stays readable in both.
+::ng-deep .p-dialog.his-history-dialog {
+  background: var(--surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .sync-card {
   @include mixins.card;
   display: flex;
@@ -43,6 +54,74 @@
   @media (max-width: 640px) {
     grid-template-columns: 1fr;
   }
+}
+
+// The automatic morning pull: on/off and how the last one went.
+.auto-pull {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--status-info-fg);
+
+  strong {
+    font-weight: 700;
+  }
+}
+
+.auto-pull--off {
+  color: var(--text-tertiary);
+}
+
+.auto-pull__last {
+  color: var(--text-tertiary);
+}
+
+.auto-pull__last--bad {
+  color: var(--status-danger-fg);
+  font-weight: 600;
+}
+
+// What pressing Sync will pull, per HIS call: "IP — 1 of 5 APIs on", "Diagnostics — switched off".
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.sources__label {
+  font-weight: 600;
+}
+
+.sources__hint {
+  color: var(--text-tertiary);
+}
+
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--status-success-fg);
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+}
+
+.source--off {
+  color: var(--status-warning-fg);
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+}
+
+.sync-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .sync-field {

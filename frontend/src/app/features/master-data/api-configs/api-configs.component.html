@@ -2,7 +2,7 @@
   <app-page-header
     icon="pi pi-server"
     title="API Config"
-    subtitle="HIS API connections. Each API is known by its name; its field mapping is set on API Field Mapping."
+    subtitle="HIS APIs. Each API is called once per sync and its answer is split into parts — one for each list it feeds. Switch an API on or off as a whole, or open it to see its parts."
   >
     <button actions type="button" class="ai-button-primary" (click)="openAdd()">
       <i class="pi pi-plus"></i>
@@ -17,11 +17,48 @@
     </div>
   }
 
-  <div class="api-configs__table-wrap glass-card glass-card--static">
-    <p-table [value]="api.configs()" dataKey="id" styleClass="p-datatable-sm api-configs-table">
+  <!-- One block per HIS API (IP, Diagnostics); its parts — the API Configs that read that call — open on demand. -->
+  @for (group of groups(); track group.method) {
+   <section class="api-group glass-card glass-card--static">
+    <header class="api-group__head">
+      <button
+        type="button"
+        class="api-group__open"
+        (click)="toggleExpanded(group.method)"
+        [attr.aria-expanded]="isExpanded(group.method)"
+        [pTooltip]="isExpanded(group.method) ? 'Hide the parts' : 'Show the parts'"
+      >
+        <i class="pi" [class.pi-chevron-right]="!isExpanded(group.method)" [class.pi-chevron-down]="isExpanded(group.method)"></i>
+      </button>
+      <div class="api-group__title" (click)="toggleExpanded(group.method)">
+        <strong>{{ group.label }}</strong>
+        <span class="muted">
+          HIS API "{{ group.method }}" · called once per sync · {{ group.configs.length }} part{{ group.configs.length === 1 ? '' : 's' }}
+        </span>
+      </div>
+      <span class="status-pill" [class.status-pill--active]="group.hasKey" [class.status-pill--danger]="!group.hasKey">
+        {{ group.hasKey ? 'API key saved' : 'API key missing' }}
+      </span>
+      <span class="api-group__state">
+        {{ group.on === 0 ? 'Off' : group.on === group.configs.length ? 'On' : group.on + ' of ' + group.configs.length + ' parts on' }}
+      </span>
+      <p-toggleswitch
+        [ngModel]="group.on > 0"
+        (ngModelChange)="toggleGroup(group, $event)"
+        [disabled]="groupBusy() !== null"
+        [pTooltip]="group.on > 0 ? 'Switch every part of this API off' : 'Switch every part of this API on'"
+      />
+      <button type="button" class="action-icon" (click)="openTest(group.configs[0])" pTooltip="Test call" aria-label="Test API">
+        <i class="pi pi-play"></i>
+      </button>
+    </header>
+
+    @if (isExpanded(group.method)) {
+    <div class="api-configs__table-wrap">
+    <p-table [value]="group.configs" dataKey="id" styleClass="p-datatable-sm api-configs-table">
       <ng-template #header>
         <tr>
-          <th>Name</th>
+          <th>Part</th>
           <th>Stores Into</th>
           <th>URL</th>
           <th>API Key</th>
@@ -85,19 +122,19 @@
         </tr>
       </ng-template>
 
-      <ng-template #emptymessage>
-        <tr>
-          <td colspan="7">
-            <div class="empty-state">
-              <i class="pi pi-server"></i>
-              <strong>No APIs configured</strong>
-              <p>Add the HIS API to sync collections without uploading files.</p>
-            </div>
-          </td>
-        </tr>
-      </ng-template>
     </p-table>
-  </div>
+    </div>
+    }
+   </section>
+  } @empty {
+    <div class="glass-card glass-card--static">
+      <div class="empty-state">
+        <i class="pi pi-server"></i>
+        <strong>No APIs configured</strong>
+        <p>Add the HIS API to sync collections without uploading files.</p>
+      </div>
+    </div>
+  }
 
   <!-- Add / edit -->
   <p-dialog

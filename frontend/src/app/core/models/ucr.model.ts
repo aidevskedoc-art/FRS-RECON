@@ -65,10 +65,28 @@ export interface UcrIpRecord {
   matchedSource: { reference: string | null; amount: number | null; date: string | null; sourceType: UcrMatchSourceType | null } | null;
 }
 
+/**
+ * The figures above a Card / UPI Reconciliation list, over EVERY row the
+ * filter selects — not only the page loaded. `matched` includes the Grouped
+ * Matched rows (`groupedMatched` of them); the gateway total counts each
+ * gateway row once, however many receipts were matched against it.
+ */
+export interface UcrTally {
+  matched: number;
+  groupedMatched: number;
+  mismatched: number;
+  unmatched: number;
+  notGenerated: number;
+  misTotal: number;
+  gatewayTotal: number;
+}
+
 export interface UcrIpRecordsPage {
   total: number;
   page: number;
   pageSize: number;
+  /** Absent from a backend that has not been restarted since it was added. */
+  tally?: UcrTally;
   records: UcrIpRecord[];
 }
 

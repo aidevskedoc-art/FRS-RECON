@@ -42,7 +42,7 @@
     "test-scope-filters": "node scripts/test-scope-filters.js",
     "test-status-colours": "node scripts/test-status-colours.js",
     "test-scan-lock": "node scripts/test-scan-lock.js",
-    "test-api-sync": "node scripts/test-api-sync.js && node scripts/test-api-sync-unit-day.js",
+    "test-api-sync": "node scripts/test-api-sync.js && node scripts/test-api-sync-unit-day.js && node scripts/test-api-sync-diag.js && node scripts/test-api-sync-op.js && node scripts/test-api-auto-pull.js",
     "save-api-response": "node --env-file=.env scripts/save-api-response.js",
     "verify-api-vs-file": "node --env-file=.env scripts/verify-api-vs-file.js"
   },

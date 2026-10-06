@@ -9,7 +9,7 @@
  *
  * Key: FOLDER_WATCH_KEY from .env if set, else JWT_SECRET. Changing whichever
  * one is in use makes the saved password unreadable — re-enter it on the
- * Shared Folder Automation screen.
+ * Automation screen (Shared Folder Check tab).
  */
 const crypto = require('crypto');
 const { execFile } = require('child_process');

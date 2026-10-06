@@ -182,6 +182,13 @@ export interface BankStatementSummary {
 /** Card/UPI Reconciliation (UCR) rows — same shape as PaymentTypeSummary, plus notGenerated (match_status IS NULL — no Generate run yet, same concept as BankStatementSummary's). */
 export interface UcrPaymentTypeSummary extends PaymentTypeSummary {
   notGenerated: number;
+  /**
+   * How many of `matched` were matched as a group — several receipts against
+   * one gateway row (a bill's consultation and registration fee paid by one UPI
+   * transaction). Already counted in `matched`; "Grouped Matched" on the screens.
+   * Absent from a backend that has not been restarted since this was added.
+   */
+  groupedMatched?: number;
 }
 
 export interface AmountDifference {

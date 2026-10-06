@@ -47,11 +47,12 @@
     <p-button label="Refresh" icon="pi pi-refresh" size="small" [outlined]="true" [loading]="loading()" (onClick)="load()" />
   </div>
 
-  @if (!loading() && rows().length > 0) {
+  @if (rows().length > 0) {
     <div class="card-reconciliation__tally">
       <span>{{ total() }} Card rows</span>
-      <span class="tally--matched">{{ matchedCount() }} matched</span>
-      <span class="tally--grouped-matched">{{ groupedMatchedCount() }} grouped matched</span>
+      <span class="tally--matched" pTooltip="Grouped Matched rows are matched rows: several receipts adding up to one gateway row.">
+        {{ matchedCount() }} matched@if (groupedMatchedCount() > 0) { ({{ groupedMatchedCount() }} of them grouped)}
+      </span>
       <span class="tally--mismatch">{{ mismatchCount() }} amount mismatch</span>
       <span class="tally--unmatched">{{ unmatchedCount() }} no gateway row</span>
       <span class="tally--sep">·</span>
@@ -62,7 +63,22 @@
   }
 
   <div class="card-reconciliation__table-wrap">
-    <p-table [value]="rows()" dataKey="id" [loading]="loading()" styleClass="p-datatable-sm">
+    <p-table
+      [value]="rows()"
+      dataKey="id"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="total() > 50"
+      [rows]="pageSize()"
+      [first]="first()"
+      [totalRecords]="total()"
+      [rowsPerPageOptions]="[50, 100, 200, 500]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="{first} – {last} of {totalRecords}"
+      [loading]="loading()"
+      (onLazyLoad)="onPage($event)"
+      styleClass="p-datatable-sm"
+    >
       <ng-template #header>
         <tr>
           <th>Status</th>
@@ -93,7 +109,7 @@
           <td class="mono">{{ row.referenceId || '—' }}</td>
           <td class="num strong">{{ amount(row.amount) }}</td>
           <td>{{ sourceLabel(row) }}</td>
-          <td class="num">{{ amount(row.matchedSource?.amount) }}</td>
+          <td class="num" [pTooltip]="groupNote(row)" tooltipPosition="left">{{ amount(row.matchedSource?.amount) }}</td>
           <td class="num" [class.diff]="difference(row)">{{ amount(difference(row)) }}</td>
           <td>{{ row.matchedSource?.date || '—' }}</td>
         </tr>

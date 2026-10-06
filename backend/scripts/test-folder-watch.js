@@ -122,8 +122,13 @@ async function main() {
     const old = new Date(Date.now() - 10 * 60 * 1000);
     for (const f of [BANK_FILE, COMBINED_FILE, GARBAGE_FILE]) await fs.utimes(path.join(tmpDir, f), old, old);
 
+    // The real count of HIS batches still to reconcile would make "no
+    // reconciliation when nothing new arrived" depend on what the database
+    // happens to hold — pinned to none here, and to some for run 4.
+    const hisRowsWaiting = async () => 0;
+
     // ---- run 1: everything new -------------------------------------------------
-    const run1 = await runScan({ config, reconcile }); runIds.push(run1.id);
+    const run1 = await runScan({ config, reconcile, hisRowsWaiting }); runIds.push(run1.id);
     const files1 = await filesOf(run1.id);
 
     check('run1: COMPLETED', run1.status === 'COMPLETED');
@@ -156,7 +161,7 @@ async function main() {
     check('DB: IP collections batch really stored, labelled as automated', ipBatch?.uploaded_by === 'ZZ Test Automation');
 
     // ---- run 2: nothing new ---------------------------------------------------------
-    const run2 = await runScan({ config, reconcile }); runIds.push(run2.id);
+    const run2 = await runScan({ config, reconcile, hisRowsWaiting }); runIds.push(run2.id);
     check('run2: all 3 counted as already taken', run2.files_found === 3 && run2.files_skipped === 3 && run2.files_ingested === 0);
     check('run2: no new file rows', (await filesOf(run2.id)).length === 0);
     check('run2: no reconciliation when nothing new arrived', reconcileCalls.length === 1 && run2.generate_summary === null);
@@ -169,12 +174,17 @@ async function main() {
     check('retry: superseded all 7 earlier results', retry.body?.rowsSuperseded === 7);
     check('retry: history kept, not deleted', (await filesOf(run1.id)).length === files1.length);
 
-    const run3 = await runScan({ config, reconcile }); runIds.push(run3.id);
+    const run3 = await runScan({ config, reconcile, hisRowsWaiting }); runIds.push(run3.id);
     const files3 = await filesOf(run3.id);
     check('run3: only the retried file was read again', files3.every((f) => f.file_name === COMBINED_FILE) && files3.length === 7);
     const stored = files3.filter((f) => ['UCR_IP', 'UCR_OP', 'MIS_IP', 'CHEQUE_COLLECTION', 'REFUND'].includes(f.detected_type));
     check('run3: every report stored last time now comes back as a duplicate', stored.length === 5 && stored.every((f) => f.outcome === 'SKIPPED_DUPLICATE'));
     check('run3: nothing stored twice, so no reconciliation', run3.files_ingested === 0 && reconcileCalls.length === 1);
+
+    // ---- run 4: no new file, but rows pulled from the HIS are waiting --------------
+    const run4 = await runScan({ config, reconcile, hisRowsWaiting: async () => 2 }); runIds.push(run4.id);
+    check('run4: no file read', run4.files_ingested === 0 && (await filesOf(run4.id)).length === 0);
+    check('run4: reconciliation still ran, for the HIS rows', reconcileCalls.length === 2 && Array.isArray(run4.generate_summary));
 
     // ---- the reconciliation plan's order is the manual screen's order -------------------
     const plan = await buildPlanSteps();

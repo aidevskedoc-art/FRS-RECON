@@ -1,0 +1,131 @@
+<div class="history">
+  <div class="history__filters">
+    <p-select
+      [options]="units()"
+      [ngModel]="unit()"
+      (ngModelChange)="unit.set($event); applyFilters()"
+      placeholder="All units"
+      [showClear]="true"
+      appendTo="body"
+    />
+    <p-select
+      [options]="sources()"
+      optionLabel="label"
+      optionValue="method"
+      [ngModel]="method()"
+      (ngModelChange)="method.set($event); applyFilters()"
+      placeholder="IP, Diagnostics and OP"
+      [showClear]="true"
+      appendTo="body"
+    />
+    <p-select
+      [options]="kindOptions"
+      optionLabel="label"
+      optionValue="value"
+      [ngModel]="kind()"
+      (ngModelChange)="kind.set($event); applyFilters()"
+      placeholder="Sync and download"
+      [showClear]="true"
+      appendTo="body"
+    />
+    <p-select
+      [options]="statusOptions"
+      optionLabel="label"
+      optionValue="value"
+      [ngModel]="status()"
+      (ngModelChange)="status.set($event); applyFilters()"
+      placeholder="Any status"
+      [showClear]="true"
+      appendTo="body"
+    />
+    <p-datepicker
+      [ngModel]="day()"
+      (ngModelChange)="day.set($event); applyFilters()"
+      dateFormat="dd/mm/yy"
+      placeholder="Collection date"
+      [showIcon]="true"
+      iconDisplay="input"
+      [showClear]="true"
+      appendTo="body"
+    />
+    @if (hasFilters()) {
+      <button type="button" class="history__clear" (click)="clearFilters()">Clear filters</button>
+    }
+    <span class="history__total">{{ history().total.toLocaleString('en-IN') }} fetch{{ history().total === 1 ? '' : 'es' }}</span>
+  </div>
+
+  @if (error(); as err) {
+    <div class="history__error">
+      <i class="pi pi-times-circle"></i>
+      {{ err }}
+    </div>
+  }
+
+  <div class="history__table">
+    <p-table
+      [value]="history().items"
+      dataKey="id"
+      [lazy]="true"
+      [paginator]="true"
+      [rows]="history().pageSize"
+      [first]="(history().page - 1) * history().pageSize"
+      [totalRecords]="history().total"
+      [rowsPerPageOptions]="[20, 50, 100]"
+      [loading]="loading()"
+      (onLazyLoad)="onLazyLoad($event)"
+      styleClass="p-datatable-sm"
+    >
+      <ng-template #header>
+        <tr>
+          <th>Fetched at</th>
+          <th>From</th>
+          <th>API</th>
+          <th>Unit</th>
+          <th>Collection date</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th class="num">Received</th>
+          <th class="num">Kept</th>
+          <th class="num">Stored</th>
+          <th class="num">Already stored</th>
+          <th>Took</th>
+          <th>By</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-item>
+        <tr>
+          <td class="nowrap">{{ item.fetchedAt | date: 'd MMM y, h:mm:ss a' }}</td>
+          <td>{{ item.source ?? '—' }}</td>
+          <td>{{ item.apiName ?? '—' }}</td>
+          <td>{{ item.unitName ?? '—' }}</td>
+          <td class="nowrap">{{ item.transDate | date: 'dd-MMM-yyyy' }}</td>
+          <td>{{ item.kind === 'SYNC' ? 'Sync' : 'Download' }}</td>
+          <td>
+            <span [class]="pillClass(item.status)" [pTooltip]="item.note ?? ''" tooltipPosition="left">
+              {{ label(item.status) }}
+              @if (item.note) {
+                <i class="pi pi-info-circle"></i>
+              }
+            </span>
+          </td>
+          <td class="num">{{ count(item.rowsReceived) }}</td>
+          <td class="num">{{ count(item.rowsKept) }}</td>
+          <td class="num">{{ count(item.rowsStored) }}</td>
+          <td class="num">{{ count(item.rowsSkipped) }}</td>
+          <td class="nowrap">{{ took(item) }}</td>
+          <td>{{ item.fetchedBy ?? '—' }}</td>
+        </tr>
+      </ng-template>
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="13">
+            <div class="history__empty">
+              <i class="pi pi-history"></i>
+              <strong>Nothing fetched from HIS {{ hasFilters() ? 'matches these filters' : 'yet' }}</strong>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+</div>

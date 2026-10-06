@@ -135,13 +135,14 @@
           @for (run of automationAlertRuns(); track run.id) {
             <a
               routerLink="/reconciliation/folder-watch"
+              [queryParams]="{ tab: 'folder' }"
               class="user-menu__item"
               role="menuitem"
               (click)="notifPanelOpen.set(false)"
             >
               <i class="pi pi-exclamation-triangle"></i>
               <span>
-                Shared Folder Automation — {{ run.status === 'FAILED' ? 'run failed' : run.filesFailed + ' file(s) failed' }}
+                Shared Folder Check — {{ run.status === 'FAILED' ? 'run failed' : run.filesFailed + ' file(s) failed' }}
                 <span class="notif-menu__when">{{ run.startedAt | date: 'd MMM, h:mm a' }}</span>
               </span>
             </a>

@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { DialogModule } from 'primeng/dialog';
@@ -10,6 +12,7 @@ import { FolderWatchService } from '../../core/services/folder-watch.service';
 import { errorMessage } from '../../core/services/policy-document.service';
 import { FolderWatchConfig, FolderWatchConfigDraft, FolderWatchConnectionTest, FolderWatchReconcileStep, FolderWatchRun, FolderWatchRunFile } from '../../core/models';
 import { PageHeaderComponent } from '../../shared/ui/page-header.component';
+import { HisAutoPullComponent } from './his-auto-pull.component';
 
 const OUTCOME_LABELS: Record<string, string> = {
   INGESTED: 'Stored',
@@ -19,6 +22,14 @@ const OUTCOME_LABELS: Record<string, string> = {
   SKIPPED_EMPTY: 'Nothing to store',
   FAILED: 'Failed',
 };
+
+type TabId = 'his-pull' | 'folder';
+
+/** In the order the day runs: the HIS pull, then the folder check that reconciles. */
+const TABS: { id: TabId; label: string; icon: string }[] = [
+  { id: 'his-pull', label: 'HIS Data Pull', icon: 'pi pi-sync' },
+  { id: 'folder', label: 'Shared Folder Check — Statements and Reconciliation', icon: 'pi pi-folder-open' },
+];
 
 /** One file in a run, with every report found in it (several for a combined workbook). */
 interface FileGroup {
@@ -46,13 +57,24 @@ function emptyDraft(): FolderWatchConfigDraft {
 @Component({
   selector: 'app-folder-watch',
   standalone: true,
-  imports: [DatePipe, FormsModule, TableModule, InputTextModule, DialogModule, ToggleSwitchModule, TooltipModule, PageHeaderComponent],
+  imports: [DatePipe, FormsModule, TableModule, InputTextModule, DialogModule, ToggleSwitchModule, TooltipModule, PageHeaderComponent, HisAutoPullComponent],
   templateUrl: './folder-watch.component.html',
   styleUrl: './folder-watch.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class FolderWatchComponent {
   protected readonly folderWatch = inject(FolderWatchService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  // ---- tabs — ?tab=folder opens the folder check (its run alerts link there) ----------
+  protected readonly tabs = TABS;
+  protected readonly activeTab = signal<TabId>('his-pull');
+
+  protected selectTab(id: TabId): void {
+    this.activeTab.set(id);
+    this.router.navigate([], { queryParams: { tab: id }, queryParamsHandling: 'merge', relativeTo: this.route, replaceUrl: true });
+  }
 
   protected readonly draft = signal<FolderWatchConfigDraft>(emptyDraft());
   protected readonly formError = signal<string | null>(null);
@@ -99,6 +121,11 @@ export class FolderWatchComponent {
   });
 
   constructor() {
+    // Followed, not read once: a run alert clicked while this screen is open changes only the query.
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed())
+      .subscribe((params) => this.activeTab.set(params.get('tab') === 'folder' ? 'folder' : 'his-pull'));
+
     this.folderWatch.refreshConfig().subscribe({
       next: (config) => { if (config) this.draft.set(this.toDraft(config)); },
       error: (err) => this.listError.set(errorMessage(err)),

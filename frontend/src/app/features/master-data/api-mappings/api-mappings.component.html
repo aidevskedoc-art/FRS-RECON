@@ -108,6 +108,9 @@
               @case ('SUM') {
                 <span class="muted">sum of fields</span>
               }
+              @case ('SUM_SAME') {
+                <span class="muted">sum over a bill's lines</span>
+              }
               @default {
                 <p-select
                   [options]="fieldOptions()"
@@ -168,6 +171,24 @@
                   (ngModelChange)="update(i, { sumFields: $event })"
                   placeholder="CASH_AMT, CARD_AMT, CHEQUE_AMT"
                   pTooltip="API fields to add up, comma-separated. A blank field counts as 0."
+                />
+              }
+              @case ('SUM_SAME') {
+                <input
+                  pInputText
+                  type="text"
+                  [ngModel]="row.sameField"
+                  (ngModelChange)="update(i, { sameField: $event })"
+                  placeholder="Field to add up, e.g. CTD_ITEM_PRICE"
+                  pTooltip="The one API field to add up — over every row the API sent that shares the field(s) beside this."
+                />
+                <input
+                  pInputText
+                  type="text"
+                  [ngModel]="row.sameShare"
+                  (ngModelChange)="update(i, { sameShare: $event })"
+                  placeholder="Rows sharing, e.g. BILL_NO"
+                  pTooltip="The field(s) the rows must share, comma-separated: BILL_NO adds up all the lines of a bill; BILL_NO, TCD_ONLINE_TRANS_ID only those paid by one transaction."
                 />
               }
               @default {

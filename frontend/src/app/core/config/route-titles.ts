@@ -21,7 +21,7 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/reconciliation', { title: 'Reconciliation', subtitle: 'Upload & run' }],
   ['/reconciliation/mismatches', { title: 'Mismatch Review', subtitle: 'Reconciliation' }],
   ['/reconciliation/approvals', { title: 'Match Approvals', subtitle: 'Reconciliation' }],
-  ['/reconciliation/folder-watch', { title: 'Shared Folder Automation', subtitle: 'Reconciliation' }],
+  ['/reconciliation/folder-watch', { title: 'Automation', subtitle: 'Reconciliation' }],
   ['/reconciliation/go-live-settings', { title: 'Go-Live Settings', subtitle: 'Reconciliation' }],
 
   ['/insurance-policy/dashboard', { title: 'Insurance Dashboard', subtitle: 'Automation Insurance' }],

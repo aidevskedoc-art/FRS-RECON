@@ -98,6 +98,13 @@
           </tbody>
         </table>
       </div>
+      @if ((s.cardPayments.groupedMatched ?? 0) > 0) {
+        <p class="section-note">
+          Matched includes {{ s.cardPayments.groupedMatched }} <strong>Grouped Matched</strong> rows — several receipts that add up to one
+          CARD MPR / Pine Labs row. They are listed with the other matched rows on
+          <a routerLink="/matched-rules/results" [queryParams]="{ tab: 'card-reconciliation' }">Card Reconciliation</a> (Status: Matched).
+        </p>
+      }
     </div>
 
     <div class="recon-summary__section">
@@ -136,6 +143,13 @@
           </tbody>
         </table>
       </div>
+      @if ((s.upiGatewayPayments.groupedMatched ?? 0) > 0) {
+        <p class="section-note">
+          Matched includes {{ s.upiGatewayPayments.groupedMatched }} <strong>Grouped Matched</strong> rows — several receipts that add up to
+          one UPI MPR row (the same RRN). They are listed with the other matched rows on
+          <a routerLink="/matched-rules/results" [queryParams]="{ tab: 'upi-reconciliation' }">UPI Reconciliation</a> (Status: Matched).
+        </p>
+      }
     </div>
 
     <div class="recon-summary__section">

@@ -158,6 +158,7 @@ function outcome(config, runId, fields) {
     rowsSkipped: 0,
     total: null,
     verification: null,
+    emptyAnswer: false,
     batchRows: [],
     ...fields,
   };
@@ -179,7 +180,7 @@ async function failed(config, runId, err, counts = {}) {
 async function storeConfig({ config, runId, call, verification, location, date, uploadedBy, req }) {
   const kept = filterRows(call.rows, config.row_filter);
   const counts = { rowsReceived: call.rows.length, rowsKept: kept.length };
-  const { records, errors } = mapRows(kept, await loadMappings(config.id), config.target_table);
+  const { records, errors } = mapRows(kept, await loadMappings(config.id), config.target_table, call.rows);
   if (errors.length) {
     const first = errors.slice(0, 5).map((e) => `row ${e.index + 1} ${e.column}: ${e.message}`).join('; ');
     throw httpError(422, `${errors.length} value(s) could not be read with the saved field mapping — nothing stored. ${first}`, { counts });
@@ -189,8 +190,14 @@ async function storeConfig({ config, runId, call, verification, location, date, 
   const checked = { ...counts, total: call.total, verification };
 
   if (records.length === 0) {
-    await finishRun(runId, { ...base, status: 'NO_DATA', rows_stored: 0, rows_skipped: 0 });
-    return outcome(config, runId, { ...checked, status: 'NO_DATA', rowsMapped: 0, message: `Nothing for "${config.name}" — ${where}` });
+    // "Nothing of this kind that day" is ordinary. An answer with no rows AT
+    // ALL is not, for a working hospital unit: it is how the HIS answers a
+    // request it did not accept. Nothing is stored either way, but this one is
+    // said out loud and kept on the run.
+    const emptyAnswer = call.rows.length === 0;
+    const message = emptyAnswer ? `HIS sent no rows at all for ${where}` : `Nothing for "${config.name}" — ${where}`;
+    await finishRun(runId, { ...base, status: 'NO_DATA', rows_stored: 0, rows_skipped: 0, ...(emptyAnswer ? { error_message: message } : {}) });
+    return outcome(config, runId, { ...checked, status: 'NO_DATA', rowsMapped: 0, emptyAnswer, message });
   }
 
   const { stored, skipped, batches } = await storeApiRecords({
@@ -316,6 +323,24 @@ function resultToApi({ batchRows, httpStatus, ...result }) {
   };
 }
 
+/** What each HIS call is to the person pressing Sync. */
+const SOURCE_LABELS = { IpCollection: 'IP', DiagCollectionjs: 'Diagnostics', ConsCollectionjs: 'OP' };
+
+/**
+ * How many API batches hold rows Generate has not seen yet (an append clears
+ * matched_at — stores.js). Whoever reconciles next — a person pressing Run, or
+ * the shared-folder scan — has these still to go through.
+ */
+async function unreconciledApiBatches() {
+  const { rows } = await db.query(
+    `SELECT (SELECT count(*) FROM ip_payment_upload_batches WHERE source = 'API' AND matched_at IS NULL AND row_count > 0)
+          + (SELECT count(*) FROM diag_op_upload_batches WHERE source = 'API' AND matched_at IS NULL AND row_count > 0)
+          + (SELECT count(*) FROM cheque_collection_upload_batches WHERE source = 'API' AND matched_at IS NULL AND row_count > 0)
+          + (SELECT count(*) FROM ucr_ip_upload_batches WHERE source = 'API' AND matched_at IS NULL AND row_count > 0) AS n`,
+  );
+  return Number(rows[0].n);
+}
+
 /**
  * For the Upload & Run card — no secrets, any signed-in user: the active
  * configs a sync would run, the units it can be run for, and recent runs.
@@ -337,7 +362,16 @@ async function syncOptions() {
     'SELECT id, name, his_loc_code FROM locations WHERE active AND his_loc_code IS NOT NULL ORDER BY name',
   );
   const { rows: runs } = await db.query('SELECT * FROM api_sync_runs ORDER BY started_at DESC LIMIT 20');
+  // The Run button counts on this, so a sync is still runnable after the page has been reloaded.
+  const unreconciledBatches = await unreconciledApiBatches();
+  // Per HIS call, how many of its configs are switched on — so the card can say
+  // what a sync covers ("IP: 1 of 5 on · Diagnostics: switched off") before it is pressed.
+  const { rows: sources } = await db.query(
+    `SELECT soap_method, count(*)::int AS total, (count(*) FILTER (WHERE active))::int AS active
+       FROM api_configs GROUP BY soap_method ORDER BY min(id)`,
+  );
   return {
+    sources: sources.map((s) => ({ method: s.soap_method, label: SOURCE_LABELS[s.soap_method] ?? s.soap_method, on: s.active, total: s.total })),
     apis: configs.map((c) => ({
       id: String(c.id),
       name: c.name,
@@ -347,12 +381,15 @@ async function syncOptions() {
     })),
     units: units.map((u) => ({ id: String(u.id), name: u.name, hisLocCode: u.his_loc_code })),
     recentRuns: runs.map(syncRunRowToApi),
+    unreconciledBatches,
   };
 }
 
 module.exports = {
+  SOURCE_LABELS,
   syncUnitDay,
   syncOptions,
+  unreconciledApiBatches,
   resultToApi,
   groupByConnection,
   connectionKey,

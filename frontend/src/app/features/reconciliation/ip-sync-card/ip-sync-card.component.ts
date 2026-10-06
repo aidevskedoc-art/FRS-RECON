@@ -1,13 +1,23 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
+import { DialogModule } from 'primeng/dialog';
+import { ApiSyncHistoryComponent } from './api-sync-history.component';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
-import { ApiSyncOptions, ApiSyncResult, ApiSyncResultStatus, ApiSyncRun, ApiSyncRunResult } from '../../../core/models';
+import { ApiPullRunStatus, ApiPullStatus, ApiSyncOptions, ApiSyncResult, ApiSyncResultStatus, ApiSyncRun, ApiSyncRunResult } from '../../../core/models';
+
+const PULL_STATUS_LABEL: Record<ApiPullRunStatus, string> = {
+  RUNNING: 'running now',
+  COMPLETED: 'completed',
+  PARTIAL: 'partly pulled',
+  FAILED: 'failed',
+};
 
 const STATUS_LABEL: Record<ApiSyncRun['status'], string> = {
   RUNNING: 'Running',
@@ -32,28 +42,38 @@ const RESULT_LOOK: Record<ApiSyncResultStatus, { icon: string; tone: 'ok' | 'qui
  * Collections" workbook would give — so no file is needed. One call to the HIS
  * can feed several stores, so the result is a line per API. What is synced is
  * reconciled by the screen's normal Run, like any uploaded batch.
+ *
+ * An Admin also gets "Download HIS data": the same call's answer saved as a
+ * workbook, every row and field as received, to see the API's own format.
  */
 @Component({
   selector: 'app-ip-sync-card',
   standalone: true,
-  imports: [FormsModule, DatePipe, ButtonModule, SelectModule, DatePickerModule, TooltipModule],
+  imports: [FormsModule, DatePipe, ButtonModule, SelectModule, DatePickerModule, TooltipModule, DialogModule, ApiSyncHistoryComponent],
   templateUrl: './ip-sync-card.component.html',
   styleUrl: './ip-sync-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class IpSyncCardComponent {
   private readonly api = inject(ApiConfigService);
+  private readonly auth = inject(AuthService);
 
   /** True while the parent's Run, or the shared-folder scan, is in progress. */
   readonly disabled = input(false);
   /** Fires after a sync that stored rows, so the parent can offer Run. */
   readonly synced = output<ApiSyncRunResult>();
+  /**
+   * How many synced batches Run Reconciliation has not been through yet, as the
+   * server counts them — so Run is still offered after the page is reloaded.
+   */
+  readonly pending = output<number>();
 
   protected readonly options = signal<ApiSyncOptions | null>(null);
   protected readonly loadError = signal<string | null>(null);
   protected readonly unitId = signal<string | null>(null);
   protected readonly date = signal<Date>(yesterday());
   protected readonly syncing = signal(false);
+  protected readonly downloading = signal(false);
   protected readonly result = signal<ApiSyncRunResult | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly today = new Date();
@@ -79,19 +99,56 @@ export class IpSyncCardComponent {
       !!this.unitId() &&
       !!this.date(),
   );
+  /** The download's backend route requires role='Admin'. */
+  protected readonly isAdmin = computed(() => this.auth.isFrsAdmin());
+  /** Read-only, so the parent's Run and the folder scan do not hold it back. */
+  protected readonly canDownload = computed(
+    () =>
+      !this.syncing() &&
+      !this.downloading() &&
+      (this.options()?.apis ?? []).some((a) => a.ready) &&
+      !!this.unitId() &&
+      !!this.date(),
+  );
+
+  protected readonly unreconciled = computed(() => this.options()?.unreconciledBatches ?? 0);
+  /** Per HIS call (IP, Diagnostics), how many of its APIs are switched on — what pressing Sync will cover. */
+  protected readonly sources = computed(() => this.options()?.sources ?? []);
+  /** The full fetch history, opened from the card. */
+  protected readonly historyOpen = signal(false);
+  protected readonly unitNames = computed(() => (this.options()?.units ?? []).map((u) => u.name));
+  /** The HIS answered with no rows at all — a request it did not accept, far more often than a day with no collections. */
+  protected readonly emptyAnswer = computed(() => (this.result()?.results ?? []).some((r) => r.emptyAnswer));
+  /** The automatic morning pull: on or off, and how the last one went — so nobody syncs by hand what it already brought. */
+  protected readonly pullStatus = signal<ApiPullStatus | null>(null);
+  protected readonly pullStatusLabel = PULL_STATUS_LABEL;
+
+  private wasDisabled = false;
 
   constructor() {
     this.loadOptions();
+    // When the parent's Run (or a folder scan) ends, what is left to reconcile has changed.
+    effect(() => {
+      const disabled = this.disabled();
+      if (this.wasDisabled && !disabled) this.loadOptions();
+      this.wasDisabled = disabled;
+    });
   }
 
   private loadOptions(): void {
     this.api.fetchSyncOptions().subscribe({
       next: (opts) => {
         this.options.set(opts);
+        this.pending.emit(opts.unreconciledBatches ?? 0);
         this.loadError.set(null);
         if (!this.unitId() && opts.units.length === 1) this.unitId.set(opts.units[0].id);
       },
       error: (err) => this.loadError.set(errorMessage(err)),
+    });
+    // Only a line of information — the card works the same without it.
+    this.api.fetchPullStatus().subscribe({
+      next: (status) => this.pullStatus.set(status),
+      error: () => this.pullStatus.set(null),
     });
   }
 
@@ -112,6 +169,22 @@ export class IpSyncCardComponent {
         this.syncing.set(false);
         this.error.set(errorMessage(err));
         this.loadOptions();
+      },
+    });
+  }
+
+  /** Saves what the HIS sends for the chosen unit and day, as received. Stores nothing. */
+  protected download(): void {
+    const unit = (this.options()?.units ?? []).find((u) => u.id === this.unitId());
+    if (!this.canDownload() || !unit) return;
+    const ymd = toYmd(this.date());
+    this.downloading.set(true);
+    this.error.set(null);
+    this.api.downloadResponse(unit.id, ymd, `HIS response - ${unit.name} - ${ymd}.xlsx`).subscribe({
+      next: () => this.downloading.set(false),
+      error: (err) => {
+        this.downloading.set(false);
+        this.error.set(errorMessage(err));
       },
     });
   }

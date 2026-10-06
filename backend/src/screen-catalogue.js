@@ -4,7 +4,7 @@
  * implement at URL level, don't block at API level").
  *
  * Deliberately NOT included here: User Management, Location Master,
- * Go-Live Settings, Shared Folder Automation. Those 4 screens' backend
+ * Go-Live Settings, Automation. Those 4 screens' backend
  * routes already hard-require role==='Admin' (requireAdmin middleware) —
  * granting them to an Auditor here would only render a page whose every API
  * call 403s. They stay gated by role alone (frsAdminGuard on the frontend),

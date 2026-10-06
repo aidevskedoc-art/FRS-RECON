@@ -1905,6 +1905,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS cheque_collection_upload_batches_api_month_key
 CREATE UNIQUE INDEX IF NOT EXISTS refund_upload_batches_api_month_key
   ON refund_upload_batches (unit_name, period_month) WHERE source = 'API';
 
+-- The same for the Diagnostics / OP MIS, which the DIAG API feeds.
+ALTER TABLE diag_op_upload_batches ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'FILE'; -- 'FILE' | 'API'
+ALTER TABLE diag_op_upload_batches ADD COLUMN IF NOT EXISTS period_month DATE;
+CREATE UNIQUE INDEX IF NOT EXISTS diag_op_upload_batches_api_month_key
+  ON diag_op_upload_batches (unit_name, period_month) WHERE source = 'API';
+
 -- The API Configs the app adds after its first start (src/api-sync/seed-configs.js),
 -- by key: each is added ONCE, so one an Admin later edits, renames or deletes
 -- is never put back by a restart.
@@ -1912,3 +1918,74 @@ CREATE TABLE IF NOT EXISTS api_config_seeds (
   seed_key   VARCHAR(100) PRIMARY KEY,
   seeded_at  TIMESTAMP NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- Automatic daily pull from the HIS (src/api-sync/auto-pull.js).
+--
+-- Every morning the app asks the HIS for the day BEFORE — every active unit
+-- with a HIS Loc Code, every API Config that is switched on — and stores it,
+-- exactly as a person pressing "Sync from HIS" for each unit would. The bank
+-- and gateway statements still arrive through the shared folder, whose own
+-- daily check then reconciles (folder_watch_config above).
+--
+-- One settings row, the same shape as folder_watch_config. It ships switched
+-- OFF: nothing calls the HIS on its own until an Admin turns it on.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS api_pull_schedule (
+  id                SERIAL PRIMARY KEY,
+  active            BOOLEAN NOT NULL DEFAULT false,
+  -- Wall-clock IST, like folder_watch_config.run_time — never the server's own timezone.
+  run_time          TIME NOT NULL DEFAULT '08:00:00',
+  -- A day that was missed (server off, HIS down) is pulled on a later morning,
+  -- this many days back at most. 0 = only ever the day before.
+  catch_up_days     INTEGER NOT NULL DEFAULT 3,
+  -- A pull that did not finish cleanly is tried again the same morning.
+  retry_count       INTEGER NOT NULL DEFAULT 2,
+  retry_minutes     INTEGER NOT NULL DEFAULT 15,
+  uploaded_by_label VARCHAR(255) NOT NULL DEFAULT 'Automated (HIS pull)',
+  -- The IST day it was last switched on. Catching up never reaches further
+  -- back than the day before this: a day from before the pull was on was not
+  -- "missed", and switching it on must not quietly load a week of old data.
+  active_since      DATE,
+  updated_at        TIMESTAMP NOT NULL DEFAULT now(),
+  updated_by        INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+INSERT INTO api_pull_schedule (active)
+SELECT false WHERE NOT EXISTS (SELECT 1 FROM api_pull_schedule);
+
+-- One row per pull: the morning's scheduled one, each same-morning retry of
+-- it, or an Admin's "Pull now". What each API did is in api_sync_runs as for
+-- any sync; `summary` holds the outcome per unit and day so the settings
+-- screen can show a pull at a glance.
+CREATE TABLE IF NOT EXISTS api_pull_runs (
+  id             SERIAL PRIMARY KEY,
+  started_at     TIMESTAMP NOT NULL DEFAULT now(),
+  finished_at    TIMESTAMP,
+  -- RUNNING | COMPLETED (nothing left to pull) | PARTIAL (some pulled, some
+  -- not) | FAILED (nothing could be pulled)
+  status         VARCHAR(20) NOT NULL DEFAULT 'RUNNING',
+  -- NULL = the schedule fired it; set = a person pressed "Pull now".
+  triggered_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  -- 1 = the scheduled pull (or a Pull now); 2+ = a retry of that morning's.
+  attempt        INTEGER NOT NULL DEFAULT 1,
+  -- The collection days looked at: the day before the pull, and any earlier
+  -- day being caught up.
+  day_from       DATE NOT NULL,
+  day_to         DATE NOT NULL,
+  unit_days      INTEGER NOT NULL DEFAULT 0,
+  rows_stored    INTEGER NOT NULL DEFAULT 0,
+  apis_failed    INTEGER NOT NULL DEFAULT 0,
+  summary        JSONB,
+  error_message  TEXT
+);
+CREATE INDEX IF NOT EXISTS api_pull_runs_started_idx ON api_pull_runs(started_at DESC);
+
+-- At most one pull at a time, and a RUNNING row at startup is a pull the
+-- server stopped in the middle of — closed first, as for folder_watch_runs.
+-- What it missed is picked up by the next morning's catch-up.
+UPDATE api_pull_runs
+   SET status = 'FAILED', finished_at = COALESCE(finished_at, now()),
+       error_message = COALESCE(error_message, 'Interrupted — the server stopped before this pull finished.')
+ WHERE status = 'RUNNING';
+CREATE UNIQUE INDEX IF NOT EXISTS api_pull_runs_one_running
+  ON api_pull_runs(status) WHERE status = 'RUNNING';

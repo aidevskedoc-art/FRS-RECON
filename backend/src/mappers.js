@@ -350,6 +350,7 @@ function diagOpBatchRowToApi(row) {
     uploadedAt: toIso(row.uploaded_at),
     unitName: row.unit_name,
     matchedAt: toIso(row.matched_at),
+    source: row.source || 'FILE',
   };
 }
 

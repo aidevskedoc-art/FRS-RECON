@@ -1,7 +1,7 @@
 /** HIS API connections (Master Data → API Config) — backend/src/routes/api-configs.routes.js. */
 
 /** How a rule tests one API field — backend src/api-sync/targets.js FILTER_OPS. */
-export type ApiFilterOp = 'in' | 'notIn' | 'startsWith' | 'notStartsWith' | 'nonZero' | 'isZero';
+export type ApiFilterOp = 'in' | 'notIn' | 'startsWith' | 'notStartsWith' | 'nonZero' | 'isZero' | 'oncePer';
 
 export interface ApiFilterRule {
   field: string;
@@ -63,13 +63,16 @@ export interface ApiConfigDraft {
 export type ApiTransform =
   | 'DIRECT'
   | 'TRIM_SPACES'
+  | 'UPPER'
   | 'NUMBER'
   | 'NUMBER_ABS'
   | 'NUMBER_NEGATIVE'
   | 'SUM'
+  | 'SUM_SAME'
   | 'DATETIME'
   | 'DATE'
   | 'RECEIPT_MONTH_PREFIX'
+  | 'RECEIPT_WITHOUT_YEAR'
   | 'LOOKUP'
   | 'CONSTANT';
 
@@ -78,7 +81,7 @@ export interface ApiFieldMapping {
   dbColumn: string;
   sourceField: string | null;
   transform: ApiTransform;
-  /** { format } | { dateField, dateFormat } | { map, default? } | { value } | { fields } — depends on the transform. */
+  /** { format } | { dateField, dateFormat } | { map, default? } | { value } | { fields } | { field, same, where? } — depends on the transform. */
   transformArg: Record<string, unknown> | null;
   condition: ApiFilterRule | null;
   sortOrder?: number;
@@ -104,7 +107,7 @@ export interface ApiConfigMeta {
 
 /** A transform that reads no single source field, so its mapping is complete without one. */
 export function isSourcelessTransform(transform: ApiTransform): boolean {
-  return transform === 'CONSTANT' || transform === 'SUM';
+  return transform === 'CONSTANT' || transform === 'SUM' || transform === 'SUM_SAME';
 }
 
 export interface ApiTestResult {
@@ -152,8 +155,149 @@ export interface IpSyncOptions {
 export interface ApiSyncOptions {
   /** `ready: false` = the API has no key to call with yet. */
   apis: { id: string; name: string; targetTable: string; targetLabel: string; ready: boolean }[];
+  /** Per HIS call ("IP", "Diagnostics"): how many of its APIs are switched on, of how many set up. */
+  sources: { method: string; label: string; on: number; total: number }[];
   units: { id: string; name: string; hisLocCode: number }[];
   recentRuns: ApiSyncRun[];
+  /** Synced batches holding rows Run Reconciliation has not been through yet. */
+  unreconciledBatches: number;
+}
+
+/**
+ * One fetch from the HIS as GET /api/api-sync/history lists it: an API a sync
+ * ran (SYNC), or a call "Download HIS data" made (DOWNLOAD).
+ */
+export interface ApiFetchHistoryItem {
+  id: string;
+  kind: 'SYNC' | 'DOWNLOAD';
+  fetchedAt: string | null;
+  /** How long a sync's API took, start to stored; null for a download. */
+  durationMs: number | null;
+  apiName: string | null;
+  /** The HIS call it read — "IP", "Diagnostics" — null once its API Config has been deleted. */
+  source: string | null;
+  method: string | null;
+  unitName: string | null;
+  /** The collection day asked for, 'YYYY-MM-DD'. */
+  transDate: string | null;
+  status: ApiSyncStatus | 'DOWNLOADED';
+  rowsReceived: number | null;
+  rowsKept: number | null;
+  rowsStored: number | null;
+  rowsSkipped: number | null;
+  fetchedBy: string | null;
+  note: string | null;
+}
+
+export interface ApiFetchHistoryPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: ApiFetchHistoryItem[];
+}
+
+/** Filters of the fetch history; `from` / `to` are the days the fetch was made on, `day` the collection day asked for. */
+export interface ApiFetchHistoryQuery {
+  page?: number;
+  pageSize?: number;
+  unit?: string | null;
+  method?: string | null;
+  kind?: string | null;
+  status?: string | null;
+  from?: string | null;
+  to?: string | null;
+  day?: string | null;
+}
+
+// ---- the automatic daily pull (backend src/api-sync/auto-pull.js) ----------------
+
+/** GET / PUT /api/api-sync/pull/schedule — the settings, with what a pull would cover right now. */
+export interface ApiPullSchedule {
+  active: boolean;
+  /** 'HH:MM:SS', IST — never the server's or the browser's own timezone. */
+  runTime: string;
+  /** A missed day is pulled on a later morning, this many days back at most. */
+  catchUpDays: number;
+  /** A pull that did not get everything is tried again the same morning. */
+  retryCount: number;
+  retryMinutes: number;
+  uploadedByLabel: string;
+  /** The IST day it was last switched on; catching up never reaches before the day before this. */
+  activeSince: string | null;
+  updatedAt: string | null;
+  updatedByName?: string;
+  /** Null while switched off. */
+  nextRunAt: string | null;
+  /** [lowest, highest] each number may be set to. */
+  limits: { catchUpDays: [number, number]; retryCount: [number, number]; retryMinutes: [number, number] };
+  /** Every active unit with a HIS Loc Code — a pull covers them all. */
+  units: string[];
+  sources: { method: string; label: string; on: number; total: number }[];
+  /** The shared-folder check's own time: the pull has to come before it. */
+  folderScan: { active: boolean; runTime: string } | null;
+}
+
+export interface ApiPullScheduleDraft {
+  active: boolean;
+  runTime: string;
+  catchUpDays: number;
+  retryCount: number;
+  retryMinutes: number;
+}
+
+/** COMPLETED = nothing left to pull; PARTIAL = some came, some did not; FAILED = nothing came. */
+export type ApiPullRunStatus = 'RUNNING' | 'COMPLETED' | 'PARTIAL' | 'FAILED';
+
+/** One unit-day of a pull. */
+export interface ApiPullUnitDay {
+  unitName: string;
+  date: string;
+  apis: number;
+  apisFailed: number;
+  rowsStored: number;
+  rowsSkipped: number;
+  /** Rows each HIS call sent ("IP", "Diagnostics"); null when the call did not answer. */
+  sources: { source: string; rowsReceived: number | null }[];
+  /** What did not come, one line per cause — `apis` are the APIs it stopped. */
+  failures: { source: string | null; message: string; apis: string[] }[];
+  /** Answers taken as they came — an empty day, once HIS has said so twice. Not failures. */
+  notes?: { source: string; message: string }[];
+}
+
+export interface ApiPullRun {
+  id: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  status: ApiPullRunStatus;
+  /** null = the schedule fired it; set = a person pressed "Pull now". */
+  triggeredBy: string | null;
+  triggeredByName?: string;
+  /** 1, or 2+ for a same-morning retry. */
+  attempt: number;
+  /** The collection days looked at, 'YYYY-MM-DD'. */
+  dayFrom: string;
+  dayTo: string;
+  /** Unit-days that still had something to pull; 0 = everything was already there. */
+  unitDays: number;
+  rowsStored: number;
+  apisFailed: number;
+  summary: ApiPullUnitDay[];
+  errorMessage: string | null;
+}
+
+export interface ApiPullRunsPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  runs: ApiPullRun[];
+}
+
+/** GET /api/api-sync/pull/status — for the Sync from HIS card; any signed-in user. */
+export interface ApiPullStatus {
+  active: boolean;
+  runTime: string;
+  nextRunAt: string | null;
+  lastRun: Pick<ApiPullRun, 'startedAt' | 'status' | 'dayFrom' | 'dayTo' | 'rowsStored' | 'apisFailed'> | null;
 }
 
 /** A run's status, plus ALREADY_RUNNING for an API another sync is working on. */
@@ -176,6 +320,8 @@ export interface ApiSyncResult {
   rowsSkipped: number;
   total: number | null;
   verification: 'VERIFIED' | 'UNVERIFIED' | 'FAILED' | null;
+  /** The HIS sent no rows at all — not "none of this kind", which is ordinary. */
+  emptyAnswer?: boolean;
   /** The monthly batches the rows were added to. */
   batches: { id: string; fileName: string; rowCount: number }[];
 }

@@ -32,6 +32,57 @@
   overflow: auto;
 }
 
+// One block per HIS API: its name, key, one switch — and its parts on demand.
+.api-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.api-group__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+}
+
+.api-group__open {
+  display: inline-flex;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--brand);
+  }
+}
+
+.api-group__title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 16rem;
+  min-width: 0;
+  cursor: pointer;
+
+  strong {
+    font-size: var(--text-lg);
+    color: var(--text);
+  }
+}
+
+.api-group__state {
+  min-width: 7.5rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: right;
+}
+
 :host ::ng-deep .api-configs-table {
   .p-datatable-thead > tr > th,
   .p-datatable-tbody > tr > td {

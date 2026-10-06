@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import { TableModule } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { DialogModule } from 'primeng/dialog';
@@ -14,6 +15,19 @@ import { MasterDataService } from '../../../core/services/master-data.service';
 import { errorMessage } from '../../../core/services/policy-document.service';
 import { ApiConfig, ApiConfigDraft, ApiConfigMeta, ApiFilterOp, ApiFilterRule, ApiTestResult } from '../../../core/models';
 import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
+
+/** One HIS API and its parts: every API Config that reads the same call. */
+interface ApiGroup {
+  method: string;
+  label: string;
+  configs: ApiConfig[];
+  /** How many of its parts are switched on. */
+  on: number;
+  hasKey: boolean;
+}
+
+/** What each HIS call is called on screen, in the order shown. */
+const GROUP_LABELS: Record<string, string> = { IpCollection: 'IP', DiagCollectionjs: 'Diagnostics', ConsCollectionjs: 'OP' };
 
 /** A filter rule as edited: values typed comma-separated. */
 interface RuleDraft {
@@ -74,6 +88,33 @@ export class ApiConfigsComponent {
 
   protected readonly meta = signal<ApiConfigMeta | null>(null);
   protected readonly listError = signal<string | null>(null);
+
+  /**
+   * The list as the HIS has it: one block per API, holding the configs that
+   * read its call. IP and Diagnostics first, then anything else by name.
+   */
+  protected readonly groups = computed<ApiGroup[]>(() => {
+    const byMethod = new Map<string, ApiConfig[]>();
+    for (const config of this.api.configs()) {
+      if (!byMethod.has(config.soapMethod)) byMethod.set(config.soapMethod, []);
+      byMethod.get(config.soapMethod)!.push(config);
+    }
+    const rank = (method: string) => (method in GROUP_LABELS ? Object.keys(GROUP_LABELS).indexOf(method) : 99);
+    return [...byMethod]
+      .map(([method, configs]) => ({
+        method,
+        label: GROUP_LABELS[method] ?? method,
+        configs,
+        on: configs.filter((c) => c.active).length,
+        // The key belongs to the call: one part holding it serves the others.
+        hasKey: configs.some((c) => !c.authParam || c.hasAuthKey),
+      }))
+      .sort((a, b) => rank(a.method) - rank(b.method) || a.method.localeCompare(b.method));
+  });
+  /** The APIs whose parts are showing; closed to begin with, so the page opens as the two APIs. */
+  protected readonly expanded = signal<Set<string>>(new Set());
+  /** The API whose parts are being switched, while that is in flight. */
+  protected readonly groupBusy = signal<string | null>(null);
 
   // ---- add / edit dialog ----
   protected readonly dialogVisible = signal(false);
@@ -230,6 +271,36 @@ export class ApiConfigsComponent {
 
   protected toggleActive(config: ApiConfig): void {
     this.api.update(config.id, { active: !config.active }).subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
+  }
+
+  // ---- one HIS API, several parts --------------------------------------------
+
+  protected isExpanded(method: string): boolean {
+    return this.expanded().has(method);
+  }
+
+  protected toggleExpanded(method: string): void {
+    this.expanded.update((open) => {
+      const next = new Set(open);
+      if (!next.delete(method)) next.add(method);
+      return next;
+    });
+  }
+
+  /** The API's one switch: every part on, or every part off. A single part is still switched in the list below it. */
+  protected toggleGroup(group: ApiGroup, on: boolean): void {
+    const changes = group.configs.filter((c) => c.active !== on);
+    if (!changes.length || this.groupBusy()) return;
+    this.groupBusy.set(group.method);
+    forkJoin(changes.map((c) => this.api.update(c.id, { active: on }))).subscribe({
+      next: () => this.groupBusy.set(null),
+      error: (err) => {
+        this.groupBusy.set(null);
+        this.listError.set(errorMessage(err));
+        // Some parts may have changed before the failure: show what is really saved.
+        this.api.refresh().subscribe({ error: () => {} });
+      },
+    });
   }
 
   // ---- delete ---------------------------------------------------------------

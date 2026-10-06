@@ -18,6 +18,32 @@ const { URL } = require('url');
 
 const MAX_BODY_BYTES = 50 * 1024 * 1024;
 
+/**
+ * The only operations this app may call: the three that READ a day's
+ * collections — IP, Diagnostics, and OP consultation (ConsCollectionjs, added
+ * to the service on 2026-10-06). The same HIS service has operations that
+ * write — patient registration, appointments, payments — and an API Config is
+ * free text, so this is checked here, at the one place every call goes
+ * through, and not only on the screen that saves a config.
+ */
+const READ_METHODS = ['IpCollection', 'DiagCollectionjs', 'ConsCollectionjs'];
+
+/**
+ * Refuses a config that would call anything else. An ASMX service picks the
+ * operation from the SOAPAction header, so that must name the same operation
+ * as the request body — otherwise a config could say one and call another.
+ */
+function assertReadOnlyCall(config) {
+  const method = String(config.soap_method || '');
+  if (!READ_METHODS.includes(method)) {
+    throw Object.assign(new Error(`"${method}" is not an HIS operation this app may call — only ${READ_METHODS.join(', ')}, which read collections`), { status: 422 });
+  }
+  const action = String(config.soap_action || '').trim();
+  if (action && action.split('/').pop() !== method) {
+    throw Object.assign(new Error(`SOAP Action "${action}" does not name the operation "${method}"`), { status: 422 });
+  }
+}
+
 const xmlEscape = (s) =>
   String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
 
@@ -127,6 +153,7 @@ function rowsOf(json, responseRoot) {
  * @returns {{ rows: object[], total: number|null, rawBytes: number, rawText: string, durationMs: number }}
  */
 async function callSoapApi(config, { locValue, dateValue }, transport = post) {
+  assertReadOnlyCall(config);
   const authKey = config.authKey || '';
   const params = {
     [config.loc_param]: locValue,
@@ -149,6 +176,20 @@ async function callSoapApi(config, { locValue, dateValue }, transport = post) {
   }
 
   if (response.status >= 400) {
+    // The HIS builds its answer with a serializer capped at about 2 MB. A busy
+    // day's OP register is larger (Secunderabad, 03-Oct and 05-Oct 2026: about
+    // 2,750 lines and up), and the service then fails instead of answering.
+    // Nothing on this side can ask for less — the operation takes a unit and a
+    // day, nothing else — so it is said plainly, for whoever must take it to the HIS team.
+    if (/maxJsonLength/i.test(response.text)) {
+      throw Object.assign(
+        new Error(
+          `HIS could not send this day: the answer is larger than the HIS server's own limit (maxJsonLength, about 2 MB) for "${config.soap_method}". ` +
+            'The HIS team must raise that limit on their server — nothing was stored for this API.',
+        ),
+        { status: 502 },
+      );
+    }
     let detail = response.text.slice(0, 300);
     try {
       extractJson(response.text, config.soap_method);
@@ -163,7 +204,12 @@ async function callSoapApi(config, { locValue, dateValue }, transport = post) {
     json = extractJson(response.text, config.soap_method);
   } catch (err) {
     const snippet = response.text.slice(0, 200).replace(/\s+/g, ' ');
-    throw Object.assign(new Error(redact(`${err.message} (response starts: ${snippet})`, authKey)), { status: err.status || 502 });
+    // HTTP 200 with nothing in it is how the HIS answers a key it does not
+    // accept (2026-10-06: DiagCollectionjs called with the IpCollection key).
+    const hint = /holds no JSON data/.test(err.message)
+      ? ` — the HIS answers with nothing when it does not accept the API key: check the key saved for "${config.soap_method}" on API Config (each operation has its own)`
+      : '';
+    throw Object.assign(new Error(redact(`${err.message}${hint} (response starts: ${snippet})`, authKey)), { status: err.status || 502 });
   }
 
   const rows = rowsOf(json, config.response_root);
@@ -179,4 +225,4 @@ async function callSoapApi(config, { locValue, dateValue }, transport = post) {
   };
 }
 
-module.exports = { callSoapApi, extractJson, rowsOf, buildEnvelope, redact, post };
+module.exports = { callSoapApi, extractJson, rowsOf, buildEnvelope, redact, post, READ_METHODS, assertReadOnlyCall };

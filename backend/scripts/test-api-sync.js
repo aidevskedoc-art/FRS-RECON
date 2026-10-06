@@ -130,6 +130,13 @@ async function testSoapCall() {
     return true;
   });
 
+  // Only the operations that read collections may be called, and the SOAPAction (which is what an ASMX
+  // service goes by) must name the same one as the body. Refused before anything is sent.
+  const sent = ok.calls.length;
+  await assert.rejects(callSoapApi({ ...CONFIG, url, soap_method: 'SavePatient', soap_action: 'http://tempuri.org/SavePatient' }, { locValue: 9, dateValue: '03/03/2026' }, ok), (err) => err.status === 422 && /not an HIS operation this app may call/.test(err.message));
+  await assert.rejects(callSoapApi({ ...CONFIG, url, soap_action: 'http://tempuri.org/SavePatient' }, { locValue: 9, dateValue: '03/03/2026' }, ok), (err) => err.status === 422 && /does not name the operation "IpCollection"/.test(err.message));
+  assert.strictEqual(ok.calls.length, sent);
+
   // A well-behaved service: JSON inside <MethodResult>.
   const wrapped = `<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><IpCollectionResponse xmlns="http://tempuri.org/"><IpCollectionResult>{&quot;Total&quot;:&quot;0&quot;,&quot;IPcollectionv&quot;:[]}</IpCollectionResult></IpCollectionResponse></soap:Body></soap:Envelope>`;
   assert.deepStrictEqual(extractJson(wrapped, 'IpCollection'), { Total: '0', IPcollectionv: [] });
@@ -213,6 +220,38 @@ function testOperatorsAndTransforms() {
   assert.strictEqual(value({}, 'SUM', sumArg), 0);
   const badSum = one({ CASH_AMT: '5', CARD_AMT: 'n/a', CHEQUE_AMT: '0' }, 'SUM', sumArg);
   assert.deepStrictEqual(badSum.errors.filter((e) => !required(e)), [{ index: 0, column: 'bill_amount', message: 'CARD_AMT "n/a" is not a number' }]);
+
+  // One row per bill, and a bill's lines added up — a call that sends a row per LINE (the OP register).
+  const lines = [
+    { BILL: 'B1', REF: 'r1', MODE: 'UPI', PRICE: '1000', PAID: '1000', CNCL: 'N' },
+    { BILL: 'B1', REF: 'r1', MODE: 'UPI', PRICE: '100', PAID: '100', CNCL: 'N' },
+    { BILL: 'B2', REF: 'r2', MODE: 'UPI', PRICE: '500', PAID: '500', CNCL: 'N' },
+    { BILL: 'B2', REF: 'r3', MODE: 'UPI', PRICE: '50', PAID: '50', CNCL: 'N' }, // a second payment on the same bill
+    { BILL: 'B3', REF: '', MODE: 'CASH', PRICE: '800', PAID: '0', CNCL: 'N' },
+    { BILL: 'B3', REF: 'r4', MODE: 'UPI', PRICE: '200', PAID: '200', CNCL: 'N' },
+    { BILL: 'B3', REF: 'r4', MODE: 'UPI', PRICE: '75', PAID: '75', CNCL: 'Y' }, // a cancelled line
+  ];
+  const UPI = { field: 'MODE', op: 'in', values: ['UPI'] };
+  const LIVE = { field: 'CNCL', op: 'in', values: ['N'] };
+  const bills = (...rules) => filterRows(lines, rules).map((r) => `${r.BILL}/${r.REF}/${r.PRICE}`);
+  // The first row for each value — after the other rules, wherever in the list the rule stands.
+  assert.deepStrictEqual(bills({ field: 'BILL', op: 'oncePer', values: [] }, UPI, LIVE), ['B1/r1/1000', 'B2/r2/500', 'B3/r4/200']);
+  // Its "values" are further fields the rows must share: one row per bill AND payment.
+  assert.deepStrictEqual(bills(UPI, LIVE, { field: 'BILL', op: 'oncePer', values: ['REF'] }), ['B1/r1/1000', 'B2/r2/500', 'B2/r3/50', 'B3/r4/200']);
+  assert.strictEqual(filterRows(lines, [{ field: 'BILL', op: 'oncePer', values: [] }]).length, 3);
+  // As a mapping's own condition it tests nothing.
+  const kept = filterRows(lines, [UPI, LIVE, { field: 'BILL', op: 'oncePer', values: ['REF'] }]);
+  const sumOver = (same, where) => ({ dbColumn: 'bill_amount', sourceField: null, transform: 'SUM_SAME', transformArg: { field: 'PRICE', same, ...(where ? { where } : {}) } });
+  const paidOver = { dbColumn: 'online_amount', sourceField: null, transform: 'SUM_SAME', transformArg: { field: 'PAID', same: ['BILL', 'REF'], where: [LIVE] } };
+  const totals = (mapping) => mapRows(kept, [mapping, paidOver], 'ip_payment_records', lines).records.map((r) => [r.billAmount, r.onlineUpiAmount]);
+  // Over EVERY received row of the bill — the cash line too — and only the lines of this row's own payment.
+  assert.deepStrictEqual(totals(sumOver(['BILL'], [LIVE])), [[1100, 1100], [550, 500], [550, 50], [1000, 200]]);
+  // Without the "leave out" rule the cancelled line counts.
+  assert.deepStrictEqual(totals(sumOver(['BILL'])).at(-1), [1075, 200]);
+  // With no other rows given, a row's "bill" is the rows it was stored from.
+  assert.deepStrictEqual(mapRows(kept, [sumOver(['BILL'])], 'ip_payment_records').records.map((r) => r.billAmount), [1000, 550, 550, 200]);
+  const badLine = mapRows(kept.slice(0, 1), [sumOver(['BILL'])], 'ip_payment_records', [...lines, { BILL: 'B1', PRICE: 'n/a' }]);
+  assert.deepStrictEqual(badLine.errors.filter((e) => !required(e)), [{ index: 0, column: 'bill_amount', message: 'PRICE "n/a" is not a number' }]);
   console.log('  ok operators and transforms');
 }
 
@@ -242,7 +281,7 @@ function testRealSeeds(file) {
   // Cheques and refunds are told apart by these when a later sync or file repeats them; Card / UPI rows may repeat.
   const IDENTITY = { cheque_collection_records: CHEQUE_COLLECTION.identityOf, refund_records: REFUND.identityOf };
 
-  for (const seed of SEEDS) {
+  for (const seed of SEEDS.filter((s) => s.connection.soap_method === 'IpCollection')) {
     const kept = filterRows(rows, seed.rowFilter);
     const { records, errors } = mapRows(kept, seed.mappings, seed.targetTable);
     assert.deepStrictEqual(errors, [], `${seed.name}: mapping errors: ${JSON.stringify(errors.slice(0, 5))}`);

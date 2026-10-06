@@ -268,7 +268,7 @@ export const routes: Routes = [
         canActivate: [frsAdminGuard],
         loadComponent: () =>
           import('./features/folder-watch/folder-watch.component').then((m) => m.FolderWatchComponent),
-        title: `Shared Folder Automation — ${APP_SHORT_NAME}`,
+        title: `Automation — ${APP_SHORT_NAME}`,
       },
       {
         // Client mail items 8 & 15 — the shared go-live switch. Admin-only by role.

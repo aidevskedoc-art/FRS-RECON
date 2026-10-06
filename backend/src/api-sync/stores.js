@@ -13,18 +13,18 @@
  */
 const db = require('../db');
 const { filterNewRows } = require('../online-upload/dedupe');
-const { IP_PAYMENT, CHEQUE_COLLECTION, REFUND } = require('../online-upload/mis-identities');
+const { IP_PAYMENT, DIAG_PAYMENT, CHEQUE_COLLECTION, REFUND } = require('../online-upload/mis-identities');
 const { splitStoredRows, OVERLAP_KEYS } = require('../online-upload/ucr-overlap');
 const { resolveDivision } = require('../reconciliation/matcher');
 const ipPayments = require('../online-upload/ip-payment-store');
+const diagPayments = require('../online-upload/diag-op-payment-store');
 const ucrIp = require('../online-upload/ucr-ip-store');
 const chequeCollections = require('../online-upload/cheque-collection-store');
 const refunds = require('../online-upload/refund-store');
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const byIdentity = (identity) => (records) =>
-  filterNewRows({ table: identity.table, identitySql: identity.identitySql, identityOf: identity.identityOf, rows: records });
+const byIdentity = (identity) => (records) => filterNewRows({ ...identity, rows: records });
 
 const insertWith = (store) => (client, batchId, records) =>
   store.insertRecordsChunked(client, records.map((r) => store.recordToRow(batchId, r)));
@@ -52,6 +52,17 @@ const STORES = {
     tracksGenerate: true,
     filterNew: byIdentity(IP_PAYMENT),
     insert: insertWith(ipPayments),
+  },
+
+  diag_op_payment_records: {
+    batchTable: 'diag_op_upload_batches',
+    label: () => 'Diag MIS',
+    kindColumn: null,
+    kindOf: () => null,
+    dateOf: (r) => r.receiptDate,
+    tracksGenerate: true,
+    filterNew: byIdentity(DIAG_PAYMENT),
+    insert: insertWith(diagPayments),
   },
 
   ucr_ip_records: {
@@ -88,6 +99,8 @@ const STORES = {
     kindOf: (r) => r.collectionKind,
     dateOf: (r) => r.receiptDate,
     tracksGenerate: true,
+    // A cheque's identity includes its unit (mis-identities.js): the unit synced.
+    prepare: (r, { location }) => ({ ...r, __unit: location.name }),
     filterNew: byIdentity(CHEQUE_COLLECTION),
     insert: insertWith(chequeCollections),
   },

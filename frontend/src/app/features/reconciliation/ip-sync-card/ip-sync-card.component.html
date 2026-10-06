@@ -2,10 +2,11 @@
   <div class="sync-card__head">
     <h3>
       <i class="pi pi-cloud-download"></i>
-      Sync IP Collection
+      Sync from HIS
     </h3>
     <span class="sync-card__hint">
-      Pulls a day's IP collections for one unit straight from HIS — no file needed. Then press Run Reconciliation below.
+      Pulls a day's IP, Diagnostics and OP collections for one unit straight from HIS — no file needed. Then press Run Reconciliation below.
+      For a day the automatic pull missed, or today so far.
     </span>
   </div>
 
@@ -29,6 +30,39 @@
       <div class="notice notice--warning">
         <i class="pi pi-map-marker"></i>
         No unit has an HIS Loc Code — ask an Admin to set it on Master Data → Location Master.
+      </div>
+    }
+
+    @if (pullStatus(); as p) {
+      <div class="auto-pull" [class.auto-pull--off]="!p.active">
+        <i class="pi" [class.pi-clock]="p.active" [class.pi-pause-circle]="!p.active"></i>
+        @if (p.active) {
+          <span>
+            Automatic pull is on — every unit, the day before, daily at <strong>{{ p.runTime.slice(0, 5) }} IST</strong>.
+          </span>
+        } @else {
+          <span>Automatic pull is off — sync each unit and day here by hand.</span>
+        }
+        @if (p.lastRun; as last) {
+          <span class="auto-pull__last" [class.auto-pull__last--bad]="last.status === 'FAILED' || last.status === 'PARTIAL'">
+            Last pull {{ last.startedAt | date: 'dd-MMM HH:mm' }} for {{ last.dayTo | date: 'dd-MMM-yyyy' }}: {{ pullStatusLabel[last.status] }}
+            @if (last.apisFailed > 0) { · {{ last.apisFailed }} API(s) not pulled }
+          </span>
+        }
+      </div>
+    }
+
+    @if (sources().length) {
+      <div class="sources">
+        <span class="sources__label">This sync covers:</span>
+        @for (s of sources(); track s.method) {
+          <span class="source" [class.source--off]="s.on === 0">
+            <i class="pi" [class.pi-check-circle]="s.on > 0" [class.pi-ban]="s.on === 0"></i>
+            <strong>{{ s.label }}</strong>
+            {{ s.on === 0 ? '— switched off, not synced' : '— ' + s.on + ' of ' + s.total + ' APIs on' }}
+          </span>
+        }
+        <span class="sources__hint">Switch APIs on or off on Master Data → API Config.</span>
       </div>
     }
 
@@ -64,20 +98,56 @@
           </ng-template>
         </p-select>
       </label>
-      <p-button
-        label="Sync IP Collection"
-        icon="pi pi-sync"
-        [loading]="syncing()"
-        [disabled]="!canSync()"
-        (onClick)="sync()"
-        [pTooltip]="disabled() ? 'Wait for the current run / folder scan to finish' : ''"
-      />
+      <div class="sync-card__actions">
+        <p-button
+          label="Sync from HIS"
+          icon="pi pi-sync"
+          [loading]="syncing()"
+          [disabled]="!canSync()"
+          (onClick)="sync()"
+          [pTooltip]="disabled() ? 'Wait for the current run / folder scan to finish' : ''"
+        />
+        @if (isAdmin()) {
+          <p-button
+            label="Download HIS data"
+            icon="pi pi-download"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="downloading()"
+            [disabled]="!canDownload()"
+            (onClick)="download()"
+            pTooltip="Excel of everything HIS sends for this unit and day, exactly as received. Nothing is stored."
+          />
+        }
+        <p-button
+          label="History"
+          icon="pi pi-history"
+          severity="secondary"
+          [text]="true"
+          (onClick)="historyOpen.set(true)"
+          pTooltip="Every fetch from HIS: which API, unit and day, when, by whom, and what came of it."
+        />
+      </div>
     </div>
 
     @if (error(); as err) {
       <div class="notice notice--danger">
         <i class="pi pi-times-circle"></i>
         {{ err }}
+      </div>
+    }
+    @if (emptyAnswer()) {
+      <div class="notice notice--warning">
+        <i class="pi pi-exclamation-triangle"></i>
+        HIS sent no rows at all for this unit and day. On a working day that usually means HIS did not accept the request (key, unit code or
+        date), not that nothing was collected. Nothing was stored — try again, and check the API key if it repeats.
+      </div>
+    }
+    @if (unreconciled() > 0 && !syncing()) {
+      <div class="notice notice--warning">
+        <i class="pi pi-info-circle"></i>
+        {{ unreconciled() }} synced batch{{ unreconciled() === 1 ? '' : 'es' }} hold rows that have not been reconciled yet — press Run
+        Reconciliation below.
       </div>
     }
     @if (result(); as res) {
@@ -119,5 +189,20 @@
     }
   } @else {
     <div class="sync-card__loading"><i class="pi pi-spin pi-spinner"></i> Loading…</div>
+  }
+
+  <!-- Every fetch from the HIS — built only while open, so it reads the history afresh each time. -->
+  @if (historyOpen()) {
+    <p-dialog
+      header="HIS fetch history"
+      [visible]="true"
+      (visibleChange)="historyOpen.set($event)"
+      [modal]="true"
+      [maximizable]="true"
+      [style]="{ width: 'min(1280px, 96vw)' }"
+      styleClass="his-history-dialog"
+    >
+      <app-api-sync-history [units]="unitNames()" [sources]="sources()" />
+    </p-dialog>
   }
 </div>

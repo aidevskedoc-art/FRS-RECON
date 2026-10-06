@@ -41,7 +41,7 @@
     </div>
   }
 
-  <app-ip-sync-card [disabled]="running() || scan.running()" (synced)="onIpSynced()" />
+  <app-ip-sync-card [disabled]="running() || scan.running()" (synced)="onIpSynced()" (pending)="apiPending.set($event)" />
 
   <div class="card">
     <div class="card__head">

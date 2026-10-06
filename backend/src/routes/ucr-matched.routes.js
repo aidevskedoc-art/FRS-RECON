@@ -316,7 +316,47 @@ async function listUcrIpRecords({ instrumentType, query, res }) {
     [...params, pageSize, (page - 1) * pageSize],
   );
 
-  res.json({ total: countRows[0].total, page, pageSize, records: rows.map(ucrIpRecordRowToApi) });
+  res.json({ total: countRows[0].total, page, pageSize, tally: await tallyUcrIpRecords(where, params), records: rows.map(ucrIpRecordRowToApi) });
+}
+
+/**
+ * The figures above the list, over EVERY row the filter selects — not only the
+ * page sent. The screens used to add up the rows they had loaded, at most 500,
+ * so past 500 rows the counts and the gap were of an arbitrary slice.
+ *
+ * `matched` counts a Grouped Matched row too — it is a matched row, several
+ * receipts adding up to one gateway row — with `groupedMatched` saying how
+ * many of them. The gateway total takes each gateway row ONCE: every receipt
+ * of a group carries the group's own gateway amount (match_source_amount), so
+ * adding it per receipt would count it once per receipt.
+ */
+async function tallyUcrIpRecords(where, params) {
+  const { rows: byStatus } = await db.query(
+    `SELECT r.match_status, COUNT(*)::int AS n, COALESCE(SUM(r.amount), 0) AS amount
+       FROM ucr_ip_records r ${where} GROUP BY r.match_status`,
+    params,
+  );
+  const { rows: gateway } = await db.query(
+    `SELECT COALESCE(SUM(g.amount), 0) AS total
+       FROM (SELECT DISTINCT ON (r.match_source_type, r.match_source_id) r.match_source_amount AS amount
+               FROM ucr_ip_records r ${where} AND r.match_source_id IS NOT NULL
+              ORDER BY r.match_source_type, r.match_source_id) g`,
+    params,
+  );
+  const tally = { matched: 0, groupedMatched: 0, mismatched: 0, unmatched: 0, notGenerated: 0, misTotal: 0, gatewayTotal: 0 };
+  for (const row of byStatus) {
+    tally.misTotal += Number(row.amount) || 0;
+    if (row.match_status === 'MATCHED') tally.matched += row.n;
+    else if (row.match_status === 'GROUPED_MATCHED') {
+      tally.matched += row.n;
+      tally.groupedMatched += row.n;
+    } else if (row.match_status === 'AMOUNT_MISMATCH') tally.mismatched += row.n;
+    else if (row.match_status === null) tally.notGenerated += row.n;
+    else tally.unmatched += row.n;
+  }
+  tally.misTotal = Math.round(tally.misTotal * 100) / 100;
+  tally.gatewayTotal = Math.round((Number(gateway[0].total) || 0) * 100) / 100;
+  return tally;
 }
 
 // GET /api/ucr-matched/card-recon?status=&search=&dateFrom=&dateTo=&location=&department=&page=&pageSize=

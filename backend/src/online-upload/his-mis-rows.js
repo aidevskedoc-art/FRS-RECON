@@ -626,6 +626,7 @@ function hisRefundUpload(bufferOrWorkbook) {
 
 module.exports = {
   readFamilies,
+  fieldsOf,
   misIpRows,
   misDiagRows,
   chequeRows,

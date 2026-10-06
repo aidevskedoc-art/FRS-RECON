@@ -60,7 +60,7 @@ export class AuthService {
   readonly mustChangePassword = this._mustChangePassword.asReadonly();
 
   readonly isAuthenticated = () => this._userId() !== null;
-  /** Gates the 4 hard-locked screens (User Management, Location Master, Go-Live Settings, Shared Folder Automation) — their backend routes require role='Admin' regardless of any screen grant. */
+  /** Gates the 4 hard-locked screens (User Management, Location Master, Go-Live Settings, Automation) — their backend routes require role='Admin' regardless of any screen grant. */
   readonly isFrsAdmin = () => this._frsRole() === 'Admin';
 
   /** Admin passes by role (no grant needed, same convention as branch access); an Auditor needs the key explicitly granted. */

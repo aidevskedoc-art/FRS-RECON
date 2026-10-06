@@ -34,6 +34,35 @@ const TARGETS = {
     ],
   },
 
+  // One row per receipt. `department` separates the Diagnostics series from
+  // the doctor-fee (OPD) one, as the HIS workbook upload does.
+  diag_op_payment_records: {
+    label: 'Diagnostics / OP Payments (Online Collection MIS — Diag)',
+    columns: [
+      { column: 'receipt_number', key: 'receiptNumber', label: 'Receipt Number', type: 'text', required: true },
+      { column: 'receipt_date', key: 'receiptDate', label: 'Receipt Date', type: 'datetime', required: true },
+      { column: 'department', key: 'department', label: 'Department', type: 'text', allowed: ['DIAG', 'OPD'] },
+      { column: 'yhno', key: 'yhno', label: 'YH No', type: 'text' },
+      { column: 'diag_no', key: 'diagNo', label: 'Diag No', type: 'text' },
+      { column: 'patient_name', key: 'patientName', label: 'Patient Name', type: 'text' },
+      { column: 'transaction_id_1', key: 'transactionRef1', label: 'Transaction ID 1', type: 'text' },
+      { column: 'transaction_id_2', key: 'transactionRef2', label: 'Transaction ID 2', type: 'text' },
+      { column: 'transaction_id_3', key: 'transactionRef3', label: 'Transaction ID 3', type: 'text' },
+      { column: 'pay_type', key: 'payType', label: 'Pay Type', type: 'text' },
+      { column: 'pay_mode', key: 'payMode', label: 'Pay Mode', type: 'text' },
+      { column: 'pat_type', key: 'patType', label: 'Pat Type', type: 'text' },
+      { column: 'bill_amount', key: 'billAmount', label: 'Bill Amount', type: 'number' },
+      { column: 'cash_amount', key: 'cashAmount', label: 'Cash Amount', type: 'number' },
+      { column: 'card_amount', key: 'cardAmount', label: 'Card Amount', type: 'number' },
+      { column: 'cheque_amount', key: 'chequeAmount', label: 'Cheque Amount', type: 'number' },
+      { column: 'online_amount', key: 'onlineUpiAmount', label: 'Online / UPI Amount', type: 'number' },
+      { column: 'discount_amount', key: 'discountAmount', label: 'Discount Amount', type: 'number' },
+      { column: 'diff_amount', key: 'diffAmount', label: 'Difference Amount', type: 'number' },
+      { column: 'user_id', key: 'userId', label: 'User ID', type: 'text' },
+      { column: 'user_name', key: 'userName', label: 'User Name', type: 'text' },
+    ],
+  },
+
   // One row per payment instrument. The reference is the processor's own
   // approval code (Card) or RRN (UPI); a refund is a negative amount.
   ucr_ip_records: {
@@ -99,20 +128,24 @@ const TARGETS = {
 const TRANSFORMS = [
   { value: 'DIRECT', label: 'As is (trimmed)', arg: null },
   { value: 'TRIM_SPACES', label: 'Collapse spaces', arg: null },
+  { value: 'UPPER', label: 'Upper case', arg: null },
   { value: 'NUMBER', label: 'Number', arg: null },
   { value: 'NUMBER_ABS', label: 'Number, sign removed', arg: null },
   { value: 'NUMBER_NEGATIVE', label: 'Number, as a negative', arg: null },
   { value: 'SUM', label: 'Sum of fields', arg: 'fields' },
+  // arg { field, same: [fields], where?: [rules] } — one field over every received row sharing `same`.
+  { value: 'SUM_SAME', label: "Sum of one field over a bill's lines", arg: 'sameFields' },
   { value: 'DATETIME', label: 'Date + time', arg: 'format' },
   { value: 'DATE', label: 'Date only', arg: 'format' },
   { value: 'RECEIPT_MONTH_PREFIX', label: 'Receipt no. with "MM/" month prefix', arg: 'dateField' },
+  { value: 'RECEIPT_WITHOUT_YEAR', label: 'Receipt no. without its "/YY" year', arg: null },
   { value: 'LOOKUP', label: 'Lookup (value → value)', arg: 'map' },
   { value: 'CONSTANT', label: 'Fixed value', arg: 'value' },
 ];
 
 const TRANSFORM_VALUES = new Set(TRANSFORMS.map((t) => t.value));
 /** Transforms that read no single source field — a mapping using one is complete without it. */
-const SOURCELESS_TRANSFORMS = new Set(['CONSTANT', 'SUM']);
+const SOURCELESS_TRANSFORMS = new Set(['CONSTANT', 'SUM', 'SUM_SAME']);
 const DATE_FORMATS = ['dd/MM/yyyy', 'MM/dd/yyyy', 'yyyy-MM-dd', 'dd-MM-yyyy', 'dd-MMM-yyyy'];
 
 /**
@@ -126,6 +159,10 @@ const FILTER_OPS = [
   { value: 'notStartsWith', label: 'starts with none of', values: true },
   { value: 'nonZero', label: 'is not zero', values: false },
   { value: 'isZero', label: 'is zero or blank', values: false },
+  // One row per bill, not per line: of the rows the other rules keep, only the
+  // first for each value of the field. Its "values" are further FIELD names
+  // the rows must also share (a bill AND its payment reference).
+  { value: 'oncePer', label: 'first row only, for each value (also sharing fields…)', values: true },
 ];
 const FILTER_OP_VALUES = new Set(FILTER_OPS.map((o) => o.value));
 const VALUELESS_FILTER_OPS = new Set(FILTER_OPS.filter((o) => !o.values).map((o) => o.value));

@@ -1,211 +1,236 @@
 <div class="folder-watch">
   <app-page-header
     icon="pi pi-cloud-download"
-    title="Shared Folder Automation"
-    subtitle="Check the shared folder automatically, ingest what's new, and run the reconciliation — no manual upload."
+    title="Automation"
+    subtitle="Each day: pull the day before from HIS, then check the shared folder, ingest what's new, and run the reconciliation — no manual upload."
   />
 
-  @if (listError(); as err) {
-    <div class="notice notice--danger">
-      <i class="pi pi-times-circle"></i>
-      {{ err }}
-    </div>
-  }
+  <!-- In the order the day runs: the HIS pull first, then the folder check. -->
+  <div class="hub-picker" role="tablist">
+    @for (tab of tabs; track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        class="hub-option"
+        [class.hub-option--active]="activeTab() === tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        (click)="selectTab(tab.id)"
+      >
+        <i [class]="tab.icon"></i>
+        <span class="hub-option__title">{{ tab.label }}</span>
+      </button>
+    }
+  </div>
 
-  <div class="folder-watch__settings glass-card glass-card--static">
-    <div class="form">
-      @if (formError(); as err) {
-        <div class="modal-error">{{ err }}</div>
-      }
+  @if (activeTab() === 'his-pull') {
+    <app-his-auto-pull />
+  } @else {
+    @if (listError(); as err) {
+      <div class="notice notice--danger">
+        <i class="pi pi-times-circle"></i>
+        {{ err }}
+      </div>
+    }
 
-      <label class="field">
-        <span class="field-label">Shared Folder Path</span>
-        <input
-          pInputText
-          type="text"
-          placeholder="\\SERVER\share\folder"
-          [ngModel]="draft().folderPath"
-          (ngModelChange)="updateDraft({ folderPath: $event })"
-        />
-        <span class="field-hint">A UNC path the backend server can read — e.g. \\YHCORP-ED7080\BS_share_san</span>
-      </label>
+    <div class="folder-watch__settings glass-card glass-card--static">
+      <p class="folder-watch__intro">
+        Takes the bank and gateway statements dropped in the shared folder, then runs the reconciliation over everything — the
+        collections from the HIS Data Pull included. Set its time after the HIS pull.
+      </p>
+      <div class="form">
+        @if (formError(); as err) {
+          <div class="modal-error">{{ err }}</div>
+        }
 
-      <label class="field">
-        <span class="field-label">Share User ID</span>
-        <input
-          pInputText
-          type="text"
-          autocomplete="off"
-          placeholder="DOMAIN\userid"
-          [ngModel]="draft().shareUsername"
-          (ngModelChange)="updateDraft({ shareUsername: $event })"
-        />
-        <span class="field-hint">Only if the share needs its own login. Leave blank to use the backend server's own Windows account.</span>
-      </label>
-
-      @if (draft().shareUsername.trim()) {
         <label class="field">
-          <span class="field-label">Share Password</span>
+          <span class="field-label">Shared Folder Path</span>
           <input
             pInputText
-            type="password"
-            autocomplete="new-password"
-            [placeholder]="folderWatch.config()?.hasSharePassword ? '•••••••• saved — leave blank to keep' : 'Enter the share password'"
-            [ngModel]="draft().sharePassword"
-            (ngModelChange)="updateDraft({ sharePassword: $event })"
+            type="text"
+            placeholder="\\SERVER\share\folder"
+            [ngModel]="draft().folderPath"
+            (ngModelChange)="updateDraft({ folderPath: $event })"
           />
-          <span class="field-hint">Stored encrypted. It is never shown again, even to admins.</span>
+          <span class="field-hint">A UNC path the backend server can read — e.g. \\YHCORP-ED7080\BS_share_san</span>
         </label>
-      }
 
-      <label class="field">
-        <span class="field-label">Check Time (IST, daily)</span>
-        <input
-          pInputText
-          type="time"
-          [ngModel]="draft().runTime"
-          (ngModelChange)="updateDraft({ runTime: $event })"
-          class="time-input"
-        />
-      </label>
+        <label class="field">
+          <span class="field-label">Share User ID</span>
+          <input
+            pInputText
+            type="text"
+            autocomplete="off"
+            placeholder="DOMAIN\userid"
+            [ngModel]="draft().shareUsername"
+            (ngModelChange)="updateDraft({ shareUsername: $event })"
+          />
+          <span class="field-hint">Only if the share needs its own login. Leave blank to use the backend server's own Windows account.</span>
+        </label>
 
-      <label class="field">
-        <span class="field-label">Batch "Uploaded By" Label</span>
-        <input
-          pInputText
-          type="text"
-          [ngModel]="draft().uploadedByLabel"
-          (ngModelChange)="updateDraft({ uploadedByLabel: $event })"
-        />
-        <span class="field-hint">Shown on every automatically-ingested batch, so it's clearly not a manual upload.</span>
-      </label>
-
-      <label class="field field--switch">
-        <span class="field-label">Automation Enabled</span>
-        <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
-      </label>
-
-      <div class="folder-watch__actions">
-        <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
-          @if (saving()) {
-            <span class="btn-spinner"></span>
-          } @else {
-            <i class="pi pi-check"></i>
-          }
-          <span>Save Settings</span>
-        </button>
-        @if (saved()) {
-          <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
+        @if (draft().shareUsername.trim()) {
+          <label class="field">
+            <span class="field-label">Share Password</span>
+            <input
+              pInputText
+              type="password"
+              autocomplete="new-password"
+              [placeholder]="folderWatch.config()?.hasSharePassword ? '•••••••• saved — leave blank to keep' : 'Enter the share password'"
+              [ngModel]="draft().sharePassword"
+              (ngModelChange)="updateDraft({ sharePassword: $event })"
+            />
+            <span class="field-hint">Stored encrypted. It is never shown again, even to admins.</span>
+          </label>
         }
 
-        <button type="button" class="btn btn-ghost" [disabled]="testing() || !folderWatch.config()" (click)="testConnection()" pTooltip="Log in to the share and list the folder with the saved settings — reads and stores nothing">
-          @if (testing()) {
-            <span class="btn-spinner btn-spinner--dark"></span>
-          } @else {
-            <i class="pi pi-link"></i>
-          }
-          <span>Test Connection</span>
-        </button>
+        <label class="field">
+          <span class="field-label">Check Time (IST, daily)</span>
+          <input
+            pInputText
+            type="time"
+            [ngModel]="draft().runTime"
+            (ngModelChange)="updateDraft({ runTime: $event })"
+            class="time-input"
+          />
+        </label>
 
-        <button type="button" class="btn btn-ghost" [disabled]="runningNow()" (click)="runNow()" pTooltip="Check the folder right now, without waiting for the scheduled time">
-          @if (runningNow()) {
-            <span class="btn-spinner btn-spinner--dark"></span>
-          } @else {
-            <i class="pi pi-play"></i>
+        <label class="field">
+          <span class="field-label">Batch "Uploaded By" Label</span>
+          <input
+            pInputText
+            type="text"
+            [ngModel]="draft().uploadedByLabel"
+            (ngModelChange)="updateDraft({ uploadedByLabel: $event })"
+          />
+          <span class="field-hint">Shown on every automatically-ingested batch, so it's clearly not a manual upload.</span>
+        </label>
+
+        <label class="field field--switch">
+          <span class="field-label">Automation Enabled</span>
+          <p-toggleswitch [ngModel]="draft().active" (ngModelChange)="updateDraft({ active: $event })" />
+        </label>
+
+        <div class="folder-watch__actions">
+          <button type="button" class="btn btn-primary" [disabled]="saving()" (click)="save()">
+            @if (saving()) {
+              <span class="btn-spinner"></span>
+            } @else {
+              <i class="pi pi-check"></i>
+            }
+            <span>Save Settings</span>
+          </button>
+          @if (saved()) {
+            <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
           }
-          <span>Run Now</span>
-        </button>
+
+          <button type="button" class="btn btn-ghost" [disabled]="testing() || !folderWatch.config()" (click)="testConnection()" pTooltip="Log in to the share and list the folder with the saved settings — reads and stores nothing">
+            @if (testing()) {
+              <span class="btn-spinner btn-spinner--dark"></span>
+            } @else {
+              <i class="pi pi-link"></i>
+            }
+            <span>Test Connection</span>
+          </button>
+
+          <button type="button" class="btn btn-ghost" [disabled]="runningNow()" (click)="runNow()" pTooltip="Check the folder right now, without waiting for the scheduled time">
+            @if (runningNow()) {
+              <span class="btn-spinner btn-spinner--dark"></span>
+            } @else {
+              <i class="pi pi-play"></i>
+            }
+            <span>Run Now</span>
+          </button>
+        </div>
+
+        @if (testResult(); as t) {
+          @if (t.ok) {
+            <div class="notice notice--info">
+              <i class="pi pi-check-circle"></i>
+              Connected{{ t.usedLogin ? ' with the saved user ID' : '' }} — {{ t.spreadsheets }} spreadsheet(s) in the folder ({{ t.filesInFolder }} item(s) in total).
+            </div>
+          } @else {
+            <div class="notice notice--danger">
+              <i class="pi pi-times-circle"></i>
+              {{ t.error }}
+            </div>
+          }
+        }
+
+        @if (runNowError(); as err) {
+          <div class="modal-error">{{ err }}</div>
+        }
       </div>
-
-      @if (testResult(); as t) {
-        @if (t.ok) {
-          <div class="notice notice--info">
-            <i class="pi pi-check-circle"></i>
-            Connected{{ t.usedLogin ? ' with the saved user ID' : '' }} — {{ t.spreadsheets }} spreadsheet(s) in the folder ({{ t.filesInFolder }} item(s) in total).
-          </div>
-        } @else {
-          <div class="notice notice--danger">
-            <i class="pi pi-times-circle"></i>
-            {{ t.error }}
-          </div>
-        }
-      }
-
-      @if (runNowError(); as err) {
-        <div class="modal-error">{{ err }}</div>
-      }
     </div>
-  </div>
 
-  @if (deleteNote(); as note) {
-    <div class="notice notice--info">
-      <i class="pi pi-info-circle"></i>
-      {{ note }}
+    @if (deleteNote(); as note) {
+      <div class="notice notice--info">
+        <i class="pi pi-info-circle"></i>
+        {{ note }}
+      </div>
+    }
+
+    <div class="folder-watch__table-wrap glass-card glass-card--static">
+      <p-table
+        [value]="folderWatch.runsPage().runs"
+        dataKey="id"
+        [lazy]="true"
+        [paginator]="true"
+        [rows]="folderWatch.runsPage().pageSize"
+        [first]="(folderWatch.runsPage().page - 1) * folderWatch.runsPage().pageSize"
+        [totalRecords]="folderWatch.runsPage().total"
+        [loading]="folderWatch.loading()"
+        (onLazyLoad)="onPageChange($event)"
+        styleClass="p-datatable-sm runs-table"
+      >
+        <ng-template #header>
+          <tr>
+            <th>Started</th>
+            <th>Trigger</th>
+            <th>Status</th>
+            <th class="num">Found</th>
+            <th class="num">Ingested</th>
+            <th class="num">Skipped</th>
+            <th class="num">Failed</th>
+            <th class="actions-col">Actions</th>
+          </tr>
+        </ng-template>
+        <ng-template #body let-run>
+          <tr class="clickable-row" (click)="openRunDetail(run)">
+            <td class="nowrap">{{ run.startedAt | date: 'd MMM y, h:mm a' }}</td>
+            <td>{{ run.triggeredByName || 'Scheduled' }}</td>
+            <td><span class="status-pill" [class]="statusPillClass(run.status)">{{ run.status }}</span></td>
+            <td class="num">{{ run.filesFound }}</td>
+            <td class="num">{{ run.filesIngested }}</td>
+            <td class="num">{{ run.filesSkipped }}</td>
+            <td class="num" [class.has-failures]="run.filesFailed > 0">{{ run.filesFailed }}</td>
+            <td class="actions-col">
+              <button
+                type="button"
+                class="action-icon action-icon--danger"
+                [disabled]="run.status === 'RUNNING'"
+                (click)="requestDelete(run, $event)"
+                pTooltip="Delete run"
+                aria-label="Delete run"
+              >
+                <i class="pi pi-trash"></i>
+              </button>
+              <i class="pi pi-angle-right"></i>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template #emptymessage>
+          <tr>
+            <td colspan="8">
+              <div class="empty-state">
+                <i class="pi pi-cloud-download"></i>
+                <strong>No runs yet</strong>
+                <p>Save the folder path above, then use "Run Now" to check it for the first time.</p>
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
     </div>
   }
-
-  <div class="folder-watch__table-wrap glass-card glass-card--static">
-    <p-table
-      [value]="folderWatch.runsPage().runs"
-      dataKey="id"
-      [lazy]="true"
-      [paginator]="true"
-      [rows]="folderWatch.runsPage().pageSize"
-      [first]="(folderWatch.runsPage().page - 1) * folderWatch.runsPage().pageSize"
-      [totalRecords]="folderWatch.runsPage().total"
-      [loading]="folderWatch.loading()"
-      (onLazyLoad)="onPageChange($event)"
-      styleClass="p-datatable-sm runs-table"
-    >
-      <ng-template #header>
-        <tr>
-          <th>Started</th>
-          <th>Trigger</th>
-          <th>Status</th>
-          <th class="num">Found</th>
-          <th class="num">Ingested</th>
-          <th class="num">Skipped</th>
-          <th class="num">Failed</th>
-          <th class="actions-col">Actions</th>
-        </tr>
-      </ng-template>
-      <ng-template #body let-run>
-        <tr class="clickable-row" (click)="openRunDetail(run)">
-          <td class="nowrap">{{ run.startedAt | date: 'd MMM y, h:mm a' }}</td>
-          <td>{{ run.triggeredByName || 'Scheduled' }}</td>
-          <td><span class="status-pill" [class]="statusPillClass(run.status)">{{ run.status }}</span></td>
-          <td class="num">{{ run.filesFound }}</td>
-          <td class="num">{{ run.filesIngested }}</td>
-          <td class="num">{{ run.filesSkipped }}</td>
-          <td class="num" [class.has-failures]="run.filesFailed > 0">{{ run.filesFailed }}</td>
-          <td class="actions-col">
-            <button
-              type="button"
-              class="action-icon action-icon--danger"
-              [disabled]="run.status === 'RUNNING'"
-              (click)="requestDelete(run, $event)"
-              pTooltip="Delete run"
-              aria-label="Delete run"
-            >
-              <i class="pi pi-trash"></i>
-            </button>
-            <i class="pi pi-angle-right"></i>
-          </td>
-        </tr>
-      </ng-template>
-      <ng-template #emptymessage>
-        <tr>
-          <td colspan="8">
-            <div class="empty-state">
-              <i class="pi pi-cloud-download"></i>
-              <strong>No runs yet</strong>
-              <p>Save the folder path above, then use "Run Now" to check it for the first time.</p>
-            </div>
-          </td>
-        </tr>
-      </ng-template>
-    </p-table>
-  </div>
 
   <!-- Run detail — every file the scan saw, and what happened to it -->
   @if (detailRun(); as run) {
@@ -291,7 +316,7 @@
       }
 
       @if (run.generateSummary; as steps) {
-        <h3 class="detail-heading">Reconciliation run after these uploads</h3>
+        <h3 class="detail-heading">{{ detailGroups().length ? 'Reconciliation run after these uploads' : 'Reconciliation run for the rows pulled from HIS' }}</h3>
         <ul class="step-list">
           @for (step of steps; track $index) {
             <li [class.step-list__item--error]="!!step.error">

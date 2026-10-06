@@ -199,10 +199,16 @@ export class ReconciliationComponent {
 
   /** Batches stored by "Sync IP Collection" since the last Run — enough on their own to make Run worth pressing. */
   protected readonly syncedSinceRun = signal(0);
+  /**
+   * Synced batches the server says have not been reconciled yet. Unlike the
+   * counter above it survives a reload, so a sync left un-run can still be Run
+   * without dropping a file first.
+   */
+  protected readonly apiPending = signal(0);
 
   protected readonly canRun = computed(
     () =>
-      (this.hasFiles() || this.syncedSinceRun() > 0) &&
+      (this.hasFiles() || this.syncedSinceRun() > 0 || this.apiPending() > 0) &&
       !this.detecting() &&
       !this.running() &&
       this.blockers().length === 0 &&

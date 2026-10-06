@@ -16,6 +16,7 @@
 const path = require('path');
 const XLSX = require('xlsx');
 const { combinedWorkbook, toBuffer, workbook, put, at, IP_SHEET, DIAG_SHEET, OP_SHEET, ip, ipFoot, IP_COLL } = require('./fixtures/his-workbook');
+const { divisionOf } = require('../src/online-upload/mis-identities');
 
 // ---- in-memory db stand-in ---------------------------------------------------
 const tables = {};
@@ -28,8 +29,10 @@ const IDENTITY = {
   ip_payment_records: (r) => `${String(r.receipt_number ?? '').trim()}§${String(blank(r.transaction_id_1) ?? blank(r.transaction_id_2) ?? '').trim()}`,
   diag_op_payment_records: (r) =>
     `${String(r.receipt_number ?? '').trim()}§${String(blank(r.transaction_id_1) ?? blank(r.transaction_id_2) ?? blank(r.transaction_id_3) ?? '').trim()}`,
-  cheque_collection_records: (r) => `${String(r.receipt_number ?? '').trim()}§${String(r.cheque_no ?? '').trim()}§${r.collection_kind ?? 'IP'}`,
-  refund_records: (r) => `${String(r.refund_no ?? '').trim()}§${String(r.cheque_no ?? '').trim()}§${r.refund_kind ?? ''}`,
+  // A cheque's unit is its batch's (`b`); a refund row carries its own division.
+  cheque_collection_records: (r, b) =>
+    `${String(r.receipt_number ?? '').trim()}§${String(r.cheque_no ?? '').trim()}§${r.collection_kind ?? 'IP'}§${divisionOf(b && b.unit_name)}`,
+  refund_records: (r) => `${String(r.refund_no ?? '').trim()}§${String(r.cheque_no ?? '').trim()}§${r.refund_kind ?? ''}§${r.division ?? ''}`,
 };
 
 function runQuery(sql, params = []) {
@@ -38,6 +41,8 @@ function runQuery(sql, params = []) {
   if (m) return { rows: rowsOf(m[1]).filter((b) => b.file_hash === params[0]).slice(0, 1) };
   m = text.match(/^SELECT DISTINCT .* AS ident FROM (\w+)$/);
   if (m) return { rows: rowsOf(m[1]).map((r) => ({ ident: IDENTITY[m[1]](r) })) };
+  m = text.match(/^SELECT DISTINCT .* AS ident FROM (\w+) r JOIN (\w+) b ON b\.id = r\.batch_id$/);
+  if (m) return { rows: rowsOf(m[1]).map((r) => ({ ident: IDENTITY[m[1]](r, rowsOf(m[2]).find((b) => b.id === r.batch_id)) })) };
   m = text.match(/^INSERT INTO (\w+) \(([^)]+)\) VALUES (.*)$/);
   if (m) {
     const cols = m[2].split(',').map((c) => c.trim());

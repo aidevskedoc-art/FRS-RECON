@@ -6,7 +6,7 @@
  * "Manage Screen Access" picker's options.
  *
  * Deliberately excludes User Management / Location Master / Go-Live
- * Settings / Shared Folder Automation — those stay role-gated (frsAdminGuard)
+ * Settings / Automation — those stay role-gated (frsAdminGuard)
  * outside this per-user system; see the backend catalogue's own comment.
  */
 export interface ScreenDef {

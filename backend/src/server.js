@@ -27,7 +27,7 @@ const usersRouter = require('./routes/users.routes');
 const auditLogsRouter = require('./routes/audit-logs.routes');
 const matchApprovalsRouter = require('./routes/match-approvals.routes');
 const folderWatchRouter = require('./routes/folder-watch.routes');
-const { arm: armFolderWatchScheduler } = require('./folder-watch/scheduler');
+const { arm: armFolderWatchScheduler, armPullAtStartup } = require('./folder-watch/scheduler');
 const { pauseWritesDuringScan, scanStatus } = require('./folder-watch/scan-lock');
 const goLiveRouter = require('./routes/go-live.routes');
 const apiConfigsRouter = require('./routes/api-configs.routes');
@@ -134,6 +134,8 @@ async function start() {
     .catch((err) => console.error('[api-sync] failed to add the seeded API configs:', err.message));
 
   await armFolderWatchScheduler().catch((err) => console.error('[folder-watch] failed to arm scheduler:', err.message));
+  // The daily pull from the HIS — off until an Admin switches it on (Automation screen, HIS Data Pull tab).
+  await armPullAtStartup().catch((err) => console.error('[his-pull] failed to arm scheduler:', err.message));
 
   app.listen(PORT, HOST, () => {
     console.log(`Collection and Bank Deposit Reconciliation backend listening on http://${HOST}:${PORT}`);

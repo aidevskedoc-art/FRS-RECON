@@ -147,7 +147,7 @@ async function verifyConfig(config, apiRows, location, day) {
   if (!spec || !target) return console.log('    no comparison is written for this target');
 
   const kept = filterRows(apiRows, config.row_filter);
-  const { records, errors } = mapRows(kept, config.mappings, table);
+  const { records, errors } = mapRows(kept, config.mappings, table, apiRows);
   if (errors.length) {
     console.log(`    ${errors.length} value(s) could not be read with this mapping — a sync would store nothing:`);
     for (const e of errors.slice(0, 5)) console.log(`      row ${e.index + 1} ${e.column}: ${e.message}`);

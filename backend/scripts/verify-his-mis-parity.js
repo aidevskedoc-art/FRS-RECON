@@ -125,7 +125,7 @@ function compare(label, oldRows, newRows, keyOf, cols) {
   const sets = [
     ['IP MIS', I.IP_PAYMENT, M.hisIpMisUpload(wb).sheets.flatMap((s) => s.rows)],
     ['Diag MIS', I.DIAG_PAYMENT, M.hisDiagMisUpload(wb).sheets.flatMap((s) => s.rows)],
-    ['Cheques', I.CHEQUE_COLLECTION, M.hisChequeUpload(wb).sheets.flatMap((s) => s.rows)],
+    ['Cheques', I.CHEQUE_COLLECTION, M.hisChequeUpload(wb).sheets.flatMap((s) => s.rows.map((r) => ({ ...r, __unit: s.unitName })))],
     ['Refunds', I.REFUND, M.hisRefundUpload(wb).rows],
   ];
   for (const [label, id, rows] of sets) {

@@ -33,6 +33,8 @@ interface Verdicts {
   attention: number;
   excluded: number;
   notGenerated: number;
+  /** Of `reconciled`: Card / UPI receipts matched as a group against one gateway row. */
+  grouped: number;
 }
 
 interface FlowStep {
@@ -68,7 +70,7 @@ function compactRupees(value: number | null | undefined): string {
   return `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 }
 
-function verdicts(s: PaymentTypeSummary & { notGenerated?: number }): Verdicts {
+function verdicts(s: PaymentTypeSummary & { notGenerated?: number; groupedMatched?: number }): Verdicts {
   return {
     total: s.total,
     totalAmount: s.totalAmount,
@@ -76,6 +78,7 @@ function verdicts(s: PaymentTypeSummary & { notGenerated?: number }): Verdicts {
     attention: s.partialMatch + s.mismatched + s.unmatched + s.ambiguous,
     excluded: s.excluded,
     notGenerated: s.notGenerated ?? 0,
+    grouped: s.groupedMatched ?? 0,
   };
 }
 
@@ -87,6 +90,7 @@ function addVerdicts(a: Verdicts, b: Verdicts): Verdicts {
     attention: a.attention + b.attention,
     excluded: a.excluded + b.excluded,
     notGenerated: a.notGenerated + b.notGenerated,
+    grouped: a.grouped + b.grouped,
   };
 }
 
@@ -160,6 +164,7 @@ export class OverviewDashboardComponent {
       attention: c.totalPartialMatch + c.totalMismatched + c.totalUnmatched + c.totalAmbiguous,
       excluded: c.totalExcluded,
       notGenerated: s.cardPayments.notGenerated + s.upiGatewayPayments.notGenerated,
+      grouped: (s.cardPayments.groupedMatched ?? 0) + (s.upiGatewayPayments.groupedMatched ?? 0),
     };
   });
 
@@ -219,7 +224,13 @@ export class OverviewDashboardComponent {
         {
           label: 'Reconciled',
           value: r === null ? '—' : `${r}%`,
-          sub: v ? `${v.reconciled.toLocaleString('en-IN')} of ${(v.total - v.excluded).toLocaleString('en-IN')}` : '',
+          // "1,417 of 1,417 · 386 grouped": receipts matched together against one
+          // gateway row are reconciled, and said so — a bare "1,031 of 1,417" left
+          // the rest looking unaccounted for.
+          sub: v
+            ? `${v.reconciled.toLocaleString('en-IN')} of ${(v.total - v.excluded).toLocaleString('en-IN')}` +
+              (v.grouped > 0 ? ` · ${v.grouped.toLocaleString('en-IN')} grouped` : '')
+            : '',
           state: r === null ? 'missing' : r >= 95 ? 'ok' : 'warn',
         },
         {

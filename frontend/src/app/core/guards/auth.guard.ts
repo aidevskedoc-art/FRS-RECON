@@ -46,7 +46,7 @@ export const screenAccessGuard: CanActivateFn = (route) => {
 
 /**
  * Gates the 4 screens whose backend routes hard-require role='Admin' (User
- * Management, Location Master, Go-Live Settings, Shared Folder Automation).
+ * Management, Location Master, Go-Live Settings, Automation).
  * These are outside the per-user screen grants entirely: granting one to an
  * Auditor would only render a page whose every API call 403s.
  */

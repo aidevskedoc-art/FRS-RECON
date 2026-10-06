@@ -199,7 +199,7 @@
       <div class="panel">
         <header class="panel__head">
           <h2><i class="pi pi-cloud-download"></i> Recent Automation</h2>
-          <a class="panel__link" routerLink="/reconciliation/folder-watch">All runs <i class="pi pi-arrow-right"></i></a>
+          <a class="panel__link" routerLink="/reconciliation/folder-watch" [queryParams]="{ tab: 'folder' }">All runs <i class="pi pi-arrow-right"></i></a>
         </header>
         @if (runs.length === 0) {
           <div class="chart-card__empty">No shared-folder runs yet.</div>

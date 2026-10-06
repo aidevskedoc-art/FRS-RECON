@@ -38,10 +38,14 @@ const { decryptSecret } = require('../src/folder-watch/share-credentials');
 const { callSoapApi, extractJson, rowsOf, redact, post } = require('../src/api-sync/soap-client');
 const { formatRequestDate } = require('../src/api-sync/apply-mapping');
 
-/** The only methods this script will call, and the JSON key each one's rows sit under. */
+/**
+ * The only methods this script will call, and the JSON key each one's rows sit
+ * under (null = not known yet: the answer's first list is taken).
+ */
 const METHODS = {
   IpCollection: 'IPcollectionv',
   DiagCollectionjs: 'Diagcollectionv',
+  ConsCollectionjs: null,
 };
 
 /** The ways one operation can be asked, in the order they are tried. */
@@ -67,7 +71,11 @@ async function configFor(soapMethod) {
   const sibling = rows.find((c) => Object.prototype.hasOwnProperty.call(METHODS, c.soap_method));
   if (!sibling) throw new Error('No HIS API is set up yet — add one on Master Data → API Config first.');
   const swap = (text) => (text ? String(text).split(sibling.soap_method).join(soapMethod) : text);
-  return { ...sibling, soap_method: soapMethod, url: swap(sibling.url), soap_action: swap(sibling.soap_action), response_root: METHODS[soapMethod] };
+  // The sibling's address and settings, never its key: each operation has its
+  // own (2026-10-06), so this one's comes from HIS_API_KEY until it is saved.
+  return {
+    ...sibling, auth_key_enc: null, soap_method: soapMethod, url: swap(sibling.url), soap_action: swap(sibling.soap_action), response_root: METHODS[soapMethod],
+  };
 }
 
 /** What an answer is made of — sizes and XML element names only, never its text. */

@@ -14,9 +14,13 @@
  * The four configs beside IpCollection are the ones the app seeds
  * (src/api-sync/seed-configs.js), read from there — and seeding itself is
  * checked: inactive, once only, on the connection already in use.
+ *
+ * Also the "Download HIS data" workbook (src/api-sync/response-export.js): the
+ * answer as received, one sheet per call, nothing stored, the key never in it.
  */
 const assert = require('assert');
 const path = require('path');
+const { divisionOf } = require('../src/online-upload/mis-identities');
 
 // ---- in-memory db stand-in ---------------------------------------------------
 const state = { locations: [], api_configs: [], api_field_mappings: [], api_sync_runs: [], audit_logs: [], api_config_seeds: new Set() };
@@ -28,8 +32,12 @@ let nextId = 1;
 const blank = (v) => (v === null || v === undefined || v === '' ? null : v);
 const IDENTITY = {
   ip_payment_records: (r) => `${String(r.receipt_number ?? '').trim()}§${String(blank(r.transaction_id_1) ?? blank(r.transaction_id_2) ?? '').trim()}`,
-  cheque_collection_records: (r) => `${String(r.receipt_number ?? '').trim()}§${String(r.cheque_no ?? '').trim()}§${r.collection_kind ?? 'IP'}`,
-  refund_records: (r) => `${String(r.refund_no ?? '').trim()}§${String(r.cheque_no ?? '').trim()}§${r.refund_kind ?? ''}`,
+  diag_op_payment_records: (r) =>
+    `${String(r.receipt_number ?? '').trim()}§${String(blank(r.transaction_id_1) ?? blank(r.transaction_id_2) ?? blank(r.transaction_id_3) ?? '').trim()}`,
+  // A cheque's unit is its batch's (`b`); a refund row carries its own division.
+  cheque_collection_records: (r, b) =>
+    `${String(r.receipt_number ?? '').trim()}§${String(r.cheque_no ?? '').trim()}§${r.collection_kind ?? 'IP'}§${divisionOf(b && b.unit_name)}`,
+  refund_records: (r) => `${String(r.refund_no ?? '').trim()}§${String(r.cheque_no ?? '').trim()}§${r.refund_kind ?? ''}§${r.division ?? ''}`,
 };
 // The kind column of each "one API batch per unit and month" unique index (sql/schema.sql).
 const BATCH_KIND = { ucr_ip_upload_batches: 'mis_source', cheque_collection_upload_batches: 'collection_kind' };
@@ -42,6 +50,7 @@ function runQuery(sql, params = []) {
   if (text === 'SELECT * FROM locations WHERE id = $1') return { rows: one(state.locations, params[0]) };
   if (text === 'SELECT * FROM api_configs WHERE id = ANY($1::int[]) ORDER BY id') return { rows: state.api_configs.filter((c) => params[0].includes(c.id)) };
   if (text === 'SELECT * FROM api_configs WHERE active ORDER BY id') return { rows: state.api_configs.filter((c) => c.active) };
+  if (text === 'SELECT * FROM api_configs ORDER BY id') return { rows: [...state.api_configs] };
   if (text === 'SELECT * FROM api_configs WHERE id = $1') return { rows: one(state.api_configs, params[0]) };
   if (text === 'SELECT name, target_table FROM api_configs WHERE id = $1') return { rows: one(state.api_configs, params[0]) };
   if (text === 'SELECT id FROM api_configs WHERE active AND target_table = $1 ORDER BY id LIMIT 1') {
@@ -71,6 +80,14 @@ function runQuery(sql, params = []) {
     return { rows: [{ seed_key: params[0] }] };
   }
   if (text === 'SELECT id FROM api_configs WHERE name = $1') return { rows: state.api_configs.filter((c) => c.name === params[0]) };
+  if (text === 'SELECT c.id FROM api_configs c WHERE c.name = $1 AND NOT EXISTS (SELECT 1 FROM api_field_mappings m WHERE m.api_config_id = c.id) ORDER BY c.id LIMIT 1') {
+    return { rows: state.api_configs.filter((c) => c.name === params[0] && !state.api_field_mappings.some((m) => m.api_config_id === c.id)).slice(0, 1) };
+  }
+  if (text === 'UPDATE api_configs SET name = $2, description = $3, target_table = $4, row_filter = $5::jsonb, active = false, updated_at = now() WHERE id = $1') {
+    const [config] = one(state.api_configs, params[0]);
+    Object.assign(config, { name: params[1], description: params[2], target_table: params[3], row_filter: JSON.parse(params[4]), active: false });
+    return { rows: [] };
+  }
   if (text === 'SELECT * FROM api_configs WHERE soap_method = $1 ORDER BY (auth_key_enc IS NOT NULL) DESC, id LIMIT 1') {
     const same = state.api_configs.filter((c) => c.soap_method === params[0]);
     return { rows: [...same.filter((c) => c.auth_key_enc), ...same.filter((c) => !c.auth_key_enc)].slice(0, 1) };
@@ -112,6 +129,19 @@ function runQuery(sql, params = []) {
   }
 
   if ((m = text.match(/^SELECT DISTINCT .* AS ident FROM (\w+)$/))) return { rows: rowsOf(m[1]).map((r) => ({ ident: IDENTITY[m[1]](r) })) };
+  if ((m = text.match(/^SELECT DISTINCT .* AS ident FROM (\w+) r JOIN (\w+) b ON b\.id = r\.batch_id$/))) {
+    return { rows: rowsOf(m[1]).map((r) => ({ ident: IDENTITY[m[1]](r, one(rowsOf(m[2]), r.batch_id)[0]) })) };
+  }
+  // syncOptions(): per HIS call, how many of its configs are switched on.
+  if (text.startsWith('SELECT soap_method, count(*)::int AS total, (count(*) FILTER (WHERE active))::int AS active FROM api_configs GROUP BY soap_method')) {
+    const methods = [...new Set(state.api_configs.map((c) => c.soap_method))];
+    return { rows: methods.map((m) => ({ soap_method: m, total: state.api_configs.filter((c) => c.soap_method === m).length, active: state.api_configs.filter((c) => c.soap_method === m && c.active).length })) };
+  }
+  // syncOptions(): API batches whose rows Generate has not seen yet.
+  if (text.startsWith("SELECT (SELECT count(*) FROM ip_payment_upload_batches WHERE source = 'API' AND matched_at IS NULL AND row_count > 0)")) {
+    const open = (t) => rowsOf(t).filter((b) => b.source === 'API' && !b.matched_at && b.row_count > 0).length;
+    return { rows: [{ n: ['ip_payment_upload_batches', 'diag_op_upload_batches', 'cheque_collection_upload_batches', 'ucr_ip_upload_batches'].reduce((n, t) => n + open(t), 0) }] };
+  }
 
   // ucr-overlap.js: which of these (receipt, type, amount, reference) keys are stored for the source
   if (text.startsWith('WITH n AS (')) {
@@ -198,6 +228,9 @@ const { syncIpCollection } = require('../src/api-sync/ip-collection-sync');
 const { groupForBatches, batchName, monthOf, storeOf } = require('../src/api-sync/stores');
 const { mapRows } = require('../src/api-sync/apply-mapping');
 const { SEEDS, seedApiConfigs } = require('../src/api-sync/seed-configs');
+const XLSX = require('xlsx');
+const { fetchResponses, buildResponseWorkbook, sheetName } = require('../src/api-sync/response-export');
+const { buildHistoryFilter, historyRowToApi } = require('../src/api-sync/history');
 
 // ---- configs -----------------------------------------------------------------
 
@@ -234,7 +267,8 @@ const CONFIGS = [
     ],
   },
   // The four the app seeds itself (seed-configs.js) — the very definitions, so what is tested is what ships.
-  ...SEEDS.map((seed, i) => ({ id: i + 2, name: seed.name, target_table: seed.targetTable, row_filter: seed.rowFilter, mappings: seed.mappings })),
+  // (Not the DIAG seeds: they read another call — scripts/test-api-sync-diag.js, and testSeeding here.)
+  ...SEEDS.filter((seed) => seed.connection.soap_method === 'IpCollection').map((seed, i) => ({ id: i + 2, name: seed.name, target_table: seed.targetTable, row_filter: seed.rowFilter, mappings: seed.mappings })),
 ];
 
 function reset(overrides = {}) {
@@ -435,10 +469,75 @@ async function testMonthlyBatchesAndFileRows(his) {
     ['API · IP Card/UPI · Secunderabad · Oct 2026', '2026-10-01', 1],
   ]);
 
-  // A day with nothing at all.
+  // A day with nothing at all: stored as "no data" like any other, but said out loud and kept on the run —
+  // an answer with no rows is how the HIS answers a request it did not accept. "None of this kind" is not flagged.
   const empty = await sync('2026-10-02', his);
   assert.ok(empty.results.every((r) => r.status === 'NO_DATA' && r.rowsReceived === 0));
+  assert.ok(empty.results.every((r) => r.emptyAnswer && r.message === 'HIS sent no rows at all for Secunderabad on 02-Oct-2026'));
+  assert.ok(state.api_sync_runs.slice(-5).every((r) => r.status === 'NO_DATA' && /no rows at all/.test(r.error_message)));
+  assert.deepStrictEqual(next.results.filter((r) => r.status === 'NO_DATA').map((r) => [r.emptyAnswer, /^Nothing for "/.test(r.message)]), [[false, true], [false, true], [false, true]]);
+
+  // What makes Run worth pressing with no file dropped: the API batches holding rows Generate has not seen yet
+  // (IP MIS, Card/UPI for Sep and Oct, cheques) — none once Generate has been through them.
+  assert.strictEqual((await syncOptions()).unreconciledBatches, 4);
+  // …and what a sync covers, said before it is pressed: per HIS call, how many of its configs are switched on.
+  assert.deepStrictEqual((await syncOptions()).sources, [{ method: 'IpCollection', label: 'IP', on: 5, total: 5 }]);
+  for (const t of ['ip_payment_upload_batches', 'ucr_ip_upload_batches', 'cheque_collection_upload_batches']) for (const b of rowsOf(t)) b.matched_at = new Date();
+  assert.strictEqual((await syncOptions()).unreconciledBatches, 0);
   console.log('  ok monthly batches; a receipt already stored from a file is skipped');
+}
+
+function testHistoryParts() {
+  // The fetch history (src/api-sync/history.js): its filter and how a row is shown. (Its SQL reads api_sync_runs
+  // and the audit log together, which this in-memory stand-in does not run.)
+  assert.deepStrictEqual(buildHistoryFilter({}), { where: '', params: [] });
+  const f = buildHistoryFilter({ unit: ' Secunderabad ', method: 'IpCollection', kind: 'sync', status: 'failed', from: '2026-10-01', to: '2026-10-06', day: '2026-09-10', page: '2' });
+  assert.deepStrictEqual(f.params, ['Secunderabad', 'IpCollection', 'SYNC', 'FAILED', '2026-10-01', '2026-10-06', '2026-09-10']);
+  assert.strictEqual(
+    f.where,
+    "WHERE h.unit_name = $1 AND h.soap_method = $2 AND h.kind = $3 AND h.status = $4 AND h.at >= $5::date AND h.at < ($6::date + interval '1 day') AND h.trans_date = $7",
+  );
+  assert.throws(() => buildHistoryFilter({ from: '06/10/2026' }), (e) => e.status === 400 && /from must be YYYY-MM-DD/.test(e.message));
+  assert.throws(() => buildHistoryFilter({ status: 'DONE' }), (e) => e.status === 400);
+  assert.throws(() => buildHistoryFilter({ kind: 'TEST' }), (e) => e.status === 400);
+
+  const synced = historyRowToApi({
+    kind: 'SYNC', id: 's12', at: new Date(2026, 9, 6, 11, 7, 54), finished_at: new Date(2026, 9, 6, 11, 7, 57), api_name: 'IP Card', soap_method: 'IpCollection',
+    unit_name: 'Secunderabad', trans_date: '2026-09-10', status: 'SUCCESS', rows_received: 357, rows_kept: 113, rows_stored: 113, rows_skipped: 0, fetched_by: 'ED9046', note: null,
+  });
+  assert.deepStrictEqual(
+    [synced.id, synced.kind, synced.source, synced.method, synced.durationMs, synced.unitName, synced.transDate, synced.rowsReceived, synced.rowsStored, synced.fetchedBy],
+    ['s12', 'SYNC', 'IP', 'IpCollection', 3000, 'Secunderabad', '2026-09-10', 357, 113, 'ED9046'],
+  );
+  const downloaded = historyRowToApi({ kind: 'DOWNLOAD', id: 'd5-1', at: new Date(), finished_at: new Date(), api_name: 'DiagCollectionjs', soap_method: 'DiagCollectionjs', status: 'DOWNLOADED', rows_received: 1289, rows_stored: null });
+  assert.deepStrictEqual([downloaded.source, downloaded.durationMs, downloaded.rowsStored, downloaded.status], ['Diagnostics', null, null, 'DOWNLOADED']);
+  // A run whose API Config has since been deleted: the call it read is no longer known.
+  assert.deepStrictEqual([historyRowToApi({ kind: 'SYNC', id: 's1', soap_method: null }).source, historyRowToApi({ kind: 'SYNC', id: 's1' }).fetchedAt], [null, null]);
+  console.log('  ok fetch history: filter and row shape');
+}
+
+async function testTwoUnitsSameReceipt() {
+  // Each unit numbers its receipts in a series of its own, and most cheque rows carry the placeholder cheque
+  // number: the same receipt number + cheque number from a second unit is that unit's receipt, not a repeat.
+  reset();
+  state.locations.push({ id: 2, name: 'Hitech City', active: true, his_loc_code: 9 });
+  const rows = [
+    row({ BILL_SEQ: 'IDE900/26', BILL_DT: '20-09-2026 10:00:00', CHEQUE_AMT: '5000', CD_CHQ_NO: '123456' }),
+    row({ BILL_SEQ: 'IRF500', BILL_IND: 'F', BILL_DT: '20-09-2026 11:00:00', CHEQUE_AMT: '5000', CD_CHQ_NO: '123456' }),
+  ];
+  const his = async () => ({ status: 200, text: JSON.stringify({ Total: String(rows.length), IPcollectionv: rows }) });
+  const at = (locationId) => syncUnitDay({ locationId, date: '2026-09-20', uploadedBy: 'tester', transport: his });
+  const cheques = (out) => Object.fromEntries(out.results.filter((r) => /Cheque/.test(r.apiName)).map((r) => [r.apiName, r.status]));
+
+  assert.deepStrictEqual(cheques(await at(1)), { 'IP Cheques': 'SUCCESS', 'IP Cheque refunds': 'SUCCESS' });
+  assert.deepStrictEqual(cheques(await at(2)), { 'IP Cheques': 'SUCCESS', 'IP Cheque refunds': 'SUCCESS' });
+  assert.deepStrictEqual(rowsOf('cheque_collection_upload_batches').map((b) => b.unit_name), ['Secunderabad', 'Hitech City']);
+  assert.deepStrictEqual(rowsOf('cheque_collection_records').map((r) => [r.receipt_number, r.cheque_no]), [['IDE900/26', '123456'], ['IDE900/26', '123456']]);
+  assert.deepStrictEqual(rowsOf('refund_records').map((r) => [r.refund_no, r.division]), [['IRF500', 'Secunderabad'], ['IRF500', 'Hitech City']]);
+  // …while the same unit's own repeat is still a repeat.
+  assert.deepStrictEqual(cheques(await at(2)), { 'IP Cheques': 'DUPLICATE', 'IP Cheque refunds': 'DUPLICATE' });
+  assert.strictEqual(rowsOf('cheque_collection_records').length, 2);
+  console.log('  ok the same receipt and cheque number in two units is two receipts');
 }
 
 async function testFailuresStayApart() {
@@ -556,8 +655,13 @@ async function testSeeding() {
   state.api_configs = [{ ...state.api_configs[0], auth_param: 'htuayek', auth_key_enc: 'enc:SECRET-1', tls_insecure: true, timeout_ms: 90000 }];
   state.api_field_mappings = state.api_field_mappings.filter((m) => m.api_config_id === 1);
 
-  assert.deepStrictEqual(await seedApiConfigs(), ['IP Card', 'IP UPI', 'IP Cheques', 'IP Cheque refunds']);
-  const seeded = state.api_configs.slice(1);
+  const DIAG_NAMES = [
+    'DIAG UPI', 'DIAG ManualUPI', 'DIAG Online', 'DIAG Advance UPI', 'DIAG Advance ManualUPI', 'DIAG Advance Online',
+    'DIAG Card', 'DIAG Cheques', 'DIAG Advance Cheques', 'DIAG Cheque refunds',
+  ];
+  const OP_NAMES = ['OP MIS UPI', 'OP MIS ManualUPI', 'OP MIS Online', 'OP Card', 'OP UPI'];
+  assert.deepStrictEqual(await seedApiConfigs(), ['IP Card', 'IP UPI', 'IP Cheques', 'IP Cheque refunds', ...DIAG_NAMES, ...OP_NAMES]);
+  const seeded = state.api_configs.slice(1, 5);
   // Switched off, no key of their own, and on the SAME connection as the config in use.
   assert.ok(seeded.every((c) => c.active === false && c.auth_key_enc === null && c.created_by === 'system'));
   assert.ok(seeded.every((c) => c.url === CONNECTION.url && c.auth_param === 'htuayek' && c.tls_insecure === true && c.timeout_ms === 90000 && c.response_root === 'IPcollectionv'));
@@ -567,6 +671,33 @@ async function testSeeding() {
   const refundAmount = mappingsOf(seeded[3]).find((m) => m.db_column === 'amount');
   assert.deepStrictEqual([refundAmount.source_field, refundAmount.transform, refundAmount.sort_order], ['CHEQUE_AMT', 'NUMBER_ABS', 5]);
   assert.deepStrictEqual(mappingsOf(seeded[0]).find((m) => m.db_column === 'mis_source').transform_arg, { value: 'IP' });
+  // The DIAG call: another operation of the SAME server, so the first DIAG config takes that config's address and
+  // settings with the operation's own names — but no key: each operation has its own, entered by an Admin.
+  const diag = state.api_configs[5];
+  assert.deepStrictEqual(
+    [diag.name, diag.active, diag.target_table, diag.soap_method, diag.url, diag.soap_action, diag.response_root, diag.total_field],
+    ['DIAG UPI', false, 'diag_op_payment_records', 'DiagCollectionjs', 'https://his.example/Service.asmx?op=DiagCollectionjs', 'http://tempuri.org/DiagCollectionjs', 'Diagcollectionv', 'Total'],
+  );
+  assert.deepStrictEqual([diag.auth_param, diag.auth_key_enc, diag.tls_insecure, diag.timeout_ms, mappingsOf(diag).length], ['htuayek', null, true, 90000, 20]);
+  const otherDiag = state.api_configs.slice(6, 15);
+  assert.deepStrictEqual(otherDiag.map((c) => c.name), DIAG_NAMES.slice(1));
+  assert.ok(otherDiag.every((c) => c.active === false && c.auth_key_enc === null && c.url === diag.url && c.soap_method === 'DiagCollectionjs' && c.tls_insecure === true && mappingsOf(c).length > 0));
+  assert.deepStrictEqual(
+    otherDiag.map((c) => c.target_table),
+    ['diag_op_payment_records', 'diag_op_payment_records', 'ip_payment_records', 'ip_payment_records', 'ip_payment_records', 'ucr_ip_records', 'cheque_collection_records', 'cheque_collection_records', 'refund_records'],
+  );
+  // The OP call, the third operation of that server: its own names and row list, the server's settings, and again no key.
+  const op = state.api_configs.slice(15);
+  assert.deepStrictEqual(op.map((c) => [c.name, c.target_table]), [
+    ['OP MIS UPI', 'diag_op_payment_records'], ['OP MIS ManualUPI', 'diag_op_payment_records'], ['OP MIS Online', 'diag_op_payment_records'],
+    ['OP Card', 'ucr_ip_records'], ['OP UPI', 'ucr_ip_records'],
+  ]);
+  assert.ok(op.every((c) => c.active === false && c.auth_key_enc === null && c.auth_param === 'htuayek' && c.tls_insecure === true && c.timeout_ms === 90000));
+  assert.ok(op.every((c) => c.soap_method === 'ConsCollectionjs' && c.url === 'https://his.example/Service.asmx?op=ConsCollectionjs'
+    && c.soap_action === 'http://tempuri.org/ConsCollectionjs' && c.response_root === 'Consultationcollectionv' && c.total_field === 'Total'));
+  // One MIS row per bill: the rule that says so, and the bill's lines added up.
+  assert.deepStrictEqual(op[0].row_filter.at(-1), { field: 'BILL_NO', op: 'oncePer', values: ['TCD_ONLINE_TRANS_ID'] });
+  assert.deepStrictEqual(mappingsOf(op[0]).find((m) => m.db_column === 'bill_amount').transform_arg, { field: 'CTD_ITEM_PRICE', same: ['BILL_NO'], where: [{ field: 'CNCL_IND', op: 'in', values: ['N'] }] });
 
   // Seeded but switched off: a sync still runs only the config that was already on.
   const his = fakeHis();
@@ -577,10 +708,10 @@ async function testSeeding() {
   state.api_configs = state.api_configs.filter((c) => c.name !== 'IP UPI');
   state.api_configs.find((c) => c.name === 'IP Card').name = 'Card (IP)';
   assert.deepStrictEqual(await seedApiConfigs(), []);
-  assert.deepStrictEqual(state.api_configs.map((c) => c.name), ['IpCollection', 'Card (IP)', 'IP Cheques', 'IP Cheque refunds']);
+  assert.deepStrictEqual(state.api_configs.map((c) => c.name), ['IpCollection', 'Card (IP)', 'IP Cheques', 'IP Cheque refunds', ...DIAG_NAMES, ...OP_NAMES]);
 
-  // Switched on, they read the one call and use the one key of the config they copied.
-  for (const c of state.api_configs) c.active = true;
+  // Switched on, the IP ones read the one call and use the one key of the config they copied.
+  for (const c of state.api_configs) c.active = !/^(DIAG|OP)/.test(c.name);
   const on = await sync('2026-09-16', his);
   assert.strictEqual(his.calls.length, 2);
   assert.match(his.calls[1].body, /<htuayek>SECRET-1<\/htuayek>/);
@@ -590,13 +721,183 @@ async function testSeeding() {
   state.api_config_seeds = new Set();
   state.api_configs = [{ id: 900, name: 'IP Cheques', soap_method: 'SomethingElse', url: 'https://other.example', active: true, auth_key_enc: null }];
   state.api_field_mappings = [];
-  assert.deepStrictEqual(await seedApiConfigs(), ['IP Card', 'IP UPI', 'IP Cheque refunds']);
+  assert.deepStrictEqual(await seedApiConfigs(), ['IP Card', 'IP UPI', 'IP Cheque refunds', ...DIAG_NAMES, ...OP_NAMES]);
+  const freshOp = state.api_configs.find((c) => c.name === 'OP MIS UPI');
+  assert.deepStrictEqual(
+    [freshOp.url, freshOp.soap_method, freshOp.response_root, freshOp.auth_key_enc, freshOp.active],
+    ['https://yhapi.yashodahospital.com:8021/Service.asmx?op=ConsCollectionjs', 'ConsCollectionjs', 'Consultationcollectionv', null, false],
+  );
+  const freshDiag = state.api_configs.find((c) => c.name === 'DIAG UPI');
+  assert.deepStrictEqual(
+    [freshDiag.url, freshDiag.soap_method, freshDiag.auth_key_enc, freshDiag.active],
+    ['https://yhapi.yashodahospital.com:8021/Service.asmx?op=DiagCollectionjs', 'DiagCollectionjs', null, false],
+  );
   const fresh = state.api_configs.find((c) => c.name === 'IP Card');
   assert.deepStrictEqual(
     [fresh.url, fresh.soap_method, fresh.auth_param, fresh.tls_insecure, fresh.timeout_ms, fresh.active],
     ['https://yhapi.yashodahospital.com:8021/Service.asmx?op=IpCollection', 'IpCollection', 'htuayek', false, 60000, false],
   );
+
+  // A database that holds the unmapped "DIAG Collection" an earlier version seeded: it BECOMES "DIAG UPI"
+  // (same row, its key kept, switched off) instead of being left beside the new ones.
+  reset();
+  state.api_config_seeds = new Set(['ip-card', 'ip-upi', 'ip-cheques', 'ip-cheque-refunds', 'diag-collection']);
+  const placeholder = {
+    ...CONNECTION, id: 77, name: 'DIAG Collection', target_table: 'diag_op_payment_records', row_filter: [], active: true, auth_param: 'htuayek', auth_key_enc: 'enc:SECRET-1',
+    url: 'https://his.example/Service.asmx?op=DiagCollectionjs', soap_action: 'http://tempuri.org/DiagCollectionjs', soap_method: 'DiagCollectionjs', response_root: 'Diagcollectionv',
+  };
+  state.api_configs = [state.api_configs[0], placeholder];
+  state.api_field_mappings = state.api_field_mappings.filter((m) => m.api_config_id === 1);
+  assert.deepStrictEqual(await seedApiConfigs(), [...DIAG_NAMES, ...OP_NAMES]);
+  assert.deepStrictEqual([placeholder.name, placeholder.active, placeholder.auth_key_enc, placeholder.row_filter.length, mappingsOf(placeholder).length], ['DIAG UPI', false, 'enc:SECRET-1', 3, 20]);
+  assert.deepStrictEqual(state.api_configs.map((c) => c.name), ['IpCollection', ...DIAG_NAMES, ...OP_NAMES]);
+  // One an Admin has already mapped is theirs: it is left alone, and "DIAG UPI" is added beside it.
+  reset();
+  state.api_config_seeds = new Set(['ip-card', 'ip-upi', 'ip-cheques', 'ip-cheque-refunds', 'diag-collection']);
+  const mapped = { ...placeholder, id: 78, name: 'DIAG Collection', active: true, row_filter: [] };
+  state.api_configs = [state.api_configs[0], mapped];
+  state.api_field_mappings = [...state.api_field_mappings.filter((m) => m.api_config_id === 1), { id: 7800, api_config_id: 78, db_column: 'receipt_number', source_field: 'BILL_NO', transform: 'DIRECT', sort_order: 1 }];
+  await seedApiConfigs();
+  assert.deepStrictEqual([mapped.name, mapped.active, mappingsOf(mapped).length], ['DIAG Collection', true, 1]);
+  assert.ok(state.api_configs.some((c) => c.name === 'DIAG UPI' && c.id !== 78 && c.active === false));
   console.log('  ok seeded configs: inactive, once only, on the connection already in use');
+}
+
+async function testDiagStore() {
+  // The Diagnostics / OP MIS as a target: its own monthly batch, and the file upload's duplicate check.
+  // The API field names here are placeholders — what is pinned down is the store, not a DIAG mapping.
+  reset();
+  for (const c of state.api_configs) c.active = false;
+  state.api_configs.push({
+    ...CONNECTION, id: 50, name: 'Diag MIS', target_table: 'diag_op_payment_records', row_filter: [],
+    url: 'https://his.example/Service.asmx?op=DiagCollectionjs', soap_action: 'http://tempuri.org/DiagCollectionjs',
+    soap_method: 'DiagCollectionjs', response_root: 'Diagcollectionv',
+  });
+  const mappings = [
+    direct('receipt_number', 'NO'), direct('receipt_date', 'DT', 'DATETIME', { format: DT }), constant('department', 'DIAG'),
+    direct('diag_no', 'DIAG_NO'), direct('transaction_id_1', 'REF'), direct('online_amount', 'AMT', 'NUMBER'), direct('bill_amount', 'AMT', 'NUMBER'),
+  ];
+  state.api_field_mappings.push(
+    ...mappings.map((m, i) => ({
+      id: 5000 + i, api_config_id: 50, db_column: m.dbColumn, source_field: m.sourceField ?? null,
+      transform: m.transform, transform_arg: m.transformArg ?? null, condition: null, sort_order: i + 1,
+    })),
+  );
+  const answers = {
+    '15/09/2026': [
+      { NO: '09/ODR100/26', DT: '15-09-2026 10:00:00', DIAG_NO: 'D1', REF: '111122223333', AMT: '750' },
+      { NO: '09/ODR101/26', DT: '15-09-2026 10:05:00', DIAG_NO: 'D2', REF: '444455556666', AMT: '1200' },
+    ],
+    '16/09/2026': [{ NO: '09/ODR102/26', DT: '16-09-2026 09:00:00', DIAG_NO: 'D3', REF: '777788889999', AMT: '300' }],
+  };
+  const his = async (url, body) => {
+    const rows = answers[body.match(/<trandate>([^<]*)<\/trandate>/)[1]] || [];
+    return { status: 200, text: JSON.stringify({ Total: String(rows.length), Diagcollectionv: rows }) };
+  };
+  // One of the day's receipts is already there from a file.
+  rowsOf('diag_op_payment_records').push({ id: nextId++, batch_id: 900, receipt_number: '09/ODR101/26', transaction_id_1: '444455556666' });
+
+  const first = await sync('2026-09-15', his);
+  assert.deepStrictEqual(first.results.map((r) => [r.apiName, r.status, r.rowsStored, r.rowsSkipped, r.targetLabel]), [
+    ['Diag MIS', 'SUCCESS', 1, 1, 'Diagnostics / OP Payments (Online Collection MIS — Diag)'],
+  ]);
+  const [batch] = rowsOf('diag_op_upload_batches');
+  assert.deepStrictEqual([batch.file_name, batch.source, batch.period_month, batch.unit_name, batch.row_count], ['API · Diag MIS · Secunderabad · Sep 2026', 'API', '2026-09-01', 'Secunderabad', 1]);
+  const stored = rowsOf('diag_op_payment_records').find((r) => r.receipt_number === '09/ODR100/26');
+  assert.deepStrictEqual(
+    [stored.batch_id, stored.receipt_date, stored.department, stored.diag_no, stored.transaction_id_1, stored.online_amount, stored.bill_amount, stored.pay_mode],
+    [batch.id, '2026-09-15T10:00:00.000Z', 'DIAG', 'D1', '111122223333', 750, 750, null],
+  );
+
+  // The next day joins the same month's batch, which now holds rows Generate has not seen; a day synced twice stores nothing.
+  await sync('2026-09-16', his);
+  assert.deepStrictEqual([rowsOf('diag_op_upload_batches').length, batch.row_count, batch.matched_at], [1, 2, null]);
+  assert.deepStrictEqual(statuses(await sync('2026-09-15', his)), { 'Diag MIS': 'DUPLICATE' });
+  assert.strictEqual(rowsOf('diag_op_payment_records').length, 3);
+  console.log('  ok the Diagnostics / OP MIS is a target: monthly batch, the file upload\'s duplicate check');
+}
+
+async function testResponseDownload() {
+  const grid = (book, name) => XLSX.utils.sheet_to_json(book.Sheets[name], { header: 1, defval: '' });
+
+  // Five configs on one connection, one key between them: the HIS is asked once.
+  const keyed = Object.fromEntries(CONFIGS.map((c) => [c.id, { auth_param: 'htuayek', auth_key_enc: c.id === 1 ? 'enc:SECRET-1' : null }]));
+  reset(keyed);
+  const his = fakeHis();
+  const answer = await fetchResponses({ locationId: 1, date: '2026-09-15', transport: his });
+  assert.strictEqual(his.calls.length, 1);
+  assert.deepStrictEqual(
+    answer.calls.map((c) => [c.method, c.asked, c.rows.length, c.total, c.error, c.apiNames.length]),
+    [['IpCollection', 'loc = 1, trandate = 15/09/2026', 8, 8, null, 5]],
+  );
+  // Read-only: no run row, no batch, no record.
+  assert.deepStrictEqual([state.api_sync_runs.length, Object.keys(tables).length], [0, 0]);
+
+  const book = buildResponseWorkbook({ ...answer, downloadedBy: 'tester', downloadedAt: '2026-10-06 09:00' });
+  assert.deepStrictEqual(book.SheetNames, ['IpCollection', 'Info']);
+  const rows = grid(book, 'IpCollection');
+  const at = (name) => rows[0].indexOf(name);
+  // Every field in the HIS's own order, and every row — the cash, cancelled and refund rows a sync leaves out too.
+  assert.deepStrictEqual(rows[0], Object.keys(row({})));
+  assert.deepStrictEqual(rows.slice(1).map((r) => r[at('BILL_SEQ')]), DAYS['15/09/2026'].map((r) => r.BILL_SEQ));
+  assert.ok(rows.some((r) => r[at('CNCL_IND')] === 'Y') && rows.some((r) => r[at('BILL_IND')] === 'F'));
+  // As received: an amount and a date stay the text the HIS sent.
+  assert.deepStrictEqual([rows[1][at('TR_CH_AMT')], rows[1][at('BILL_DT')]], ['4221', '15-09-2026 11:55:01']);
+  assert.strictEqual(book.Sheets.IpCollection[XLSX.utils.encode_cell({ r: 1, c: at('TR_CH_AMT') })].t, 's');
+
+  const info = grid(book, 'Info');
+  const labelled = (label) => info.find((r) => r[0] === label)[1];
+  assert.deepStrictEqual(
+    ['Unit', 'HIS loc code', 'Collection date', 'Downloaded', 'Downloaded by'].map(labelled),
+    ['Secunderabad', 1, '15-Sep-2026', '2026-10-06 09:00', 'tester'],
+  );
+  const line = info.find((r) => r[1] === 'IpCollection');
+  assert.deepStrictEqual(line.slice(0, 5), ['IpCollection', 'IpCollection', 'loc = 1, trandate = 15/09/2026', 8, 8]);
+  assert.deepStrictEqual([line[5].split(', ').length, line[6]], [5, '']);
+  // The key is in the request, never in the file.
+  assert.ok(!JSON.stringify(book.SheetNames.map((n) => grid(book, n))).includes('SECRET-1'));
+  assert.ok(XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }).length > 0);
+
+  // A total that disagrees with the rows is still downloaded — it is what there is to look at — and said so.
+  const short = await fetchResponses({ locationId: 1, date: '2026-09-15', transport: fakeHis((r) => ({ Total: '99', IPcollectionv: r })) });
+  assert.match(grid(buildResponseWorkbook(short), 'Info').find((r) => r[1] === 'IpCollection')[6], /does not match the rows received/);
+  // A day with nothing: an empty sheet that still writes.
+  const empty = buildResponseWorkbook(await fetchResponses({ locationId: 1, date: '2026-10-02', transport: his }));
+  assert.deepStrictEqual([empty.SheetNames, grid(empty, 'Info').find((r) => r[1] === 'IpCollection')[3]], [['IpCollection', 'Info'], 0]);
+  assert.ok(XLSX.write(empty, { type: 'buffer', bookType: 'xlsx' }).length > 0);
+
+  // Two calls, one unreachable: the other is still downloaded, and the failure is a line on Info with its key struck out.
+  reset({ ...keyed, 2: { auth_param: 'htuayek', auth_key_enc: 'enc:SECRET-2', url: 'https://other.example/Service.asmx', soap_method: 'DiagCollectionjs', soap_action: 'http://tempuri.org/DiagCollectionjs' } });
+  const partly = async (url, body) => {
+    if (url.includes('other.example')) throw new Error('socket hang up while sending SECRET-2');
+    return his(url, body);
+  };
+  const mixed = await fetchResponses({ locationId: 1, date: '2026-09-15', transport: partly });
+  assert.deepStrictEqual(mixed.calls.map((c) => [c.method, c.rows.length, !!c.error]), [['IpCollection', 8, false], ['DiagCollectionjs', 0, true]]);
+  const mixedBook = buildResponseWorkbook(mixed);
+  assert.deepStrictEqual(mixedBook.SheetNames, ['IpCollection', 'Info']);
+  const failedLine = grid(mixedBook, 'Info').find((r) => r[1] === 'DiagCollectionjs');
+  assert.ok(failedLine[0] === '' && /^Failed: Could not reach the API/.test(failedLine[6]) && !failedLine[6].includes('SECRET-2'));
+
+  // Nothing answers: no workbook, the failure itself. And the usual refusals.
+  const down = async () => {
+    throw new Error('socket hang up');
+  };
+  await assert.rejects(fetchResponses({ locationId: 1, date: '2026-09-15', transport: down }), (err) => err.status === 502 && /Could not reach the API/.test(err.message));
+  await assert.rejects(fetchResponses({ locationId: 1, date: '15/09/2026', transport: his }), (err) => err.status === 400);
+  // A config that is switched off is still asked: off is how a config waits until its answer has been looked at.
+  for (const c of state.api_configs) c.active = false;
+  assert.deepStrictEqual((await fetchResponses({ locationId: 1, date: '2026-09-15', transport: partly })).calls.map((c) => c.method), ['IpCollection', 'DiagCollectionjs']);
+  state.api_configs = [];
+  await assert.rejects(fetchResponses({ locationId: 1, date: '2026-09-15', transport: his }), (err) => err.status === 422 && /No API is set up/.test(err.message));
+
+  // Sheet names Excel accepts: its forbidden characters out, 31 characters at most, never the same twice.
+  const taken = new Set(['info']);
+  assert.deepStrictEqual(
+    [sheetName('IpCollection', taken), sheetName('IpCollection', taken), sheetName('A/B:C', taken), sheetName('Info', taken), sheetName('X'.repeat(40), taken).length],
+    ['IpCollection', 'IpCollection (2)', 'A B C', 'Info (2)', 31],
+  );
+  console.log('  ok the HIS answer downloads as received: one sheet per call, nothing stored, no key');
 }
 
 (async () => {
@@ -608,6 +909,10 @@ async function testSeeding() {
   await testSwitchesAndKeys();
   await testIpCard();
   await testSeeding();
+  testHistoryParts();
+  await testTwoUnitsSameReceipt();
+  await testDiagStore();
+  await testResponseDownload();
   console.log('all passed');
 })().catch((err) => {
   console.error(err);

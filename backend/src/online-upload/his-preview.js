@@ -56,7 +56,8 @@ const MIS_TYPES = {
   CHEQUE_COLLECTION: {
     upload: hisChequeUpload,
     identity: identities.CHEQUE_COLLECTION,
-    rowsOf: (u) => u.sheets.flatMap((s) => s.rows),
+    // __unit: a cheque's identity includes its unit, as the upload route tags it.
+    rowsOf: (u) => u.sheets.flatMap((s) => s.rows.map((r) => ({ ...r, __unit: s.unitName }))),
     groupOf: (r) => `${r.collectionKind} cheques`,
     amountOf: (r) => r.amount,
     note: 'Bank, branch, cheque date and payer (TPA) are not in this report and are left blank.',

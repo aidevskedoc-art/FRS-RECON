@@ -899,16 +899,24 @@ export class MismatchReviewComponent {
     let onlineChequeStatuses =
       mode === 'mismatches' ? MISMATCH_STATUSES : wantsClean ? [...CLEAN_MATCH_STATUSES, 'YASHODA_REFUND_CHEQUE'] : null;
     let ucrStatuses = mode === 'mismatches' ? UCR_MISMATCH_STATUSES : wantsClean ? UCR_CLEAN_STATUSES : null;
-    // An explicit Status pick is narrower than the view mode, so it replaces it
-    // rather than adding to it. Narrowed per tab because the two families of
-    // tables do not share a vocabulary (see STATUS_FILTER_OPTIONS) — and an
-    // EMPTY narrowing must send a filter that matches nothing, not no filter at
-    // all, which the API would read as "every row".
+    // An explicit Status pick NARROWS the view, it does not replace it — the
+    // same rule the Excel export follows (backend mismatch-export.routes.js
+    // statusesFor). It used to replace it, so picking "Grouped Matched" listed
+    // those matched rows under Mismatches too, and every view's count read the
+    // same (2026-10-06: Mismatches 90/90 AND Matched 90/90). Now "Mismatches,
+    // just the Grouped Matched ones" is what it says: none.
+    // Narrowed per tab as well, because the two families of tables do not share
+    // a vocabulary (see STATUS_FILTER_OPTIONS) — and an EMPTY narrowing must
+    // send a filter that matches nothing, not no filter at all, which the API
+    // would read as "every row".
     if (f.statuses.length) {
-      const forTab = statusesForTab(f.statuses, tab);
-      const list = forTab.length ? forTab : ['__NONE__'];
-      onlineChequeStatuses = list;
-      ucrStatuses = list;
+      const forTab: string[] = statusesForTab(f.statuses, tab);
+      const within = (viewStatuses: readonly string[] | null): string[] => {
+        const list = viewStatuses === null ? forTab : forTab.filter((s) => viewStatuses.includes(s));
+        return list.length ? list : ['__NONE__'];
+      };
+      onlineChequeStatuses = within(onlineChequeStatuses);
+      ucrStatuses = within(ucrStatuses);
     }
     switch (tab) {
       case 'online':

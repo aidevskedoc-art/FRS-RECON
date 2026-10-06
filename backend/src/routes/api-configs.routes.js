@@ -22,6 +22,7 @@ const {
 } = require('../api-sync/targets');
 const { apiConfigRowToApi, mappingRowToApi, syncRunRowToApi, loadMappings, encryptKey } = require('../api-sync/config-store');
 const { testApi } = require('../api-sync/ip-collection-sync');
+const { READ_METHODS } = require('../api-sync/soap-client');
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -100,6 +101,14 @@ function columnsFrom(body, { partial }) {
       throw Object.assign(new Error(`${col.replace('_', ' ')} "${out[col]}" is not a valid XML element name`), { status: 400 });
     }
   }
+  // The service also has operations that change data; a config may name only
+  // the ones that read collections (soap-client.js checks again on every call).
+  if (out.soap_method && !READ_METHODS.includes(out.soap_method)) {
+    throw Object.assign(new Error(`soapMethod must be one of: ${READ_METHODS.join(', ')}`), { status: 400 });
+  }
+  if (out.soap_action && !READ_METHODS.includes(String(out.soap_action).split('/').pop())) {
+    throw Object.assign(new Error(`soapAction must end with one of: ${READ_METHODS.join(', ')}`), { status: 400 });
+  }
   if (out.target_table !== undefined && !targetOf(out.target_table)) {
     throw Object.assign(new Error(`targetTable must be one of: ${Object.keys(TARGETS).join(', ')}`), { status: 400 });
   }
@@ -126,6 +135,7 @@ router.get('/meta', (req, res) => {
     transforms: TRANSFORMS,
     dateFormats: DATE_FORMATS,
     filterOps: FILTER_OPS,
+    soapMethods: READ_METHODS,
   });
 });
 
@@ -256,6 +266,14 @@ function validateMappings(list, targetTable) {
         const fields = (Array.isArray(arg?.fields) ? arg.fields : []).map((f) => String(f).trim()).filter(Boolean);
         if (fields.length === 0) throw Object.assign(new Error(`${m.dbColumn}: a sum needs the API fields to add up`), { status: 400 });
         arg = { fields };
+      }
+      if (transform === 'SUM_SAME') {
+        const same = (Array.isArray(arg?.same) ? arg.same : []).map((f) => String(f).trim()).filter(Boolean);
+        if (blank(arg?.field) || same.length === 0) {
+          throw Object.assign(new Error(`${m.dbColumn}: a sum over a bill's lines needs the field to add up and the field(s) the lines share`), { status: 400 });
+        }
+        const where = normaliseRules(arg.where, `${m.dbColumn} sum`) || [];
+        arg = { field: String(arg.field).trim(), same, ...(where.length ? { where } : {}) };
       }
       if ((transform === 'DATETIME' || transform === 'DATE') && blank(arg?.format)) {
         throw Object.assign(new Error(`${m.dbColumn}: a date transform needs a format`), { status: 400 });
