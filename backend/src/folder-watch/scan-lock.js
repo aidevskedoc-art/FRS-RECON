@@ -21,17 +21,14 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /**
  * Writes that are never paused: signing in / changing a password, user
- * management, file-type detection (reads the file, stores nothing), the
- * insurance-policy module (unrelated to reconciliation), testing the share
- * connection, and Run Now — whose request stays open until its own scan
- * finishes, so counting it as "in progress" would make the scan wait for itself.
+ * management, file-type detection (reads the file, stores nothing), testing
+ * the share connection, and Run Now — whose request stays open until its own
+ * scan finishes, so counting it as "in progress" would make the scan wait for itself.
  */
 const NEVER_PAUSED = [
   '/api/auth/',
   '/api/users',
   '/api/uploads/detect',
-  '/api/documents',
-  '/api/policies',
   '/api/folder-watch/test-connection',
   '/api/folder-watch/run-now',
 ];

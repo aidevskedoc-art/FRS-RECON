@@ -97,6 +97,70 @@
   font-size: 1.35rem;
 }
 
+// ---------------------------------------------------------------------
+// While figures load: a step line on first visit, shimmering placeholders,
+// and — when last time's figures are on screen — a quiet "Updating…" tag.
+// ---------------------------------------------------------------------
+.dash__updating {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.hero--stale .hero__value {
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.dash__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--status-info-fg);
+}
+
+.dash__progress-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--status-info-fg);
+  animation: dash-pulse 1s ease-in-out infinite;
+}
+
+.skeleton {
+  display: inline-block;
+  border-radius: var(--r-md, 6px);
+  background: linear-gradient(90deg, var(--surface-sunken) 0%, var(--surface-soft) 50%, var(--surface-sunken) 100%);
+  background-size: 200% 100%;
+  animation: dash-shimmer 1.2s linear infinite;
+}
+
+.skeleton--value {
+  width: 5.5rem;
+  height: 1.6rem;
+  vertical-align: middle;
+}
+
+@keyframes dash-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@keyframes dash-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .dash__progress-dot {
+    animation: none;
+  }
+}
+
 .hero__sub {
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -170,6 +234,98 @@
   &:hover {
     color: var(--ai-orange);
   }
+}
+
+// ---------------------------------------------------------------------
+// Waiting for statements — information, not an alarm: the info hue, not red
+// ---------------------------------------------------------------------
+.awaiting {
+  border-left: 3px solid var(--status-info-border);
+}
+
+.awaiting__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.awaiting__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.awaiting__count {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--status-info-fg);
+}
+
+.awaiting__what {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.awaiting__hint {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.awaiting__types {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.awaiting__type {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.awaiting__type--none {
+  opacity: 0.6;
+}
+
+.awaiting__type-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.awaiting__type-count {
+  font-weight: 700;
+  color: var(--status-info-fg);
+}
+
+.awaiting__type-upto {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.awaiting__branches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.awaiting__branches-label {
+  font-weight: 600;
 }
 
 // ---------------------------------------------------------------------

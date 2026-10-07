@@ -66,4 +66,57 @@ router.put('/config', async (req, res, next) => {
   }
 });
 
+// ---- Awaiting statement allowance (scope-filters.js coverageCutoffs) ----------------
+
+const AWAITING_DAYS_RANGE = [0, 15];
+
+const awaitingRowToApi = (row) => ({
+  awaitingStatementDays: Number(row.awaiting_statement_days),
+  updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+  updatedByName: row.updated_by_name ?? null,
+});
+
+// GET /api/go-live/awaiting-statement
+router.get('/awaiting-statement', async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT s.*, u.full_name AS updated_by_name
+         FROM reconciliation_settings s LEFT JOIN users u ON u.id = s.updated_by
+        ORDER BY s.id LIMIT 1`,
+    );
+    res.json(rows[0] ? awaitingRowToApi(rows[0]) : { awaitingStatementDays: 3, updatedAt: null, updatedByName: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/go-live/awaiting-statement { awaitingStatementDays }
+router.put('/awaiting-statement', async (req, res, next) => {
+  try {
+    const days = Number(req.body?.awaitingStatementDays);
+    const [low, high] = AWAITING_DAYS_RANGE;
+    if (!Number.isInteger(days) || days < low || days > high) {
+      return res.status(400).json({ error: `awaitingStatementDays must be a whole number from ${low} to ${high}` });
+    }
+    const { rows: existing } = await db.query('SELECT id, awaiting_statement_days FROM reconciliation_settings ORDER BY id LIMIT 1');
+    const { rows } = existing.length
+      ? await db.query(
+          `UPDATE reconciliation_settings SET awaiting_statement_days = $2, updated_at = now(), updated_by = $3 WHERE id = $1 RETURNING *`,
+          [existing[0].id, days, req.user.sub],
+        )
+      : await db.query(
+          `INSERT INTO reconciliation_settings (awaiting_statement_days, updated_by) VALUES ($1, $2) RETURNING *`,
+          [days, req.user.sub],
+        );
+    await logAction({
+      actorUserId: req.user.sub, entityType: 'reconciliation_settings', entityId: rows[0].id,
+      action: 'AWAITING_STATEMENT_DAYS_UPDATED',
+      details: { from: existing[0] ? Number(existing[0].awaiting_statement_days) : null, to: days }, req,
+    });
+    res.json(awaitingRowToApi(rows[0]));
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

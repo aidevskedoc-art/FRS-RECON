@@ -63,6 +63,8 @@ export interface UcrIpRecord {
   matchDifference?: number | null;
   /** The matched gateway row's reference/amount/date, hydrated by the list route regardless of which of the 3 tables it came from. */
   matchedSource: { reference: string | null; amount: number | null; date: string | null; sourceType: UcrMatchSourceType | null } | null;
+  /** No gateway file covers this row's date yet, and it is not a clean match: shown as "Awaiting statement". */
+  awaitingStatement?: boolean;
 }
 
 /**
@@ -77,6 +79,8 @@ export interface UcrTally {
   mismatched: number;
   unmatched: number;
   notGenerated: number;
+  /** Rows no gateway file covers yet — counted here, not under unmatched / mismatched. */
+  awaiting?: number;
   misTotal: number;
   gatewayTotal: number;
 }
@@ -87,6 +91,8 @@ export interface UcrIpRecordsPage {
   pageSize: number;
   /** Absent from a backend that has not been restarted since it was added. */
   tally?: UcrTally;
+  /** How far the gateway file reaches, and what it covers after the settlement allowance. */
+  coverage?: { coveredUpTo: string | null; statementUpTo: string | null; awaitingDays: number };
   records: UcrIpRecord[];
 }
 

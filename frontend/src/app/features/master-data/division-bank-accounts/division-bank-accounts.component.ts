@@ -7,7 +7,7 @@ import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { MasterDataService } from '../../../core/services/master-data.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { DIVISIONS, Division, DivisionBankAccount, DivisionBankAccountDraft } from '../../../core/models';
 import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
 

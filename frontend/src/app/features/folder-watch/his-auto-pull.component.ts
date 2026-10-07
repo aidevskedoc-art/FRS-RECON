@@ -7,7 +7,7 @@ import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { ApiConfigService, toYmd } from '../../core/services/api-config.service';
-import { errorMessage } from '../../core/services/policy-document.service';
+import { errorMessage } from '../../core/utils/error-message.util';
 import { ApiPullRun, ApiPullRunsPage, ApiPullRunStatus, ApiPullSchedule, ApiPullScheduleDraft, ApiPullUnitDay } from '../../core/models';
 
 const STATUS_LABELS: Record<ApiPullRunStatus, string> = {

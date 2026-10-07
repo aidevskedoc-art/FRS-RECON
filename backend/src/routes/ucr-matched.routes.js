@@ -16,7 +16,7 @@ const { reconcileCardTransactions } = require('../reconciliation/upi-card-recon/
 const { reconcileUpiTransactions } = require('../reconciliation/upi-card-recon/upi-matcher');
 const { ucrRecordSelect } = require('../reconciliation/upi-card-recon/ucr-record-query');
 const { loadGatewayPolicy } = require('../gateway-policy-store');
-const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, settlementCutoffs, cutoffClause } = require('../scope-filters');
+const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, coverageCutoffs, upToClause } = require('../scope-filters');
 const {
   ucrIpRecordRowToApi,
   ucrCardMprRecordRowToApi,
@@ -290,10 +290,12 @@ async function buildUcrFilter({ instrumentType, query }) {
     clauses.push(`r.mis_source = $${params.length}`);
   }
   // AC-12 "till bank upload": the gateway MPR export is this list's bank file.
-  // It carries no branch, so the cut-off is one date for every row.
-  if (parseUpTo(query.upTo) === 'BANK') {
-    const cutoffs = await settlementCutoffs(instrumentType === 'CARD' ? 'CARD_MPR' : 'UPI_MPR');
-    const cutoff = cutoffClause('ucr_ip_upload_batches', cutoffs, params);
+  // It carries no branch, so the cut-off is one date for every row. AWAITING
+  // keeps the rows after it instead ("Awaiting statement").
+  const upTo = parseUpTo(query.upTo);
+  if (upTo) {
+    const cutoffs = await coverageCutoffs(instrumentType === 'CARD' ? 'CARD_MPR' : 'UPI_MPR');
+    const cutoff = upToClause(upTo, 'ucr_ip_upload_batches', cutoffs, params);
     if (cutoff) clauses.push(cutoff);
   }
   return { where: `WHERE ${clauses.join(' AND ')}`, params };
@@ -316,8 +318,25 @@ async function listUcrIpRecords({ instrumentType, query, res }) {
     [...params, pageSize, (page - 1) * pageSize],
   );
 
-  res.json({ total: countRows[0].total, page, pageSize, tally: await tallyUcrIpRecords(where, params), records: rows.map(ucrIpRecordRowToApi) });
+  // Awaiting statement (scope-filters.js coverageCutoffs): a row dated past what
+  // the gateway file covers, and not already a clean match, is not checkable
+  // yet. Flagged per row and counted on its own, never as unmatched.
+  const coverage = await coverageCutoffs(instrumentType === 'CARD' ? 'CARD_MPR' : 'UPI_MPR');
+  const awaiting = (row) =>
+    !!coverage.fallback && !!row.receipt_date_ymd && row.receipt_date_ymd > coverage.fallback && !UCR_CLEAN.has(row.match_status);
+
+  res.json({
+    total: countRows[0].total,
+    page,
+    pageSize,
+    tally: await tallyUcrIpRecords(where, params, coverage.fallback),
+    coverage: { coveredUpTo: coverage.fallback, statementUpTo: coverage.statementUpTo, awaitingDays: coverage.days },
+    records: rows.map((row) => ({ ...ucrIpRecordRowToApi(row), awaitingStatement: awaiting(row) })),
+  });
 }
+
+/** A Card/UPI clean match — never Awaiting statement, however late its date. */
+const UCR_CLEAN = new Set(['MATCHED', 'GROUPED_MATCHED']);
 
 /**
  * The figures above the list, over EVERY row the filter selects — not only the
@@ -330,11 +349,16 @@ async function listUcrIpRecords({ instrumentType, query, res }) {
  * of a group carries the group's own gateway amount (match_source_amount), so
  * adding it per receipt would count it once per receipt.
  */
-async function tallyUcrIpRecords(where, params) {
+async function tallyUcrIpRecords(where, params, coveredUpTo = null) {
+  // Past the gateway file's coverage and not a clean match: Awaiting statement.
+  const cut = `$${params.length + 1}::date`;
   const { rows: byStatus } = await db.query(
-    `SELECT r.match_status, COUNT(*)::int AS n, COALESCE(SUM(r.amount), 0) AS amount
-       FROM ucr_ip_records r ${where} GROUP BY r.match_status`,
-    params,
+    `SELECT CASE WHEN ${cut} IS NOT NULL AND r.receipt_date >= ${cut} + 1
+                      AND COALESCE(r.match_status, '') NOT IN ('MATCHED', 'GROUPED_MATCHED') THEN 'AWAITING'
+                 ELSE r.match_status END AS match_status,
+            COUNT(*)::int AS n, COALESCE(SUM(r.amount), 0) AS amount
+       FROM ucr_ip_records r ${where} GROUP BY 1`,
+    [...params, coveredUpTo],
   );
   const { rows: gateway } = await db.query(
     `SELECT COALESCE(SUM(g.amount), 0) AS total
@@ -343,10 +367,11 @@ async function tallyUcrIpRecords(where, params) {
               ORDER BY r.match_source_type, r.match_source_id) g`,
     params,
   );
-  const tally = { matched: 0, groupedMatched: 0, mismatched: 0, unmatched: 0, notGenerated: 0, misTotal: 0, gatewayTotal: 0 };
+  const tally = { matched: 0, groupedMatched: 0, mismatched: 0, unmatched: 0, notGenerated: 0, awaiting: 0, misTotal: 0, gatewayTotal: 0 };
   for (const row of byStatus) {
     tally.misTotal += Number(row.amount) || 0;
-    if (row.match_status === 'MATCHED') tally.matched += row.n;
+    if (row.match_status === 'AWAITING') tally.awaiting += row.n;
+    else if (row.match_status === 'MATCHED') tally.matched += row.n;
     else if (row.match_status === 'GROUPED_MATCHED') {
       tally.matched += row.n;
       tally.groupedMatched += row.n;

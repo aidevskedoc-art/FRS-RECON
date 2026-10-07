@@ -12,7 +12,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
 import { MasterDataService } from '../../../core/services/master-data.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { ApiConfig, ApiConfigDraft, ApiConfigMeta, ApiFilterOp, ApiFilterRule, ApiTestResult } from '../../../core/models';
 import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
 

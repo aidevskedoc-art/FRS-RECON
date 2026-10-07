@@ -10,7 +10,7 @@ import { MultiSelectModule } from 'primeng/multiselect';
 import { TooltipModule } from 'primeng/tooltip';
 import { ChequeCollectionService } from '../../../core/services/cheque-collection.service';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import {
   ChequeCollectionBatch,
   ChequeCollectionRecord,

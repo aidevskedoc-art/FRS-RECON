@@ -120,8 +120,8 @@ export interface ChequeCollectionRecordsQuery {
   location?: string;
   /** AC-10: 'IP' | 'DIAG' ('OP' ledger) | 'OPD' (none). */
   department?: 'IP' | 'DIAG' | 'OPD';
-  /** AC-12: 'BANK' = each row only up to its branch's last bank date. */
-  upTo?: 'BANK';
+  /** AC-12: 'BANK' = each row only up to what its branch's bank statement covers; 'AWAITING' = only the rows after it. */
+  upTo?: 'BANK' | 'AWAITING';
   /** '__NONE__' selects rows no rule caught. */
   matchAppliedRule?: string;
   page?: number;

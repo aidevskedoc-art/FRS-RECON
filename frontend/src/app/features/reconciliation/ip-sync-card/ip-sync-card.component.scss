@@ -175,6 +175,13 @@
   border: 1px solid var(--status-success-border);
 }
 
+// Work in progress (an "All units" sync or download), not a verdict.
+.notice--busy {
+  color: var(--status-info-fg);
+  background: var(--status-info-bg);
+  border: 1px solid var(--status-info-border);
+}
+
 // One line per API a sync ran: its name, then what it stored (or why not).
 .results {
   display: flex;

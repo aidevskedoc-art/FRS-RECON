@@ -2,12 +2,8 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const db = require('./db');
 
-const { router: documentsRouter, uploadDir } = require('./routes/documents.routes');
-const extractionRouter = require('./routes/extraction.routes');
-const policiesRouter = require('./routes/policies.routes');
 const onlineUploadRouter = require('./routes/online-upload.routes');
 const ipPaymentsRouter = require('./routes/ip-payments.routes');
 const diagOpPaymentsRouter = require('./routes/diag-op-payments.routes');
@@ -22,7 +18,7 @@ const mismatchExportRouter = require('./routes/mismatch-export.routes');
 const gatewayRulesRouter = require('./routes/gateway-rules.routes');
 const uploadsDetectRouter = require('./routes/uploads-detect.routes');
 const authRouter = require('./routes/auth.routes');
-const { requireAuth, requireAuthExcept } = require('./middleware/auth');
+const { requireAuthExcept } = require('./middleware/auth');
 const usersRouter = require('./routes/users.routes');
 const auditLogsRouter = require('./routes/audit-logs.routes');
 const matchApprovalsRouter = require('./routes/match-approvals.routes');
@@ -58,10 +54,6 @@ const corsOptions = allowedOrigins
 
 app.use(cors(corsOptions));
 app.use(express.json());
-// Uploaded insurance policy PDFs carry patient details — signed-in users only.
-// The preview fetches them through the token-carrying HTTP client (an <iframe>
-// can't send the Authorization header itself).
-app.use('/uploads', requireAuth, express.static(uploadDir));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -80,9 +72,6 @@ app.use('/api', requireAuthExcept(['/api/health', '/api/auth/login']));
 app.use('/api', pauseWritesDuringScan);
 app.get('/api/scan-status', (req, res) => res.json(scanStatus()));
 
-app.use('/api/documents', documentsRouter);
-app.use('/api/documents', extractionRouter);
-app.use('/api/policies', policiesRouter);
 app.use('/api/online-upload', onlineUploadRouter);
 app.use('/api/ip-payments', ipPaymentsRouter);
 app.use('/api/diag-op-payments', diagOpPaymentsRouter);

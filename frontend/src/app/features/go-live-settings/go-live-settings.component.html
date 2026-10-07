@@ -2,7 +2,7 @@
   <app-page-header
     icon="pi pi-lock"
     title="Go-Live Settings"
-    subtitle="From this date, every clean match locks itself and MIS/bank data can no longer be deleted or edited."
+    subtitle="From this date, every clean match locks itself and MIS/bank data can no longer be deleted or edited. Below it, how long a receipt waits for its statement."
   />
 
   @if (loadError(); as err) {
@@ -62,6 +62,53 @@
         @if (config.updatedByName) {
           <span class="field-hint">Last changed by {{ config.updatedByName }}, {{ config.updatedAt | date: 'd MMM y, h:mm a' }}.</span>
         }
+      }
+    </div>
+  </div>
+
+  <!-- Awaiting statement: how long after a statement's last date a receipt still counts as "on its way" -->
+  <div class="go-live-settings__panel glass-card glass-card--static">
+    <div class="form">
+      <h3 class="go-live-settings__title"><i class="pi pi-hourglass"></i> Awaiting Statement</h3>
+      @if (awaitingError(); as err) {
+        <div class="modal-error">{{ err }}</div>
+      }
+
+      <label class="field">
+        <span class="field-label">Settlement days</span>
+        <p-inputnumber
+          [ngModel]="awaitingDays()"
+          (ngModelChange)="setAwaitingDays($event)"
+          [min]="0"
+          [max]="15"
+          [showButtons]="true"
+          [useGrouping]="false"
+          suffix=" days"
+        />
+        <span class="field-hint">
+          A receipt dated after its statement's last date — or within this many days before it — shows as
+          <strong>Awaiting statement</strong>, not as a mismatch: card and UPI money reaches the bank a day or two after the
+          receipt. With a statement up to 28 Sep and 3 days, receipts from 26 Sep on are awaiting. 0 = only receipts after
+          the statement's last date. Nothing is recalculated or stored; every screen uses it from its next load.
+        </span>
+      </label>
+
+      <div class="go-live-settings__actions">
+        <button type="button" class="btn btn-primary" [disabled]="awaitingSaving()" (click)="saveAwaiting()">
+          @if (awaitingSaving()) {
+            <span class="btn-spinner"></span>
+          } @else {
+            <i class="pi pi-check"></i>
+          }
+          <span>Save</span>
+        </button>
+        @if (awaitingSaved()) {
+          <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
+        }
+      </div>
+
+      @if (awaiting()?.updatedByName) {
+        <span class="field-hint">Last changed by {{ awaiting()?.updatedByName }}, {{ awaiting()?.updatedAt | date: 'd MMM y, h:mm a' }}.</span>
       }
     </div>
   </div>

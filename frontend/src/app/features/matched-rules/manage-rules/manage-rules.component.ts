@@ -7,7 +7,7 @@ import { ChequeMatchingRulesComponent } from '../cheque-matching-rules/cheque-ma
 import { GatewayMatchingRulesComponent } from '../gateway-matching-rules/gateway-matching-rules.component';
 import { AuthService } from '../../../core/services/auth.service';
 import { MatchedRulesService, RegenerateAllStep } from '../../../core/services/matched-rules.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 
 type RulesTabId = 'ip' | 'diag' | 'cheque' | 'gateway';
 

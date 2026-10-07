@@ -2,8 +2,6 @@
  * Content-hash guard against re-uploading the same file. Hashing the bytes (not
  * the name) means a renamed copy is still caught, while a genuinely corrected
  * file has different bytes and uploads normally.
- *
- * Mirrors the check documents.routes.js already runs for the insurance module.
  */
 const crypto = require('crypto');
 const db = require('../db');

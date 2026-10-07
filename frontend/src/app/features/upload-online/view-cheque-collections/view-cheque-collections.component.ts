@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { ChequeCollectionService } from '../../../core/services/cheque-collection.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { ChequeCollectionKind } from '../../../core/models';
 
 @Component({

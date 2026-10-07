@@ -11,7 +11,7 @@ import { ChequeCollectionService } from '../../../core/services/cheque-collectio
 import { RefundService } from '../../../core/services/refund.service';
 import { UcrUploadService } from '../../../core/services/ucr-upload.service';
 import { BankStatementService } from '../../../core/services/bank-statement.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 
 interface UploadRow {
   key: string;

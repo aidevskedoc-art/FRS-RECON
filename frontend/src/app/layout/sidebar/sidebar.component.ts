@@ -36,13 +36,13 @@ interface NavItem {
 interface NavGroup {
   label: string;
   /** Key into the --nav-color/grad/soft/line-* token sets in _nav-accents.scss. */
-  accent: 'overview' | 'insurance' | 'online' | 'rules' | 'masters' | 'admin' | 'reports' | 'support';
+  accent: 'overview' | 'online' | 'rules' | 'masters' | 'admin' | 'reports' | 'support';
   items: NavItem[];
   /**
    * Extra path prefixes this group owns without listing a link for them —
    * drill-downs and off-nav pages. Without these the rail has nothing to match
    * on such a route and simply keeps whichever group was last open, so the
-   * document workspace would sit under a stale section and accent colour.
+   * page would sit under a stale section and accent colour.
    */
   owns?: readonly string[];
 }
@@ -84,21 +84,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'API Config', icon: 'pi pi-server', path: '/master-data/api-configs', adminOnly: true },
       { label: 'API Field Mapping', icon: 'pi pi-arrow-right-arrow-left', path: '/master-data/api-mappings', adminOnly: true },
       { label: 'User Management', icon: 'pi pi-users', path: '/master-data/users', adminOnly: true },
-    ],
-  },
-  {
-    // A separate product that happens to share this shell — not part of the
-    // reconciliation workflow above, so it sits near the bottom. Reachable per
-    // user through the same screen grants as everything else.
-    label: 'Automation Insurance',
-    accent: 'insurance',
-    // '/insurance-policy/processing' and the documents/:id/* workspace steps.
-    owns: ['/insurance-policy'],
-    items: [
-      { label: 'Insurance Dashboard', icon: 'pi pi-th-large', path: '/insurance-policy/dashboard', screenKey: 'insurance-dashboard' },
-      { label: 'Upload Documents', icon: 'pi pi-cloud-upload', path: '/insurance-policy/upload', screenKey: 'insurance-upload' },
-      { label: 'Excel Export', icon: 'pi pi-file-excel', path: '/insurance-policy/excel-preview', screenKey: 'insurance-excel-export' },
-      { label: 'Processing History', icon: 'pi pi-history', path: '/insurance-policy/history', screenKey: 'insurance-history' },
     ],
   },
   {
@@ -159,7 +144,7 @@ export class SidebarComponent {
   protected readonly indicatorHeight = signal(0);
   protected readonly indicatorVisible = signal(false);
   /** Accent key of the group containing the active route. */
-  protected readonly activeAccent = signal<string>('insurance');
+  protected readonly activeAccent = signal<string>('overview');
 
   private measureHandle = 0;
   private destroyed = false;
@@ -233,10 +218,9 @@ export class SidebarComponent {
    * Opens the group that owns the current URL and adopts its accent.
    *
    * Matched by longest prefix, not first hit. These are raw string prefixes,
-   * so a shorter `owns` entry never outranks a real link with a longer path
-   * that starts the same way (e.g. '/insurance-policy' vs
-   * '/insurance-policy/dashboard' below) — a first-match scan could otherwise
-   * land on the wrong group.
+   * so a shorter path never outranks a real link with a longer one that starts
+   * the same way (e.g. '/reconciliation' vs '/reconciliation/mismatches') — a
+   * first-match scan could otherwise land on the wrong group.
    */
   private syncToUrl(url: string): void {
     let bestGroup: NavGroup | null = null;
@@ -244,9 +228,8 @@ export class SidebarComponent {
 
     for (const group of this.navGroups()) {
       // `owns` prefixes join the same scan rather than acting as a fallback:
-      // they are shorter than the links they sit above ('/insurance-policy'
-      // vs '/insurance-policy/dashboard'), so a real link always outranks
-      // them and they only decide the routes no link covers.
+      // a real link with a longer path always outranks them, so they only
+      // decide the routes no link covers.
       for (const path of [...group.items.map((i) => i.path), ...(group.owns ?? [])]) {
         if (url.startsWith(path) && path.length > bestLength) {
           bestGroup = group;

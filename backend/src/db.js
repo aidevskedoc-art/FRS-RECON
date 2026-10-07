@@ -6,9 +6,8 @@ const { Pool, types } = require('pg');
 // of letting node-postgres build a JS Date at *local* midnight. Converting
 // such a Date to ISO shifts it backwards in any positive-offset timezone
 // (in IST, 2026-09-15 00:00+05:30 becomes 2026-09-14T18:30Z), which showed
-// up as every extracted policy date landing one day early. Policy dates are
-// calendar dates with no time component, so a string is the honest
-// representation. OID 1082 = DATE.
+// up as dates landing one day early. A DATE is a calendar date with no time
+// component, so a string is the honest representation. OID 1082 = DATE.
 types.setTypeParser(1082, (value) => value);
 
 const pool = new Pool({

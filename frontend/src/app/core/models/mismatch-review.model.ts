@@ -199,7 +199,8 @@ export function statusesForTab(
  * vocabulary — see the service method.
  */
 export interface MismatchExportQuery {
-  mode?: 'mismatches' | 'all' | 'matched' | 'matched_by_auditor';
+  /** 'awaiting' goes with upTo 'AWAITING': the open rows no statement covers yet. */
+  mode?: 'mismatches' | 'all' | 'matched' | 'matched_by_auditor' | 'awaiting';
   /** Exact verdicts, comma-separated. Overrides `mode`; the server intersects it with each stream's vocabulary. */
   statuses?: string;
   search?: string;
@@ -233,8 +234,12 @@ export interface SettlementFreshness extends FileFreshness {
   overallDataUpTo?: string | null;
 }
 
-/** AC-12: the list endpoints' `upTo` — cut each row at its bank file's date. */
-export type UpToMode = 'BANK';
+/**
+ * AC-12: the list endpoints' `upTo` — 'BANK' keeps the rows a statement covers
+ * (its last date less the settlement allowance), 'AWAITING' only the rows after
+ * that: "Awaiting statement".
+ */
+export type UpToMode = 'BANK' | 'AWAITING';
 
 export interface CollectionFreshness {
   mis: FileFreshness;
@@ -246,4 +251,9 @@ export interface ReconciliationDates {
   cheque: CollectionFreshness;
   card: CollectionFreshness;
   upi: CollectionFreshness;
+  /**
+   * Settlement allowance: receipts within this many days of a statement's last
+   * date (or after it) are Awaiting statement. Absent from an older backend.
+   */
+  awaitingDays?: number;
 }

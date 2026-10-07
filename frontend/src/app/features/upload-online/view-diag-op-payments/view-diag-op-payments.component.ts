@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { DiagOpPaymentService } from '../../../core/services/diag-op-payment.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 
 @Component({
   selector: 'app-view-diag-op-payments',

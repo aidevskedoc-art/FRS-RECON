@@ -5,6 +5,11 @@
     [subtitle]="'Everything the reconciliation is doing, at a glance' + (loadedAt() ? ' · updated ' + (loadedAt() | date: 'h:mm a') : '')"
   >
     <div actions class="dash__actions">
+      @if (refreshing()) {
+        <span class="dash__updating" pTooltip="Showing the last figures while the latest ones load">
+          <i class="pi pi-spin pi-spinner"></i> Updating…
+        </span>
+      }
       <button type="button" class="btn btn-ghost" (click)="load()" [disabled]="loading()" pTooltip="Reload every figure">
         <i class="pi pi-refresh" [class.pi-spin]="loading()"></i>
         <span>Refresh</span>
@@ -25,30 +30,73 @@
     </div>
   }
 
+  <!-- First visit, nothing to show yet: say what is being worked on rather than spin silently -->
+  @if (loading() && !summary()) {
+    <div class="dash__progress" role="status">
+      <span class="dash__progress-dot"></span>
+      <span>{{ loadingStep() }}</span>
+    </div>
+  }
+
   <!-- Hero: the five numbers that say how things stand -->
-  <section class="hero">
+  <section class="hero" [class.hero--stale]="refreshing()">
     <a class="hero__tile hero__tile--lead" [routerLink]="can('reconciliation-results') ? '/matched-rules/results' : null">
       <span class="hero__label"><i class="pi pi-check-circle"></i> Reconciled</span>
-      <span class="hero__value">{{ reconciledRate() === null ? '—' : reconciledRate() + '%' }}</span>
+      <span class="hero__value">
+        @if (reconciledRate(); as pct) {
+          <app-animated-counter [value]="pct" format="percent" [decimals]="1" suffix="%" />
+        } @else if (loading()) {
+          <span class="skeleton skeleton--value"></span>
+        } @else {
+          —
+        }
+      </span>
       <span class="hero__bar"><span class="hero__bar-fill" [style.width.%]="reconciledRate() ?? 0"></span></span>
-      <span class="hero__sub">of {{ count(totalTransactions()) }} transactions in scope</span>
+      <span class="hero__sub">
+        of {{ count(checkableTransactions()) }} transactions in scope
+        @if (awaitingTotal() > 0) { · {{ count(awaitingTotal()) }} awaiting statement }
+      </span>
     </a>
 
     <a class="hero__tile" [class.hero__tile--alert]="(attention() ?? 0) > 0" [routerLink]="can('mismatch-review') ? '/reconciliation/mismatches' : null">
       <span class="hero__label"><i class="pi pi-exclamation-triangle"></i> Needs Attention</span>
-      <span class="hero__value">{{ count(attention()) }}</span>
+      <span class="hero__value">
+        @if (attention() !== null) {
+          <app-animated-counter [value]="attention()!" />
+        } @else if (loading()) {
+          <span class="skeleton skeleton--value"></span>
+        } @else {
+          —
+        }
+      </span>
       <span class="hero__sub">mismatched, partial or unmatched</span>
     </a>
 
     <a class="hero__tile" [routerLink]="can('match-approvals') ? '/reconciliation/approvals' : null">
       <span class="hero__label"><i class="pi pi-verified"></i> Awaiting Approval</span>
-      <span class="hero__value">{{ count(pendingApprovals()) }}</span>
+      <span class="hero__value">
+        @if (pendingApprovals() !== null) {
+          <app-animated-counter [value]="pendingApprovals()!" />
+        } @else if (loading()) {
+          <span class="skeleton skeleton--value"></span>
+        } @else {
+          —
+        }
+      </span>
       <span class="hero__sub">maker-checker requests for you</span>
     </a>
 
     <div class="hero__tile">
       <span class="hero__label"><i class="pi pi-indian-rupee"></i> Collection Value</span>
-      <span class="hero__value">{{ collectionValue() }}</span>
+      <span class="hero__value">
+        @if (summary()) {
+          {{ collectionValue() }}
+        } @else if (loading()) {
+          <span class="skeleton skeleton--value"></span>
+        } @else {
+          —
+        }
+      </span>
       <span class="hero__sub">balance short {{ balanceValue() }}</span>
     </div>
 
@@ -58,6 +106,46 @@
       <span class="hero__sub">MIS up to {{ misUpTo() ?? '—' }}</span>
     </a>
   </section>
+
+  <!-- Receipts stored (from HIS or a file) whose statement has not arrived yet — waiting, not wrong -->
+  @if (awaitingTotal() > 0) {
+    <section class="panel awaiting">
+      <header class="panel__head">
+        <h2><i class="pi pi-hourglass"></i> Waiting for Statements</h2>
+        @if (can('mismatch-review')) {
+          <a class="panel__link" routerLink="/reconciliation/mismatches" [queryParams]="{ view: 'awaiting' }">See them <i class="pi pi-arrow-right"></i></a>
+        }
+      </header>
+      <div class="awaiting__body">
+        <div class="awaiting__lead">
+          <span class="awaiting__count"><app-animated-counter [value]="awaitingTotal()" /></span>
+          <span class="awaiting__what">records worth {{ awaitingValue() }} are waiting for their bank / gateway statement</span>
+          <span class="awaiting__hint">
+            Dated after the last statement date
+            @if (awaitingDays()) { — or within {{ awaitingDays() }} day{{ awaitingDays() === 1 ? '' : 's' }} of it, while card and UPI money is still on its way }.
+            They are not mismatches: they reconcile on their own when the next statement is in the shared folder.
+          </span>
+        </div>
+        <ul class="awaiting__types">
+          @for (t of awaitingByType(); track t.key) {
+            <li class="awaiting__type" [class.awaiting__type--none]="t.count === 0">
+              <span class="awaiting__type-name"><i [class]="t.icon"></i> {{ t.label }}</span>
+              <span class="awaiting__type-count">{{ count(t.count) }}</span>
+              <span class="awaiting__type-upto">{{ t.source }} up to {{ t.upTo ?? '—' }}</span>
+            </li>
+          }
+        </ul>
+        @if (bankByBranch().length) {
+          <div class="awaiting__branches">
+            <span class="awaiting__branches-label">Bank statement per unit:</span>
+            @for (b of bankByBranch(); track b.location) {
+              <span class="awaiting__branch">{{ b.location }} <strong>{{ b.upTo ?? '—' }}</strong></span>
+            }
+          </div>
+        }
+      </div>
+    </section>
+  }
 
   <!-- The flow: MIS -> bank/MPR -> reconciled -> to review, per collection type -->
   <section class="panel">

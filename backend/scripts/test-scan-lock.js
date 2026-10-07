@@ -59,8 +59,6 @@ async function main() {
     ['PUT', '/api/auth/change-password'],
     ['PUT', '/api/users/4/status'],
     ['POST', '/api/uploads/detect'],
-    ['POST', '/api/documents/upload'],
-    ['PATCH', '/api/policies/7'],
     ['POST', '/api/folder-watch/test-connection'],
     ['POST', '/api/folder-watch/run-now'],
   ];

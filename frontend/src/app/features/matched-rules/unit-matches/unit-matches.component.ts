@@ -8,7 +8,7 @@ import { Ripple } from 'primeng/ripple';
 import { TooltipModule } from 'primeng/tooltip';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
 import { IpPaymentService } from '../../../core/services/ip-payment.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { MatchStatus, OnlinePaymentRecord, UnitMatch } from '../../../core/models';
 
 type PaymentType = 'IP_PAYMENT' | 'DIAG_PAYMENT';

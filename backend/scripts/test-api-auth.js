@@ -1,9 +1,9 @@
 /**
- * Every /api route and /uploads require a signed-in user (the "no login
- * required on 14 of 21 API groups" finding) — proven over real HTTP.
+ * Every /api route requires a signed-in user (the "no login required on 14
+ * of 21 API groups" finding) — proven over real HTTP.
  *
  * Builds a throwaway app with the SAME gate server.js uses
- * (requireAuthExcept + requireAuth on /uploads) in front of real routers, on
+ * (requireAuthExcept) in front of real routers, on
  * an ephemeral 127.0.0.1 port that is closed at the end. server.js itself is
  * not loaded (it starts listening on require).
  *
@@ -15,12 +15,9 @@
  */
 require('dotenv').config();
 const assert = require('assert');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const express = require('express');
 const db = require('../src/db');
-const { signToken, requireAuth, requireAuthExcept } = require('../src/middleware/auth');
+const { signToken, requireAuthExcept } = require('../src/middleware/auth');
 const { uploaderOf } = require('../src/uploader');
 const matchedRulesRouter = require('../src/routes/matched-rules.routes');
 const ipPaymentsRouter = require('../src/routes/ip-payments.routes');
@@ -34,12 +31,8 @@ function check(label, cond) {
 }
 
 async function main() {
-  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zz-auth-uploads-'));
-  fs.writeFileSync(path.join(uploadDir, 'policy.pdf'), '%PDF-1.4 zz test');
-
   const app = express();
   app.use(express.json());
-  app.use('/uploads', requireAuth, express.static(uploadDir));
   app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
   app.use('/api', requireAuthExcept(['/api/health', '/api/auth/login']));
   app.use('/api/matched-rules', matchedRulesRouter);
@@ -91,11 +84,6 @@ async function main() {
     check('valid token: division-bank-accounts -> 200', (await call('GET', '/api/master/division-bank-accounts', auth)).status === 200);
     check('valid token: summary -> 200', (await call('GET', '/api/matched-rules/summary', auth)).status === 200);
 
-    // ---- /uploads (insurance PDFs) ------------------------------------------------------------
-    check('uploads: no token -> 401', (await call('GET', '/uploads/policy.pdf')).status === 401);
-    const pdf = await fetch(`${base}/uploads/policy.pdf`, { headers: auth });
-    check('uploads: with token -> 200 and the file', pdf.status === 200 && (await pdf.text()).startsWith('%PDF'));
-
     // ---- uploader comes from the token, not the client ----------------------------------------
     check('uploaderOf: signed-in user wins over a spoofed body field', uploaderOf({ user: { employeeId: 'AD4015' }, body: { uploadedBy: 'someone-else' } }) === 'AD4015');
     check('uploaderOf: automation (no token) keeps its label', uploaderOf({ body: { uploadedBy: 'Automated (Folder Watch)' } }) === 'Automated (Folder Watch)');
@@ -117,7 +105,6 @@ async function main() {
   } finally {
     await db.query('UPDATE go_live_config SET active = $1, cutoff_date = $2 WHERE id = (SELECT id FROM go_live_config ORDER BY id LIMIT 1)', [origActive, origCutoff]);
     await new Promise((resolve) => server.close(resolve));
-    fs.rmSync(uploadDir, { recursive: true, force: true });
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -110,11 +110,11 @@ async function main() {
     const putScreens = findHandler(usersRouter, 'put', '/:id/screens');
     {
       const { statusCode, body } = await invoke(putScreens, {
-        user: actor, params: { id: auditorId }, body: { screenKeys: ['upload-run', 'insurance-dashboard', 'bogus'] },
+        user: actor, params: { id: auditorId }, body: { screenKeys: ['upload-run', 'manage-rules', 'bogus'] },
       });
       check('PUT screens -> 200', statusCode === 200);
-      check('PUT screens: response lists the valid keys', same(body.screenKeys, ['upload-run', 'insurance-dashboard']));
-      check('PUT screens: old grants gone, new ones stored', same(await grantsInDb(auditorId), ['upload-run', 'insurance-dashboard']));
+      check('PUT screens: response lists the valid keys', same(body.screenKeys, ['upload-run', 'manage-rules']));
+      check('PUT screens: old grants gone, new ones stored', same(await grantsInDb(auditorId), ['upload-run', 'manage-rules']));
     }
     {
       const { statusCode } = await invoke(putScreens, { user: actor, params: { id: auditorId }, body: { screenKeys: 'statements' } });
@@ -129,7 +129,7 @@ async function main() {
         `SELECT details FROM audit_logs WHERE target_user_id = $1 AND action = 'SCREEN_ACCESS_UPDATED' ORDER BY id DESC LIMIT 1`,
         [auditorId],
       );
-      check('audit: SCREEN_ACCESS_UPDATED logged with the granted keys', rows.length === 1 && same(rows[0].details.screenKeys, ['upload-run', 'insurance-dashboard']));
+      check('audit: SCREEN_ACCESS_UPDATED logged with the granted keys', rows.length === 1 && same(rows[0].details.screenKeys, ['upload-run', 'manage-rules']));
     }
 
     // ---- login and /me hand the grants to the frontend ---------------------------------
@@ -138,10 +138,10 @@ async function main() {
         body: { username: AUDITOR_ID, password: PASSWORD },
       });
       check('login -> 200', statusCode === 200 && !!body.token);
-      check('login: user.screenKeys present', same(body.user?.screenKeys ?? [], ['upload-run', 'insurance-dashboard']));
+      check('login: user.screenKeys present', same(body.user?.screenKeys ?? [], ['upload-run', 'manage-rules']));
 
       const me = await invoke(findHandler(authRouter, 'get', '/me'), { user: { sub: auditorId, role: 'Auditor' } });
-      check('/me: screenKeys present', same(me.body?.screenKeys ?? [], ['upload-run', 'insurance-dashboard']));
+      check('/me: screenKeys present', same(me.body?.screenKeys ?? [], ['upload-run', 'manage-rules']));
     }
 
     // ---- clearing all grants -------------------------------------------------------------

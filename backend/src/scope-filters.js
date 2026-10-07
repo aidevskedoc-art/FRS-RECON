@@ -16,7 +16,8 @@
  * callers map it themselves; this module only validates the value.
  *
  * UP TO (AC-12). `?upTo=BANK` cuts each row at the date its branch's bank data
- * reaches — see settlementCutoffs() below.
+ * reaches — see settlementCutoffs() below. `?upTo=AWAITING` is the other side
+ * of that cut: the rows no statement covers yet ("Awaiting statement").
  */
 
 const db = require('./db');
@@ -70,10 +71,22 @@ function batchLocationClause(batchTable, paramIdx) {
 // branch's date. A row whose branch has no statement of its own yet — or whose
 // unit can't be resolved — falls back to the latest date across all of them.
 // The Card / UPI MPR exports carry no branch, so theirs is one date.
+//
+// AWAITING STATEMENT (sriram, 2026-10-07). A statement dated up to the 28th
+// cannot yet hold the money for a receipt of the 27th either: card and UPI
+// collections reach the bank a day or two later. So a row counts as covered
+// only up to the statement's last date LESS `awaiting_statement_days`
+// (reconciliation_settings, default 3, an Admin setting); everything after it
+// is "Awaiting statement" — not a mismatch, not hidden, just not checkable yet.
+// When the next statement arrives the cut-off moves and those rows fall into
+// their real verdict on their own. Nothing about it is stored.
 
-const UP_TO_MODES = ['BANK'];
+const UP_TO_MODES = ['BANK', 'AWAITING'];
 
-/** 'BANK' (cut at the bank data), null when absent. Throws a 400 on anything else. */
+/** Used when the setting cannot be read (a database the newer schema has not reached yet). */
+const DEFAULT_AWAITING_DAYS = 3;
+
+/** 'BANK' (cut at the bank data) or 'AWAITING' (only what lies beyond it), null when absent. Throws a 400 on anything else. */
 function parseUpTo(value) {
   if (value === undefined || value === null || value === '') return null;
   const mode = String(value).trim().toUpperCase();
@@ -124,6 +137,52 @@ async function settlementCutoffs(source) {
   };
 }
 
+/** 'YYYY-MM-DD' less `days`, as 'YYYY-MM-DD' — pure calendar arithmetic in UTC, so no timezone can shift it. */
+function minusDays(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d - days));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** The "Awaiting statement" allowance in days (reconciliation_settings). */
+async function loadAwaitingDays() {
+  try {
+    const { rows } = await db.query('SELECT awaiting_statement_days FROM reconciliation_settings ORDER BY id LIMIT 1');
+    return rows[0] ? Number(rows[0].awaiting_statement_days) : DEFAULT_AWAITING_DAYS;
+  } catch {
+    return DEFAULT_AWAITING_DAYS;
+  }
+}
+
+/**
+ * How far the statements COVER the receipts: settlementCutoffs() moved back by
+ * the awaiting allowance. What every "till bank upload" list, the dashboard and
+ * the exports cut at — a row after it is Awaiting statement. `days` and the
+ * unshifted `statementUpTo` dates travel along for the screens to say so.
+ *
+ * @param {'BANK'|'CARD_MPR'|'UPI_MPR'} source
+ */
+async function coverageCutoffs(source) {
+  const [raw, days] = await Promise.all([settlementCutoffs(source), loadAwaitingDays()]);
+  return {
+    byLocation: raw.byLocation.map(({ name, cutoff }) => ({ name, cutoff: minusDays(cutoff, days), statementUpTo: cutoff })),
+    fallback: raw.fallback ? minusDays(raw.fallback, days) : null,
+    statementUpTo: raw.fallback,
+    days,
+  };
+}
+
+/** SQL for the row's own cut-off date: its branch's, read off its batch `b`, else the fallback. Pushes its values onto `params`. */
+function cutoffExpr(cutoffs, params) {
+  const whens = cutoffs.byLocation.map(({ name, cutoff }) => {
+    params.push(`%${escapeLike(name)}%`, cutoff);
+    return `WHEN b.unit_name ILIKE $${params.length - 1} THEN $${params.length}::date`;
+  });
+  params.push(cutoffs.fallback);
+  const fallback = `$${params.length}::date`;
+  return whens.length ? `CASE ${whens.join(' ')} ELSE ${fallback} END` : fallback;
+}
+
 /**
  * SQL: the row (alias `r`, with receipt_date and batch_id) is dated on or
  * before its own branch's cut-off, read off its batch's unit_name. Pushes its
@@ -132,24 +191,41 @@ async function settlementCutoffs(source) {
  */
 function cutoffClause(batchTable, cutoffs, params) {
   if (!cutoffs || !cutoffs.fallback) return null;
-  const whens = cutoffs.byLocation.map(({ name, cutoff }) => {
-    params.push(`%${escapeLike(name)}%`, cutoff);
-    return `WHEN b.unit_name ILIKE $${params.length - 1} THEN $${params.length}::date`;
-  });
-  params.push(cutoffs.fallback);
-  const fallback = `$${params.length}::date`;
-  const cutoff = whens.length ? `CASE ${whens.join(' ')} ELSE ${fallback} END` : fallback;
   // `< cutoff + 1`: the whole of the cut-off day is in, whether receipt_date is a DATE or a timestamp.
-  return `EXISTS (SELECT 1 FROM ${batchTable} b WHERE b.id = r.batch_id AND r.receipt_date < (${cutoff}) + 1)`;
+  return `EXISTS (SELECT 1 FROM ${batchTable} b WHERE b.id = r.batch_id AND r.receipt_date < (${cutoffExpr(cutoffs, params)}) + 1)`;
+}
+
+/**
+ * SQL: the exact complement of cutoffClause among dated rows — the row is dated
+ * AFTER its branch's cut-off, so no statement covers it yet. With no statement
+ * uploaded at all there is no cut-off, every row is listed as before, and
+ * nothing is awaiting (FALSE) — so the two sides never overlap.
+ */
+function awaitingClause(batchTable, cutoffs, params) {
+  if (!cutoffs || !cutoffs.fallback) return 'FALSE';
+  return `EXISTS (SELECT 1 FROM ${batchTable} b WHERE b.id = r.batch_id AND r.receipt_date >= (${cutoffExpr(cutoffs, params)}) + 1)`;
+}
+
+/** The list endpoints' `upTo` as one clause: BANK keeps what is covered, AWAITING keeps what is not; null = no cut. */
+function upToClause(mode, batchTable, cutoffs, params) {
+  if (mode === 'BANK') return cutoffClause(batchTable, cutoffs, params);
+  if (mode === 'AWAITING') return awaitingClause(batchTable, cutoffs, params);
+  return null;
 }
 
 module.exports = {
   DEPARTMENTS,
   UP_TO_MODES,
+  DEFAULT_AWAITING_DAYS,
   locationPatterns,
   parseDepartment,
   batchLocationClause,
   parseUpTo,
   settlementCutoffs,
+  coverageCutoffs,
+  loadAwaitingDays,
+  minusDays,
   cutoffClause,
+  awaitingClause,
+  upToClause,
 };

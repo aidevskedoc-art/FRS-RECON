@@ -49,6 +49,8 @@ export class SummaryPanelComponent {
       { label: 'Partially Matched', value: count(c.totalPartialMatch), icon: 'pi pi-check', accent: 'blue' },
       { label: 'Amount Mismatched', value: count(c.totalMismatched), icon: 'pi pi-exclamation-triangle', accent: 'warning' },
       { label: 'Unmatched', value: count(c.totalUnmatched), icon: 'pi pi-times-circle', accent: 'danger' },
+      // Waiting for the bank / gateway statement — not a verdict, so not red.
+      { label: 'Awaiting Statement', value: count(c.totalAwaiting ?? 0), icon: 'pi pi-hourglass', accent: 'cyan' },
       { label: 'Balance Amount', value: money(c.balanceAmount), icon: 'pi pi-wallet', accent: 'warning', wide: true },
       { label: 'Exceptions', value: count(c.totalAmbiguous + c.totalExcluded), icon: 'pi pi-flag', accent: 'purple' },
     ];
@@ -68,14 +70,18 @@ export class SummaryPanelComponent {
     ];
   });
 
-  /** Share of receipts accounted for — matched, gateway-matched or contra — as a whole percent. */
+  /**
+   * Share of receipts accounted for — matched, gateway-matched or contra — as a
+   * whole percent, of those that COULD be by now: a receipt still awaiting its
+   * statement is left out of the base rather than counted against the rate.
+   */
   protected rate(d: PaymentTypeSummary): number {
-    return reconciledRate(d.matched + d.easebuzzMatched + d.contra, d.total);
+    return reconciledRate(d.matched + d.easebuzzMatched + d.contra, d.total - (d.awaiting ?? 0));
   }
 
   protected readonly combinedRate = computed(() => {
     const c = this.summary().combined;
-    return reconciledRate(c.totalMatched + c.totalEasebuzzMatched + c.totalContra, c.totalTransactions);
+    return reconciledRate(c.totalMatched + c.totalEasebuzzMatched + c.totalContra, c.totalTransactions - (c.totalAwaiting ?? 0));
   });
 
   /** Meter colour: green 95%+, amber 80–95%, red below. */

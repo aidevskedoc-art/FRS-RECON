@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { PasswordModule } from 'primeng/password';
 import { AuthService } from '../../../core/services/auth.service';
 import { LANDING_PATH } from '../../../core/guards/auth.guard';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 
 /**
  * Mandatory interstitial between login and the app for any account still on

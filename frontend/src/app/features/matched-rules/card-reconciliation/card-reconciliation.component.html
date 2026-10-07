@@ -55,6 +55,11 @@
       </span>
       <span class="tally--mismatch">{{ mismatchCount() }} amount mismatch</span>
       <span class="tally--unmatched">{{ unmatchedCount() }} no gateway row</span>
+      @if (awaitingCount() > 0) {
+        <span class="tally--awaiting" pTooltip="No CARD MPR / Pine Labs file covers these dates yet — they reconcile when it arrives.">
+          {{ awaitingCount() }} awaiting statement
+        </span>
+      }
       <span class="tally--sep">·</span>
       <span>MIS {{ amount(misTotal()) }}</span>
       <span>gateway {{ amount(gatewayTotal()) }}</span>
@@ -98,11 +103,12 @@
           <td>
             <span
               class="status-pill"
+              [class.status-pill--awaiting]="row.awaitingStatement"
               [class.status-pill--matched]="row.matchStatus === 'MATCHED'"
               [class.status-pill--grouped-matched]="row.matchStatus === 'GROUPED_MATCHED'"
-              [class.status-pill--mismatch]="row.matchStatus === 'AMOUNT_MISMATCH'"
-              [class.status-pill--unmatched]="row.matchStatus === 'UNMATCHED' || !row.matchStatus"
-            >{{ statusLabel(row.matchStatus) }}</span>
+              [class.status-pill--mismatch]="!row.awaitingStatement && row.matchStatus === 'AMOUNT_MISMATCH'"
+              [class.status-pill--unmatched]="!row.awaitingStatement && (row.matchStatus === 'UNMATCHED' || !row.matchStatus)"
+            >{{ statusLabel(row) }}</span>
           </td>
           <td class="mono">{{ row.receiptNo || '—' }}</td>
           <td>{{ row.patientName || '—' }}</td>

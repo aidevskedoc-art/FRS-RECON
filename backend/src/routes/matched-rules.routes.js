@@ -24,7 +24,11 @@ const { writeXlsx } = require('../excel/write-xlsx');
 const { ucrRecordSelect } = require('../reconciliation/upi-card-recon/ucr-record-query');
 const { ucrIpRecordRowToApi } = require('../ucr-mappers');
 const { loadGatewayPolicy } = require('../gateway-policy-store');
-const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, settlementCutoffs, cutoffClause } = require('../scope-filters');
+const {
+  locationPatterns, parseDepartment, batchLocationClause, parseUpTo, settlementCutoffs, coverageCutoffs, loadAwaitingDays,
+  cutoffClause, awaitingClause, upToClause,
+} = require('../scope-filters');
+const { MATCHED_STATUSES } = require('../reconciliation/status-tone');
 const { isPastGoLive } = require('../go-live');
 const { pendingChangeColumn, auditDetailColumn } = require('../pending-change');
 const { requireAdmin } = require('../middleware/auth');
@@ -1201,11 +1205,13 @@ async function buildOnlineMismatchSelects(query) {
       params.push(department);
       diagScope.push(`r.department = $${params.length}`);
     }
-    // AC-12 "till bank upload": each row cut at its own branch's bank date.
-    if (parseUpTo(query.upTo) === 'BANK') {
-      const cutoffs = await settlementCutoffs('BANK');
-      const ipCut = cutoffClause('ip_payment_upload_batches', cutoffs, params);
-      const diagCut = cutoffClause('diag_op_upload_batches', cutoffs, params);
+    // AC-12 "till bank upload": each row cut at its own branch's bank date —
+    // or, for "Awaiting statement", only the rows after it.
+    const upTo = parseUpTo(query.upTo);
+    if (upTo) {
+      const cutoffs = await coverageCutoffs('BANK');
+      const ipCut = upToClause(upTo, 'ip_payment_upload_batches', cutoffs, params);
+      const diagCut = upToClause(upTo, 'diag_op_upload_batches', cutoffs, params);
       if (ipCut) ipScope.push(ipCut);
       if (diagCut) diagScope.push(diagCut);
     }
@@ -1376,6 +1382,9 @@ router.get('/reconciliation-dates', async (req, res, next) => {
     };
 
     res.json({
+      // Receipts within this many days of a statement's last date (or after it)
+      // are Awaiting statement, not mismatches — the screens say where the list stops.
+      awaitingDays: await loadAwaitingDays(),
       online: { mis: latest(misIp, misDiag), bank: { ...bank, source: 'Bank statement', locationScoped: true, ...perBranch } },
       cheque: { mis: misCheque, bank: { ...bank, source: 'Bank statement', locationScoped: true, ...perBranch } },
       card: { mis: await misUcr('CARD'), bank: { ...cardMpr, source: 'Card MPR / Pine Labs', locationScoped: false } },
@@ -1569,15 +1578,166 @@ router.get('/unit-matches', async (req, res, next) => {
   }
 });
 
+/** A stored verdict as the summary buckets it: excluded = no status but a rule named (flattenToRecordRows); no status and no rule = never reconciled. */
+const STORED_VERDICT_SQL = `CASE WHEN r.match_status IS NULL AND r.match_applied_rule IS NOT NULL THEN 'EXCLUDED'
+                                 WHEN r.match_status IS NULL THEN 'NOT_GENERATED'
+                                 ELSE r.match_status END`;
+
+/** The receipt-date window as clauses on `r`, pushing onto `params`. */
+function receiptWindow(dateFrom, dateTo, params) {
+  const clauses = [];
+  if (dateFrom) {
+    params.push(dateFrom);
+    clauses.push(`r.receipt_date >= $${params.length}`);
+  }
+  if (dateTo) {
+    params.push(dateTo);
+    clauses.push(`r.receipt_date < ($${params.length}::date + interval '1 day')`);
+  }
+  return clauses;
+}
+
+/**
+ * One payment table's stored verdicts, counted for /summary: per UPI-or-not,
+ * per side of the coverage cut-off ('C' covered, 'A' awaiting its statement —
+ * scope-filters.js coverageCutoffs), per verdict, with the receipts' value;
+ * plus one 'BALANCE' row per UPI-or-not — the grouped-match shortfall, each
+ * unit counted ONCE (it is stamped on every member row). A row on neither
+ * side (no batch, no date) is left out, as the cut-off always did.
+ */
+async function storedVerdicts({ recordTable, batchTable, modeColumn, amountColumn, cutoffs, dateFrom, dateTo }) {
+  const params = [];
+  const where = receiptWindow(dateFrom, dateTo, params);
+  const covered = cutoffs ? cutoffClause(batchTable, cutoffs, params) : null;
+  const side = covered ? `CASE WHEN ${covered} THEN 'C' WHEN ${awaitingClause(batchTable, cutoffs, params)} THEN 'A' END` : `'C'`;
+  const upi = modeColumn ? `(COALESCE(r.${modeColumn}, '') ~* 'UPI')` : 'FALSE';
+  const { rows } = await db.query(
+    `WITH t AS (
+       SELECT ${upi} AS upi, ${side} AS side, ${STORED_VERDICT_SQL} AS verdict, r.${amountColumn} AS amount,
+              r.match_group_base_ref AS unit_key, r.match_group_difference AS unit_difference
+         FROM ${recordTable} r ${where.length ? `WHERE ${where.join(' AND ')}` : ''})
+     SELECT upi, side, verdict, COUNT(*)::int AS n, COALESCE(SUM(amount), 0) AS amount, NULL::numeric AS balance
+       FROM t WHERE side IS NOT NULL GROUP BY 1, 2, 3
+     UNION ALL
+     SELECT upi, 'BALANCE', NULL, 0, 0, COALESCE(SUM(-unit_difference), 0)
+       FROM (SELECT DISTINCT ON (upi, unit_key) upi, unit_difference
+               FROM t
+              WHERE side = 'C' AND verdict <> 'EXCLUDED' AND unit_key IS NOT NULL AND unit_difference < 0
+              ORDER BY upi, unit_key) u
+      GROUP BY upi`,
+    params,
+  );
+  return rows;
+}
+
+/**
+ * storedVerdicts rows into the summary's counts. Ambiguous keeps its own
+ * bucket, never folded into unmatched: an ambiguous receipt HAS candidates and
+ * waits on a person — a different state from "nothing found". Past the
+ * coverage cut-off, a clean match stays a match and an excluded row stays
+ * excluded; everything else is awaiting its statement.
+ */
+function summarizeStored(rows) {
+  const counts = {
+    total: 0, matched: 0, easebuzzMatched: 0, contra: 0, partialMatch: 0, mismatched: 0, unmatched: 0, ambiguous: 0, excluded: 0,
+    notGenerated: 0,
+    // `totalAmount` is the receipts' own value; `balanceAmount` the shortfall
+    // where a grouped match came up short of its bank credit (Unit Matches'
+    // Balance Amount — only the negative side of the group difference).
+    totalAmount: 0,
+    balanceAmount: 0,
+    // Receipts no statement covers yet, and their value.
+    awaiting: 0,
+    awaitingAmount: 0,
+  };
+  for (const { side, verdict, n, amount, balance } of rows) {
+    if (side === 'BALANCE') {
+      counts.balanceAmount += Number(balance) || 0;
+      continue;
+    }
+    counts.total += n;
+    if (verdict === 'EXCLUDED') {
+      counts.excluded += n;
+      continue;
+    }
+    const value = Number(amount) || 0;
+    counts.totalAmount += value;
+    if (verdict === 'MATCHED') counts.matched += n;
+    // Its own bucket: reconciled against the EaseBuzz gateway report, not the bank.
+    else if (verdict === 'EASEBUZZ_MATCHED') counts.easebuzzMatched += n;
+    // Its own bucket: reconciled against the refund document rather than the bank.
+    else if (verdict === CONTRA_ENTRY) counts.contra += n;
+    else if (side === 'A') {
+      counts.awaiting += n;
+      counts.awaitingAmount += value;
+    } else if (verdict === 'PARTIAL_MATCH') counts.partialMatch += n;
+    else if (verdict === 'AMOUNT_MISMATCH') counts.mismatched += n;
+    else if (verdict === 'AMBIGUOUS_MATCH') counts.ambiguous += n;
+    else if (verdict === 'NOT_GENERATED') counts.notGenerated += n;
+    else counts.unmatched += n;
+  }
+  // Float addition over tens of thousands of rows drifts; settle to paise.
+  counts.totalAmount = Math.round(counts.totalAmount * 100) / 100;
+  counts.balanceAmount = Math.round(counts.balanceAmount * 100) / 100;
+  counts.awaitingAmount = Math.round(counts.awaitingAmount * 100) / 100;
+  return counts;
+}
+
+/** The covered AMOUNT_MISMATCH receipts with the bank line they were held against — the summary screen's Amount Differences table. */
+async function storedAmountDifferences({ recordTable, batchTable, transIdColumn, source, cutoffs, dateFrom, dateTo }) {
+  const params = [];
+  const where = ["r.match_status = 'AMOUNT_MISMATCH'", ...receiptWindow(dateFrom, dateTo, params)];
+  const covered = cutoffs ? cutoffClause(batchTable, cutoffs, params) : null;
+  if (covered) where.push(covered);
+  const { rows } = await db.query(
+    `SELECT r.id, r.receipt_number, r.patient_name, r.bill_amount, r.transaction_id_1, r.transaction_id_2,
+            ${transIdColumn ? `r.${transIdColumn}` : 'NULL::text'} AS trans_id,
+            b.id AS bank_id, to_char(b.txn_date, 'YYYY-MM-DD') AS bank_txn_date, b.narration, b.chq_ref_no,
+            b.deposit_amt, b.withdrawal_amt, u.account_no, u.bank_name, u.source AS bank_source
+       FROM ${recordTable} r
+       LEFT JOIN bank_statement_records b ON b.id = r.match_bank_record_id
+       LEFT JOIN bank_statement_uploads u ON u.id = b.batch_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY r.receipt_date, r.id
+      LIMIT 500`,
+    params,
+  );
+  return rows.map((row) => {
+    const paymentAmount = row.bill_amount === null ? null : Number(row.bill_amount);
+    const bankRaw = row.deposit_amt ?? row.withdrawal_amt;
+    const bankAmount = bankRaw === null || bankRaw === undefined ? null : Number(bankRaw);
+    return {
+      source,
+      groupId: String(row.id),
+      refs: [...new Set([row.trans_id, row.transaction_id_1, row.transaction_id_2].filter(Boolean))],
+      patientName: row.patient_name,
+      receiptNumber: row.receipt_number,
+      paymentAmount,
+      bankAmount,
+      difference: bankAmount === null || paymentAmount === null ? null : Number((paymentAmount - bankAmount).toFixed(2)),
+      bank: row.bank_id
+        ? {
+            recordId: String(row.bank_id),
+            txnDate: row.bank_txn_date,
+            narration: row.narration,
+            chqRefNo: row.chq_ref_no,
+            depositAmt: row.deposit_amt === null ? null : Number(row.deposit_amt),
+            withdrawalAmt: row.withdrawal_amt === null ? null : Number(row.withdrawal_amt),
+            accountNo: row.account_no,
+            bankName: row.bank_name,
+            source: row.bank_source,
+          }
+        : null,
+    };
+  });
+}
+
 /**
  * GET /api/matched-rules/summary?dateFrom=&dateTo= — the reconciliation-wide
  * picture: per-payment-type totals/matched/mismatched/unmatched, how many
  * bank statement rows nothing has claimed, and the amount differences behind
- * every mismatch. IP/Diag figures are recomputed live (same engine as the
- * list endpoints above); the bank "only in bank statement" figure instead
- * reads the persisted match_status set by POST .../bank-statements/generate
- * — a bank statement is shared by both payment types, so it can't be
- * recomputed live here without arbitrarily picking one type's rules.
+ * every mismatch. Every figure reads the verdicts reconciliation stored — the
+ * same ones every list shows — so it answers in well under a second.
  */
 router.get('/summary', async (req, res, next) => {
   try {
@@ -1596,118 +1756,30 @@ router.get('/summary', async (req, res, next) => {
     // Each row is cut at its OWN branch's bank date, exactly as Mismatch Review's
     // "till bank upload" does — one latest date for every branch counted a
     // lagging branch's not-yet-banked receipts here but not there.
-    const receiptCutoffs = dateTo ? undefined : await settlementCutoffs('BANK');
+    //
+    // Awaiting statement (2026-10-07): the rows past that cut-off — less the
+    // settlement allowance, see scope-filters.js coverageCutoffs — are no longer
+    // dropped from the dashboard. They are counted on their own as "awaiting",
+    // so a day pulled from the HIS shows up the moment it is stored, waiting for
+    // its statement, instead of being invisible until the statement arrives.
+    const receiptCutoffs = dateTo ? undefined : await coverageCutoffs('BANK');
 
-    // fullBankPool: the date window limits which RECEIPTS are counted, never
-    // which bank / MPR lines they may match — Generate (generateForBatch), whose
-    // stored verdict every other screen shows, loads the whole pool too. A
-    // date-scoped pool also drops every line with no txn_date: on 2026-09-28
-    // 19,562 UPI MPR lines had none (their settlement date is blank), and 18,305
-    // receipts Generate had matched to them were counted here as unmatched —
-    // 20,205 "need attention" on the dashboard against 1,895 on Mismatch Review.
-    const [ipResults, diagResults, chequeResults] = await Promise.all([
-      computeMatchResults({
-        recordTable: 'ip_payment_records',
-        rowToApi: ipPaymentRecordRowToApi,
-        rulesTable: 'ip_payment_matching_rules',
-        paymentModeField: 'paymentMode',
-        batchTable: 'ip_payment_upload_batches',
-        dateFrom,
-        dateTo,
-        receiptCutoffs,
-        fullBankPool: true,
-      }),
-      computeMatchResults({
-        recordTable: 'diag_op_payment_records',
-        rowToApi: diagOpRecordRowToApi,
-        rulesTable: 'diag_payment_matching_rules',
-        paymentModeField: 'payMode',
-        batchTable: 'diag_op_upload_batches',
-        dateFrom,
-        dateTo,
-        receiptCutoffs,
-        fullBankPool: true,
-      }),
-      computeMatchResults({ ...CHEQUE_OPTS, dateFrom, dateTo, receiptCutoffs, fullBankPool: true }),
+    // STORED verdicts (2026-10-07), not a live engine run. This route used to
+    // re-run the matching engine over every IP / Diag / Cheque receipt on each
+    // call — about 6 seconds, on every dashboard open — and could then disagree
+    // with Mismatch Review, which reads the verdicts Generate stored (2026-09-28:
+    // 20,205 "need attention" here against 1,895 there). Reconciliation stores a
+    // verdict on every receipt it runs over (Run Reconciliation, the folder
+    // check, a batch's Generate), so the dashboard now reads exactly what every
+    // list shows. A receipt no reconciliation has been through yet is counted as
+    // `notGenerated`, not guessed at.
+    const [ipRows, diagRows, chequeRows, ipDiffs, diagDiffs] = await Promise.all([
+      storedVerdicts({ recordTable: 'ip_payment_records', batchTable: 'ip_payment_upload_batches', modeColumn: 'payment_mode', amountColumn: 'bill_amount', cutoffs: receiptCutoffs, dateFrom, dateTo }),
+      storedVerdicts({ recordTable: 'diag_op_payment_records', batchTable: 'diag_op_upload_batches', modeColumn: 'pay_mode', amountColumn: 'bill_amount', cutoffs: receiptCutoffs, dateFrom, dateTo }),
+      storedVerdicts({ recordTable: 'cheque_collection_records', batchTable: 'cheque_collection_upload_batches', modeColumn: null, amountColumn: 'cheque_amount', cutoffs: receiptCutoffs, dateFrom, dateTo }),
+      storedAmountDifferences({ recordTable: 'ip_payment_records', batchTable: 'ip_payment_upload_batches', transIdColumn: 'trans_id', source: 'IP_PAYMENT', cutoffs: receiptCutoffs, dateFrom, dateTo }),
+      storedAmountDifferences({ recordTable: 'diag_op_payment_records', batchTable: 'diag_op_upload_batches', transIdColumn: null, source: 'DIAG_PAYMENT', cutoffs: receiptCutoffs, dateFrom, dateTo }),
     ]);
-    // One engine per type over all its rows. The "UPI" figure below is a
-    // reporting slice of those same results by payment mode, not a separate run.
-    const upiResults = [...ipResults, ...diagResults].filter((g) => isUpiMode(g.paymentMode));
-
-    // Ambiguous is counted in its own bucket, never folded into unmatched: an
-    // ambiguous group HAS candidate matches and is waiting on a human, which is
-    // a different business state from "nothing found". The previous bare `else`
-    // absorbed any status it did not know about.
-    const summarize = (results) => {
-      const counts = {
-        total: 0, matched: 0, easebuzzMatched: 0, contra: 0, partialMatch: 0, mismatched: 0, unmatched: 0, ambiguous: 0, excluded: 0,
-        // The client asked for rupee figures alongside the counts. Both come
-        // from the groups already in hand, so this costs no extra query.
-        // `totalAmount` is the receipts' own value; `balanceAmount` is the
-        // shortfall where a grouped match came up short of its bank credit —
-        // the same figure the Unit Matches screen calls Balance Amount, i.e.
-        // only the negative side of the group difference, never a surplus.
-        totalAmount: 0,
-        balanceAmount: 0,
-      };
-      // A unit group's shortfall is stamped onto EVERY member row, so adding it
-      // per row multiplies it by the group size. Count each unit once.
-      const countedUnits = new Set();
-      for (const group of results) {
-        const n = group.sourceRecordIds.length;
-        counts.total += n;
-        if (!group.excluded) {
-          counts.totalAmount += Number(group.paymentAmount) || 0;
-          if (group.unitDifference != null && group.unitDifference < 0) {
-            const unitKey = group.unitKey || group.groupId;
-            if (!countedUnits.has(unitKey)) {
-              countedUnits.add(unitKey);
-              counts.balanceAmount += -Number(group.unitDifference);
-            }
-          }
-        }
-        if (group.excluded) counts.excluded += n;
-        else if (group.status === 'MATCHED') counts.matched += n;
-        // Its own bucket: an EaseBuzz-gateway receipt is reconciled against the
-        // gateway report, not the bank statement — distinct from a bank match.
-        else if (group.status === 'EASEBUZZ_MATCHED') counts.easebuzzMatched += n;
-        // Its own bucket, never folded into matched or unmatched: a contra IS
-        // reconciled, just against the refund document rather than the bank.
-        else if (group.status === CONTRA_ENTRY) counts.contra += n;
-        else if (group.status === 'PARTIAL_MATCH') counts.partialMatch += n;
-        else if (group.status === 'AMOUNT_MISMATCH') counts.mismatched += n;
-        else if (group.status === 'AMBIGUOUS_MATCH') counts.ambiguous += n;
-        else counts.unmatched += n;
-      }
-      // Float addition over tens of thousands of rows drifts; settle to paise.
-      counts.totalAmount = Math.round(counts.totalAmount * 100) / 100;
-      counts.balanceAmount = Math.round(counts.balanceAmount * 100) / 100;
-      return counts;
-    };
-
-    const bankAmountOf = (group) => (group.bank ? group.bank.depositAmt ?? group.bank.withdrawalAmt : null);
-
-    const collectMismatches = (results, source) =>
-      results
-        .filter((g) => !g.excluded && g.status === 'AMOUNT_MISMATCH')
-        .map((g) => {
-          const bankAmount = bankAmountOf(g);
-          const difference =
-            bankAmount === null || bankAmount === undefined || g.paymentAmount === null || g.paymentAmount === undefined
-              ? null
-              : Number((g.paymentAmount - bankAmount).toFixed(2));
-          return {
-            source,
-            groupId: g.groupId,
-            refs: g.refs,
-            patientName: g.patientName,
-            receiptNumber: g.receiptNumber,
-            paymentAmount: g.paymentAmount,
-            bankAmount,
-            difference,
-            bank: g.bank,
-          };
-        });
 
     const clauses = [];
     const params = [];
@@ -1759,39 +1831,34 @@ router.get('/summary', async (req, res, next) => {
       ucrDateParams.push(dateFrom);
       ucrDateClauses.push(`receipt_date >= $${ucrDateParams.length}`);
     }
+    // Each row's verdict, except that a row past its own gateway file's
+    // coverage (CARD MPR/Pine Labs for Card, UPI MPR for UPI, less the
+    // settlement allowance) reads AWAITING unless it is already a clean match —
+    // the same cut card-recon/upi-recon's own lists make (ucr-matched.routes.js),
+    // so this figure agrees with what clicking into Card/UPI Reconciliation shows.
+    let verdictSql = 'match_status';
     if (dateTo) {
-      // Caller asked for a specific range — honour it exactly, same cutoff for both instrument types.
+      // Caller asked for a specific range — honour it exactly, every verdict as stored.
       ucrDateParams.push(dateTo);
       ucrDateClauses.push(`receipt_date < ($${ucrDateParams.length}::date + interval '1 day')`);
     } else {
-      // No explicit range: cut each instrument type at its OWN gateway file's
-      // latest date (CARD MPR/Pine Labs for Card, UPI MPR for UPI) — the same
-      // AC-12 cutoff card-recon/upi-recon's own list routes already apply by
-      // default (ucr-matched.routes.js), so this dashboard figure doesn't
-      // disagree with what clicking into Card/UPI Reconciliation shows.
-      const [cardCutoff, upiCutoff] = await Promise.all([settlementCutoffs('CARD_MPR'), settlementCutoffs('UPI_MPR')]);
-      const perType = [];
-      if (cardCutoff.fallback) {
-        ucrDateParams.push(cardCutoff.fallback);
-        perType.push(`(instrument_type = 'CARD' AND receipt_date < ($${ucrDateParams.length}::date + interval '1 day'))`);
-      } else {
-        perType.push(`instrument_type = 'CARD'`);
-      }
-      if (upiCutoff.fallback) {
-        ucrDateParams.push(upiCutoff.fallback);
-        perType.push(`(instrument_type = 'UPI' AND receipt_date < ($${ucrDateParams.length}::date + interval '1 day'))`);
-      } else {
-        perType.push(`instrument_type = 'UPI'`);
-      }
-      ucrDateClauses.push(`(${perType.join(' OR ')})`);
+      const [cardCutoff, upiCutoff] = await Promise.all([coverageCutoffs('CARD_MPR'), coverageCutoffs('UPI_MPR')]);
+      const covered = (type, cutoff) => {
+        if (!cutoff.fallback) return `instrument_type = '${type}'`; // no file yet: nothing to wait for, as before
+        ucrDateParams.push(cutoff.fallback);
+        return `(instrument_type = '${type}' AND receipt_date < ($${ucrDateParams.length}::date + interval '1 day'))`;
+      };
+      verdictSql = `CASE WHEN ${covered('CARD', cardCutoff)} OR ${covered('UPI', upiCutoff)} THEN match_status
+                         WHEN match_status IN ('MATCHED', 'GROUPED_MATCHED') THEN match_status
+                         ELSE 'AWAITING' END`;
     }
     const ucrDateWhere = ucrDateClauses.length ? `AND ${ucrDateClauses.join(' AND ')}` : '';
     const { rows: ucrCountRows } = await db.query(
-      `SELECT instrument_type, match_status, COUNT(*)::int AS n,
+      `SELECT instrument_type, ${verdictSql} AS match_status, COUNT(*)::int AS n,
               COALESCE(SUM(amount), 0) AS amount_total
          FROM ucr_ip_records
         WHERE instrument_type IN ('CARD', 'UPI') ${ucrDateWhere}
-        GROUP BY instrument_type, match_status`,
+        GROUP BY 1, 2`,
       ucrDateParams,
     );
     // Same full shape as ip/diag/upi/cheque (summarize()'s counts object) so
@@ -1815,6 +1882,8 @@ router.get('/summary', async (req, res, next) => {
       // shortfall to report — balanceAmount is structurally always 0 here.
       totalAmount: 0,
       balanceAmount: 0,
+      awaiting: 0,
+      awaitingAmount: 0,
     });
     const card = emptyUcrCounts();
     const upiGateway = emptyUcrCounts();
@@ -1822,7 +1891,10 @@ router.get('/summary', async (req, res, next) => {
       const bucket = row.instrument_type === 'CARD' ? card : upiGateway;
       bucket.total += row.n;
       bucket.totalAmount += Number(row.amount_total) || 0;
-      if (row.match_status === 'MATCHED') bucket.matched += row.n;
+      if (row.match_status === 'AWAITING') {
+        bucket.awaiting += row.n;
+        bucket.awaitingAmount += Number(row.amount_total) || 0;
+      } else if (row.match_status === 'MATCHED') bucket.matched += row.n;
       else if (row.match_status === 'GROUPED_MATCHED') {
         // Was falling through to "not generated" (2026-10-06: 386 OP UPI rows,
         // all matched in pairs, shown as "1,031 of 1,417" with a banner asking
@@ -1837,8 +1909,10 @@ router.get('/summary', async (req, res, next) => {
       // rather than hiding under "not generated".
       else bucket.unmatched += row.n;
     }
-    card.totalAmount = Math.round(card.totalAmount * 100) / 100;
-    upiGateway.totalAmount = Math.round(upiGateway.totalAmount * 100) / 100;
+    for (const bucket of [card, upiGateway]) {
+      bucket.totalAmount = Math.round(bucket.totalAmount * 100) / 100;
+      bucket.awaitingAmount = Math.round(bucket.awaitingAmount * 100) / 100;
+    }
 
     // Stage 2 rollup: one row per PayU settlement batch (POST
     // .../payu-settlements/generate). Read straight from the persisted table.
@@ -1864,17 +1938,14 @@ router.get('/summary', async (req, res, next) => {
     // ipPayments / diagPayments are the NON-UPI slice of each type; upiPayments
     // is the UPI slice across both. The three are disjoint, so combined.* is
     // their straight sum with no double-count.
-    const ip = summarize(ipResults.filter((g) => !isUpiMode(g.paymentMode)));
-    const diag = summarize(diagResults.filter((g) => !isUpiMode(g.paymentMode)));
-    const upi = summarize(upiResults);
-    // A fourth disjoint slice: cheque rows live in their own table and can
-    // never appear in the IP/Diag/UPI results above, so they add to the
-    // combined totals with no double-count.
-    const cheque = summarize(chequeResults);
-    const amountDifferences = [
-      ...collectMismatches(ipResults, 'IP_PAYMENT'),
-      ...collectMismatches(diagResults, 'DIAG_PAYMENT'),
-    ].slice(0, 500);
+    // Four disjoint slices: the "UPI" figure is the UPI-mode rows of IP and
+    // Diag (a reporting slice by payment mode, not a separate engine), and
+    // cheque rows live in their own table — so combined.* is a straight sum.
+    const ip = summarizeStored(ipRows.filter((r) => !r.upi));
+    const diag = summarizeStored(diagRows.filter((r) => !r.upi));
+    const upi = summarizeStored([...ipRows, ...diagRows].filter((r) => r.upi));
+    const cheque = summarizeStored(chequeRows);
+    const amountDifferences = [...ipDiffs, ...diagDiffs].slice(0, 500);
 
     res.json({
       ipPayments: ip,
@@ -1897,6 +1968,10 @@ router.get('/summary', async (req, res, next) => {
         totalUnmatched: ip.unmatched + diag.unmatched + upi.unmatched + cheque.unmatched + card.unmatched + upiGateway.unmatched,
         totalAmbiguous: ip.ambiguous + diag.ambiguous + upi.ambiguous + cheque.ambiguous,
         totalExcluded: ip.excluded + diag.excluded + upi.excluded + cheque.excluded,
+        // Not a verdict: receipts whose statement has not arrived yet (scope-filters.js coverageCutoffs).
+        totalAwaiting: ip.awaiting + diag.awaiting + upi.awaiting + cheque.awaiting + card.awaiting + upiGateway.awaiting,
+        awaitingAmount:
+          Math.round((ip.awaitingAmount + diag.awaitingAmount + upi.awaitingAmount + cheque.awaitingAmount + card.awaitingAmount + upiGateway.awaitingAmount) * 100) / 100,
         onlyInBankStatement: bank.unmatched,
         onlyInPaymentStatements: ip.unmatched + diag.unmatched + upi.unmatched + cheque.unmatched + card.unmatched + upiGateway.unmatched,
         // The two rupee figures the client asked for on the dashboard, summed
@@ -1907,6 +1982,7 @@ router.get('/summary', async (req, res, next) => {
           Math.round((ip.balanceAmount + diag.balanceAmount + upi.balanceAmount + cheque.balanceAmount) * 100) / 100,
       },
       amountDifferences,
+      awaitingDays: receiptCutoffs ? receiptCutoffs.days : await loadAwaitingDays(),
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {
@@ -2513,6 +2589,8 @@ async function buildAuditSheets(query) {
   if (unit) ucrRows = ucrRows.filter((row) => row.division === unit);
   sheets.push({ key: 'UCR', rows: ucrRows });
 
+  await markAwaitingStatement(sheets);
+
   return {
     periodLabel: period.label,
     periodTitlePhrase: period.titlePhrase,
@@ -2520,6 +2598,39 @@ async function buildAuditSheets(query) {
     dateBasis: basis,
     sheets,
   };
+}
+
+/**
+ * Flags (`__awaiting`) every row no statement covers yet and that is not a
+ * clean match, so the report's status reads "Awaiting Statement" rather than a
+ * verdict the engine could only reach without its statement — the same line
+ * every screen draws (scope-filters.js coverageCutoffs). IP / Diag / Cheque are
+ * cut at their own branch's bank date, Card / UPI at their gateway file's.
+ * Receipt dates are compared as 'YYYY-MM-DD' text (the loaders read them via
+ * to_char), never through a Date.
+ */
+async function markAwaitingStatement(sheets) {
+  const [bank, card, upi] = await Promise.all([coverageCutoffs('BANK'), coverageCutoffs('CARD_MPR'), coverageCutoffs('UPI_MPR')]);
+  const ymd = (v) => (v ? String(v).slice(0, 10) : null);
+  const bankCutFor = (row) => {
+    const unitName = String(row.division || row.unitName || '').toLowerCase();
+    const own = bank.byLocation.find((b) => unitName.includes(b.name.toLowerCase()));
+    return own ? own.cutoff : bank.fallback;
+  };
+  const past = (date, cut) => !!cut && !!date && date > cut;
+  for (const sheet of sheets) {
+    for (const row of sheet.rows) {
+      if (sheet.key === 'UCR') {
+        const cut = row.instrumentType === 'CARD' ? card.fallback : upi.fallback;
+        const clean = row.matchedByAuditor || MATCHED_STATUSES.has(row.matchStatus);
+        row.__awaiting = !clean && past(ymd(row.receiptDate), cut);
+      } else {
+        const res = row.__result;
+        const clean = !res || res.excluded || res.matchedByAuditor || MATCHED_STATUSES.has(res.status);
+        row.__awaiting = !clean && past(ymd(row.receiptDate), bankCutFor(row));
+      }
+    }
+  }
 }
 
 // GET /api/matched-rules/audit-report/preview?periodType=&period=&dateBasis=&unit= — per-sheet rollup for the screen's pre-download summary.

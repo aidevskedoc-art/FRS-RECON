@@ -35,6 +35,7 @@
             <th class="num">Partial</th>
             <th class="num">Mismatch</th>
             <th class="num">Unmatched</th>
+            <th class="num" title="No bank / gateway statement covers these dates yet">Awaiting</th>
             <th class="num">Balance Amount</th>
             <th>Reconciled</th>
           </tr>
@@ -56,6 +57,7 @@
               <td class="num">
                 <span class="badge" [class.badge--none]="!row.d.unmatched">{{ count(row.d.unmatched) }}</span>
               </td>
+              <td class="num mono" [class.zero]="!row.d.awaiting">{{ count(row.d.awaiting ?? 0) }}</td>
               <td class="num">
                 <span class="pill" [class.pill--bad]="row.d.balanceAmount > 0" [class.pill--good]="!(row.d.balanceAmount > 0)">
                   <i class="pi" [class.pi-arrow-down-right]="row.d.balanceAmount > 0" [class.pi-check]="!(row.d.balanceAmount > 0)"></i>
@@ -86,6 +88,7 @@
             <td class="num">
               <span class="badge" [class.badge--none]="!summary().combined.totalUnmatched">{{ count(summary().combined.totalUnmatched) }}</span>
             </td>
+            <td class="num mono" [class.zero]="!summary().combined.totalAwaiting">{{ count(summary().combined.totalAwaiting ?? 0) }}</td>
             <td class="num">
               <span class="pill" [class.pill--bad]="summary().combined.balanceAmount > 0" [class.pill--good]="!(summary().combined.balanceAmount > 0)">
                 <i class="pi" [class.pi-arrow-down-right]="summary().combined.balanceAmount > 0" [class.pi-check]="!(summary().combined.balanceAmount > 0)"></i>
@@ -110,9 +113,10 @@
       <ul>
         <li><b>Total / Σ Amount</b> — receipts of that payment type in the MIS, and their rupee value.</li>
         <li><b>Matched</b> — found in the bank statement / MPR by the matching rules. <b>Gateway</b> — matched through the EaseBuzz gateway ID. <b>Contra</b> — cheques accounted for by the refund document.</li>
-        <li><b>Partial</b> — part of a grouped match; <b>Mismatch</b> — reference found but the amount differs; <b>Unmatched</b> — no counterpart found yet (often because the bank / MPR file for those dates is not uploaded yet).</li>
+        <li><b>Partial</b> — part of a grouped match; <b>Mismatch</b> — reference found but the amount differs; <b>Unmatched</b> — no counterpart found in a statement that does cover that date.</li>
+        <li><b>Awaiting</b> — no bank / MPR statement covers that date yet (or it is within the settlement days of the statement's last date). Not a mismatch: these reconcile on their own once the statement is in.</li>
         <li><b>Balance Amount</b> — shortfall where a grouped match came up short of its bank credit. <span class="pill pill--good"><i class="pi pi-check"></i> 0.00</span> means nothing pending; <span class="pill pill--bad"><i class="pi pi-arrow-down-right"></i></span> means money still to be accounted for.</li>
-        <li><b>Reconciled</b> — (Matched + Gateway + Contra) ÷ Total. Green 95%+, amber 80–95%, red below 80%.</li>
+        <li><b>Reconciled</b> — (Matched + Gateway + Contra) ÷ (Total − Awaiting). Green 95%+, amber 80–95%, red below 80%.</li>
       </ul>
     </details>
   </div>

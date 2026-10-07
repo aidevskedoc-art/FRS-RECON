@@ -9,7 +9,7 @@ import { catchError, concatMap, from, map, of, switchMap, tap, toArray } from 'r
 import { ReconciliationRunService, UploadedBatch } from '../../core/services/reconciliation-run.service';
 import { MatchedRulesService } from '../../core/services/matched-rules.service';
 import { AuthService } from '../../core/services/auth.service';
-import { errorMessage } from '../../core/services/policy-document.service';
+import { errorMessage } from '../../core/utils/error-message.util';
 import { ScanStatusService } from '../../core/services/scan-status.service';
 import {
   DetectedType,

@@ -3,7 +3,6 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
-import { AiStatusComponent } from '../../insurance-policy/shared/ai-status/ai-status.component';
 import { AuthService } from '../../../core/services/auth.service';
 import { LANDING_PATH } from '../../../core/guards/auth.guard';
 import { APP_NAME, APP_SHORT_NAME } from '../../../core/config/app-name';
@@ -14,19 +13,19 @@ import { MagneticDirective } from '../../../shared/motion/magnetic.directive';
 const TAGLINES = [
   'Matching payments to bank statements, automatically.',
   'MIS data, bank statements, and matching rules in one workspace.',
-  'Insurance policy automation is one module of many.',
+  'Daily HIS collections and shared-folder statements, reconciled automatically.',
   'Audit-ready reconciliation output, every single time.',
 ];
 
 const FEATURES = [
   { icon: 'pi pi-sync', text: 'Automated matching across payments and bank statements' },
   { icon: 'pi pi-verified', text: 'Confidence-scored, audit-ready reconciliation' },
-  { icon: 'pi pi-th-large', text: 'Insurance automation — one module of the platform' },
+  { icon: 'pi pi-th-large', text: 'IP, Diagnostics, OP, cheque, card and UPI in one place' },
 ];
 
-/** Static module strip shown at the foot of the hero — Insurance is the entry module. */
+/** Static module strip shown at the foot of the hero — reconciliation is the entry module. */
 const MODULES = [
-  { label: 'Insurance Automation', active: true },
+  { label: 'Reconciliation', active: true },
   { label: 'Online Payments', active: false },
   { label: 'Matching Rules', active: false },
   { label: 'Master Data', active: false },
@@ -47,7 +46,6 @@ const MODULES = [
     ReactiveFormsModule,
     InputTextModule,
     PasswordModule,
-    AiStatusComponent,
     AuroraBackgroundComponent,
     CursorGlowComponent,
     MagneticDirective,

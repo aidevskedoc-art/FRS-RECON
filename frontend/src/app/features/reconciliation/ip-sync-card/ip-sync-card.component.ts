@@ -6,10 +6,11 @@ import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
+import { firstValueFrom } from 'rxjs';
 import { ApiSyncHistoryComponent } from './api-sync-history.component';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
 import { AuthService } from '../../../core/services/auth.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { ApiPullRunStatus, ApiPullStatus, ApiSyncOptions, ApiSyncResult, ApiSyncResultStatus, ApiSyncRun, ApiSyncRunResult } from '../../../core/models';
 
 const PULL_STATUS_LABEL: Record<ApiPullRunStatus, string> = {
@@ -36,6 +37,9 @@ const RESULT_LOOK: Record<ApiSyncResultStatus, { icon: string; tone: 'ok' | 'qui
   FAILED: { icon: 'pi-times-circle', tone: 'danger' },
 };
 
+/** The Unit list's "All units" choice — also the value the download route takes for it. */
+const ALL_UNITS = 'all';
+
 /**
  * "Sync IP Collection" on Upload & Run: pulls one unit-day from the HIS API
  * straight into every store an active API feeds — the same rows the "All
@@ -45,6 +49,9 @@ const RESULT_LOOK: Record<ApiSyncResultStatus, { icon: string; tone: 'ok' | 'qui
  *
  * An Admin also gets "Download HIS data": the same call's answer saved as a
  * workbook, every row and field as received, to see the API's own format.
+ *
+ * "All units" syncs every unit in turn — one unit's request after another, as
+ * the HIS is never asked twice at once — and downloads them all as one workbook.
  */
 @Component({
   selector: 'app-ip-sync-card',
@@ -74,7 +81,12 @@ export class IpSyncCardComponent {
   protected readonly date = signal<Date>(yesterday());
   protected readonly syncing = signal(false);
   protected readonly downloading = signal(false);
-  protected readonly result = signal<ApiSyncRunResult | null>(null);
+  /** One per unit synced by the last press — a single unit, or every unit for "All units". */
+  protected readonly results = signal<ApiSyncRunResult[]>([]);
+  /** Units of an "All units" sync whose request failed outright; the others still ran. */
+  protected readonly unitErrors = signal<{ unitName: string; message: string }[]>([]);
+  /** Which unit an "All units" sync is on. */
+  protected readonly progress = signal<{ current: number; total: number; unitName: string } | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly today = new Date();
   protected readonly statusLabel = STATUS_LABEL;
@@ -87,9 +99,17 @@ export class IpSyncCardComponent {
       .map((a) => `"${a.name}"`)
       .join(', '),
   );
-  protected readonly unitOptions = computed(() =>
-    (this.options()?.units ?? []).map((u) => ({ label: u.name, value: u.id, code: u.hisLocCode })),
-  );
+  protected readonly unitOptions = computed(() => {
+    const units = this.options()?.units ?? [];
+    const each = units.map((u) => ({ label: u.name, value: u.id, code: u.hisLocCode as number | null }));
+    return units.length > 1 ? [{ label: 'All units', value: ALL_UNITS, code: null }, ...each] : each;
+  });
+  protected readonly allUnits = computed(() => this.unitId() === ALL_UNITS);
+  protected readonly unitCount = computed(() => this.options()?.units.length ?? 0);
+  protected readonly syncLabel = computed(() => {
+    const p = this.progress();
+    return p ? `Syncing ${p.current} of ${p.total}…` : 'Sync from HIS';
+  });
   protected readonly recentRuns = computed(() => (this.options()?.recentRuns ?? []).slice(0, 10));
   protected readonly canSync = computed(
     () =>
@@ -117,8 +137,12 @@ export class IpSyncCardComponent {
   /** The full fetch history, opened from the card. */
   protected readonly historyOpen = signal(false);
   protected readonly unitNames = computed(() => (this.options()?.units ?? []).map((u) => u.name));
-  /** The HIS answered with no rows at all — a request it did not accept, far more often than a day with no collections. */
-  protected readonly emptyAnswer = computed(() => (this.result()?.results ?? []).some((r) => r.emptyAnswer));
+  /** Units the HIS answered with no rows at all — a request it did not accept, far more often than a day with no collections. */
+  protected readonly emptyUnits = computed(() =>
+    this.results()
+      .filter((res) => res.results.some((r) => r.emptyAnswer))
+      .map((res) => res.unitName),
+  );
   /** The automatic morning pull: on or off, and how the last one went — so nobody syncs by hand what it already brought. */
   protected readonly pullStatus = signal<ApiPullStatus | null>(null);
   protected readonly pullStatusLabel = PULL_STATUS_LABEL;
@@ -155,13 +179,18 @@ export class IpSyncCardComponent {
   protected sync(): void {
     const unitId = this.unitId();
     if (!this.canSync() || !unitId) return;
+    if (unitId === ALL_UNITS) {
+      void this.syncAllUnits();
+      return;
+    }
     this.syncing.set(true);
     this.error.set(null);
-    this.result.set(null);
+    this.results.set([]);
+    this.unitErrors.set([]);
     this.api.syncUnitDay(unitId, toYmd(this.date())).subscribe({
       next: (res) => {
         this.syncing.set(false);
-        this.result.set(res);
+        this.results.set([res]);
         if (res.results.some((r) => r.rowsStored > 0)) this.synced.emit(res);
         this.loadOptions();
       },
@@ -173,9 +202,44 @@ export class IpSyncCardComponent {
     });
   }
 
-  /** Saves what the HIS sends for the chosen unit and day, as received. Stores nothing. */
+  /**
+   * Every unit, one after another, each exactly as if picked on its own. A unit
+   * whose request fails is listed and the next one still runs — except when the
+   * folder scan has paused writes (423), which would refuse every unit alike.
+   */
+  private async syncAllUnits(): Promise<void> {
+    const units = this.options()?.units ?? [];
+    const ymd = toYmd(this.date());
+    this.syncing.set(true);
+    this.error.set(null);
+    this.results.set([]);
+    this.unitErrors.set([]);
+    let lastStored: ApiSyncRunResult | null = null;
+    for (const [i, unit] of units.entries()) {
+      this.progress.set({ current: i + 1, total: units.length, unitName: unit.name });
+      try {
+        const res = await firstValueFrom(this.api.syncUnitDay(unit.id, ymd));
+        this.results.update((list) => [...list, res]);
+        if (res.results.some((r) => r.rowsStored > 0)) lastStored = res;
+      } catch (err) {
+        if ((err as { status?: number })?.status === 423) {
+          this.error.set(`${errorMessage(err)} Stopped before ${unit.name}; units above this line are done.`);
+          break;
+        }
+        this.unitErrors.update((list) => [...list, { unitName: unit.name, message: errorMessage(err) }]);
+      }
+    }
+    this.progress.set(null);
+    this.syncing.set(false);
+    if (lastStored) this.synced.emit(lastStored);
+    this.loadOptions();
+  }
+
+  /** Saves what the HIS sends for the chosen unit (or every unit) and day, as received. Stores nothing. */
   protected download(): void {
-    const unit = (this.options()?.units ?? []).find((u) => u.id === this.unitId());
+    const unit = this.allUnits()
+      ? { id: ALL_UNITS, name: 'All units' }
+      : (this.options()?.units ?? []).find((u) => u.id === this.unitId());
     if (!this.canDownload() || !unit) return;
     const ymd = toYmd(this.date());
     this.downloading.set(true);

@@ -6,8 +6,8 @@ import { TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
 import { UcrMatchedService, tallyOfRows } from '../../../core/services/ucr-matched.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
-import { UcrIpRecord, UcrMatchStatus, UcrTally } from '../../../core/models';
+import { errorMessage } from '../../../core/utils/error-message.util';
+import { UcrIpRecord, UcrMatchStatus, UcrRecordsQuery, UcrTally } from '../../../core/models';
 import { AiLoaderComponent } from '../../../shared/ui/ai-loader.component';
 
 const STATUS_LABELS: Record<UcrMatchStatus, string> = {
@@ -16,6 +16,26 @@ const STATUS_LABELS: Record<UcrMatchStatus, string> = {
   AMOUNT_MISMATCH: 'Amount Mismatch',
   UNMATCHED: 'No UPI MPR Row',
 };
+
+type StatusFilter = 'ALL' | UcrMatchStatus | 'AWAITING';
+
+/**
+ * The list query for a status pick. The two open verdicts are asked only of
+ * the rows the UPI MPR covers (`upTo: 'BANK'`), and Awaiting Statement is the
+ * open rows past it — so the three never overlap, and their counts add up.
+ */
+function queryFor(status: StatusFilter): Pick<UcrRecordsQuery, 'status' | 'upTo'> {
+  switch (status) {
+    case 'ALL':
+      return {};
+    case 'MATCHED':
+      return { status: UcrMatchedService.MATCHED_STATUSES };
+    case 'AWAITING':
+      return { status: 'UNMATCHED,AMOUNT_MISMATCH', upTo: 'AWAITING' };
+    default:
+      return { status, upTo: 'BANK' };
+  }
+}
 
 /**
  * UPI MIS row <-> UPI MPR. Part of the UPI & Card Reconciliation module (see
@@ -50,18 +70,21 @@ export class UpiReconciliationComponent {
   protected readonly loading = signal(false);
   protected readonly generating = signal(false);
   protected readonly error = signal<string | null>(null);
-  protected readonly statusFilter = signal<'ALL' | UcrMatchStatus>('ALL');
+  protected readonly statusFilter = signal<StatusFilter>('ALL');
   /** Counts and totals over every row under the filter, not only the page shown. */
   protected readonly tally = signal<UcrTally | null>(null);
 
   // A Grouped Matched row IS a matched row (several receipts adding up to one
   // UPI MPR row), so it is listed and counted under Matched — not as a status
   // of its own to look for (sriram, 2026-10-06). Each row still says which it is.
+  // Awaiting Statement: rows no UPI MPR covers yet — kept out of Amount Mismatch
+  // and No UPI MPR Row, which only list what could be checked.
   protected readonly statusOptions = [
     { label: 'All statuses', value: 'ALL' as const },
     { label: 'Matched', value: 'MATCHED' as const },
     { label: 'Amount Mismatch', value: 'AMOUNT_MISMATCH' as const },
     { label: 'No UPI MPR Row', value: 'UNMATCHED' as const },
+    { label: 'Awaiting Statement', value: 'AWAITING' as const },
   ];
 
   /** Matched, grouped or not. */
@@ -70,6 +93,7 @@ export class UpiReconciliationComponent {
   protected readonly groupedMatchedCount = computed(() => this.tally()?.groupedMatched ?? 0);
   protected readonly mismatchCount = computed(() => this.tally()?.mismatched ?? 0);
   protected readonly unmatchedCount = computed(() => (this.tally()?.unmatched ?? 0) + (this.tally()?.notGenerated ?? 0));
+  protected readonly awaitingCount = computed(() => this.tally()?.awaiting ?? 0);
   protected readonly misTotal = computed(() => this.tally()?.misTotal ?? 0);
   protected readonly mprTotal = computed(() => this.tally()?.gatewayTotal ?? 0);
   protected readonly gap = computed(() => Math.round((this.misTotal() - this.mprTotal()) * 100) / 100);
@@ -81,10 +105,8 @@ export class UpiReconciliationComponent {
   protected load(): void {
     this.loading.set(true);
     this.error.set(null);
-    const status = this.statusFilter();
-    const asked = status === 'ALL' ? undefined : status === 'MATCHED' ? UcrMatchedService.MATCHED_STATUSES : status;
     const pageSize = this.pageSize();
-    this.ucrMatched.fetchUpiRecon({ status: asked, page: Math.floor(this.first() / pageSize) + 1, pageSize }).subscribe({
+    this.ucrMatched.fetchUpiRecon({ ...queryFor(this.statusFilter()), page: Math.floor(this.first() / pageSize) + 1, pageSize }).subscribe({
       next: (page) => {
         this.rows.set(page.records);
         this.total.set(page.total);
@@ -104,7 +126,7 @@ export class UpiReconciliationComponent {
     this.load();
   }
 
-  protected setStatus(value: 'ALL' | UcrMatchStatus): void {
+  protected setStatus(value: StatusFilter): void {
     this.statusFilter.set(value);
     this.first.set(0);
     this.load();
@@ -126,8 +148,9 @@ export class UpiReconciliationComponent {
     });
   }
 
-  protected statusLabel(status: UcrMatchStatus | null): string {
-    return status ? (STATUS_LABELS[status] ?? status) : 'Not Generated';
+  protected statusLabel(row: UcrIpRecord): string {
+    if (row.awaitingStatement) return 'Awaiting Statement';
+    return row.matchStatus ? (STATUS_LABELS[row.matchStatus] ?? row.matchStatus) : 'Not Generated';
   }
 
   /**

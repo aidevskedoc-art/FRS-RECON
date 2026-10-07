@@ -8,13 +8,16 @@
  * precisely while nobody has yet seen what its API sends — with those whose
  * connection settings are identical asked once (sync-unit-day.js). One sheet
  * per call, then an Info sheet saying what was asked and what came back.
+ *
+ * "All units" asks the same for every active unit with a HIS Loc Code, one unit
+ * after another, into one workbook: a sheet per unit and call, one Info sheet.
  */
 const XLSX = require('xlsx');
 const db = require('../db');
 const { callSoapApi, redact } = require('./soap-client');
 const { formatRequestDate } = require('./apply-mapping');
 const { withAuthKey } = require('./config-store');
-const { groupByConnection, validateDate, loadLocation, displayDate, httpError } = require('./sync-unit-day');
+const { groupByConnection, validateDate, loadLocation, displayDate, httpError, SOURCE_LABELS } = require('./sync-unit-day');
 
 /**
  * One answer per distinct call among the configs. A call that fails is
@@ -30,6 +33,36 @@ const { groupByConnection, validateDate, loadLocation, displayDate, httpError } 
 async function fetchResponses({ locationId, date, transport }) {
   validateDate(date);
   const location = await loadLocation(locationId);
+  const calls = await callEveryApi({ location, date, transport });
+  const failed = calls.find((c) => c.error);
+  if (failed && calls.every((c) => c.error)) throw httpError(failed.status || 502, failed.error);
+  return { location, date, calls };
+}
+
+/**
+ * The same for every active unit with a HIS Loc Code, one unit after another
+ * (the HIS is never asked twice at once). A unit whose calls all fail stays in
+ * the answer with its failures; only when nothing answered for any unit is the
+ * first failure thrown.
+ *
+ * @returns {Promise<{ date:string, units:{ location:object, calls:object[] }[] }>}
+ */
+async function fetchAllUnitsResponses({ date, transport }) {
+  validateDate(date);
+  const { rows: locations } = await db.query('SELECT * FROM locations WHERE active AND his_loc_code IS NOT NULL ORDER BY name');
+  if (!locations.length) throw httpError(422, 'No active unit has a HIS Loc Code — set it on Master Data → Location Master');
+
+  const units = [];
+  for (const location of locations) units.push({ location, calls: await callEveryApi({ location, date, transport }) });
+
+  const all = units.flatMap((u) => u.calls);
+  const failed = all.find((c) => c.error);
+  if (failed && all.every((c) => c.error)) throw httpError(failed.status || 502, failed.error);
+  return { date, units };
+}
+
+/** Every API Config asked for one unit-day, those sharing a connection once. Failures are entries, not throws. */
+async function callEveryApi({ location, date, transport }) {
   const { rows: configs } = await db.query('SELECT * FROM api_configs ORDER BY id');
   if (!configs.length) {
     throw httpError(422, 'No API is set up — an Admin must add one on Master Data → API Config');
@@ -70,10 +103,7 @@ async function fetchResponses({ locationId, date, transport }) {
     }
     calls.push(entry);
   }
-
-  const failed = calls.find((c) => c.error);
-  if (failed && calls.every((c) => c.error)) throw httpError(failed.status || 502, failed.error);
-  return { location, date, calls };
+  return calls;
 }
 
 // ---- the workbook ------------------------------------------------------------
@@ -133,6 +163,11 @@ function nowText() {
  *   `calls` as fetchResponses returns them
  * @returns a SheetJS workbook: a sheet per call that answered, then "Info"
  */
+/** One call's line on the Info sheet: its sheet (blank when it failed), what was asked, what came back. */
+const summaryRow = (call, name) => [
+  name, call.method, call.asked ?? '', call.error ? '' : call.rows.length, call.total ?? '', call.apiNames.join(', '), noteOf(call),
+];
+
 function buildResponseWorkbook({ location, date, calls, downloadedBy = null, downloadedAt = nowText() }) {
   const workbook = XLSX.utils.book_new();
   const taken = new Set(['info']);
@@ -140,9 +175,7 @@ function buildResponseWorkbook({ location, date, calls, downloadedBy = null, dow
   for (const call of calls) {
     const name = call.error ? '' : sheetName(call.method, taken);
     if (name) XLSX.utils.book_append_sheet(workbook, responseSheet(call.rows), name);
-    summary.push([
-      name, call.method, call.asked ?? '', call.error ? '' : call.rows.length, call.total ?? '', call.apiNames.join(', '), noteOf(call),
-    ]);
+    summary.push(summaryRow(call, name));
   }
 
   const info = XLSX.utils.aoa_to_sheet([
@@ -162,4 +195,39 @@ function buildResponseWorkbook({ location, date, calls, downloadedBy = null, dow
   return workbook;
 }
 
-module.exports = { fetchResponses, buildResponseWorkbook, responseSheet, sheetName };
+/**
+ * Every unit in one workbook: a sheet per unit and call ("Hitech City - IP"),
+ * then one Info sheet with a line per unit and call.
+ *
+ * @param {{ date:string, units:{ location:object, calls:object[] }[], downloadedBy?:string|null, downloadedAt?:string }} args
+ *   `units` as fetchAllUnitsResponses returns them
+ */
+function buildAllUnitsWorkbook({ date, units, downloadedBy = null, downloadedAt = nowText() }) {
+  const workbook = XLSX.utils.book_new();
+  const taken = new Set(['info']);
+  const summary = [];
+  for (const { location, calls } of units) {
+    for (const call of calls) {
+      const name = call.error ? '' : sheetName(`${location.name} - ${SOURCE_LABELS[call.method] || call.method}`, taken);
+      if (name) XLSX.utils.book_append_sheet(workbook, responseSheet(call.rows), name);
+      summary.push([location.name, location.his_loc_code, ...summaryRow(call, name)]);
+    }
+  }
+
+  const info = XLSX.utils.aoa_to_sheet([
+    ['HIS API response — every row and field exactly as received, before any row filter or field mapping'],
+    [],
+    ['Units', units.map((u) => u.location.name).join(', ')],
+    ['Collection date', displayDate(date)],
+    ['Downloaded', downloadedAt],
+    ['Downloaded by', downloadedBy ?? ''],
+    [],
+    ['Unit', 'HIS loc code', 'Sheet', 'API method', 'Asked with', 'Rows received', 'Total reported', 'Read by (API Config)', 'Note'],
+    ...summary,
+  ]);
+  info['!cols'] = [{ wch: 16 }, { wch: 12 }, { wch: 30 }, { wch: 20 }, { wch: 36 }, { wch: 14 }, { wch: 14 }, { wch: 60 }, { wch: 70 }];
+  XLSX.utils.book_append_sheet(workbook, info, 'Info');
+  return workbook;
+}
+
+module.exports = { fetchResponses, fetchAllUnitsResponses, buildResponseWorkbook, buildAllUnitsWorkbook, responseSheet, sheetName };

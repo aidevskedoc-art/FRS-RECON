@@ -365,10 +365,19 @@
                   </span>
                 }
                 @case ('status') {
-                  <span class="status-pill" [class]="statusPillClass(row.matchStatus, row.matchedByAuditor)">
-                    <i class="pi" [class]="'pi ' + statusIcon(row.matchStatus, row.matchedByAuditor)"></i>
-                    {{ statusLabel(row.matchStatus, row.matchedByAuditor, row.chequeNo, row.matchUnitCount) }}
-                  </span>
+                  @if (viewMode() === 'awaiting') {
+                    <!-- Not checkable yet: its statement has not arrived. The stored verdict is what the engine
+                         found without that statement, so it is not shown as the row's status. -->
+                    <span class="status-pill status-pill--info" title="No bank / gateway statement covers this date yet">
+                      <i class="pi pi-hourglass"></i>
+                      Awaiting statement
+                    </span>
+                  } @else {
+                    <span class="status-pill" [class]="statusPillClass(row.matchStatus, row.matchedByAuditor)">
+                      <i class="pi" [class]="'pi ' + statusIcon(row.matchStatus, row.matchedByAuditor)"></i>
+                      {{ statusLabel(row.matchStatus, row.matchedByAuditor, row.chequeNo, row.matchUnitCount) }}
+                    </span>
+                  }
                   @if (row.pendingChange) {
                     <span class="pending-tag" title="A change request is waiting for approval"><i class="pi pi-clock"></i>Pending approval</span>
                   }

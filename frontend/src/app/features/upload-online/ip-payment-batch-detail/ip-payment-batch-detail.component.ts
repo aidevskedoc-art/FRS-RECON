@@ -11,7 +11,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { Ripple } from 'primeng/ripple';
 import { IpPaymentService } from '../../../core/services/ip-payment.service';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { MatchStatus, OnlinePaymentRecord, OnlineUploadBatch, RecordFilterOptions, RecordStatusCounts } from '../../../core/models';
 
 interface ColumnDef {

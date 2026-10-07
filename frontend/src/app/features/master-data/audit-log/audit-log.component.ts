@@ -7,7 +7,7 @@ import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { AuditLogService } from '../../../core/services/audit-log.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { AuditLogEntry } from '../../../core/models';
 import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
 

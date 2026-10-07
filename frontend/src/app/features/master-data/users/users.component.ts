@@ -12,7 +12,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { AuthService } from '../../../core/services/auth.service';
 import { UserManagementService } from '../../../core/services/user-management.service';
 import { MasterDataService } from '../../../core/services/master-data.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { AuditLogEntry, FRS_ROLES, FrsRole, FrsUser } from '../../../core/models';
 import { AUDITOR_DEFAULT_SCREENS, SCREENS, SCREEN_LABELS } from '../../../core/config/screens';
 import { PageHeaderComponent } from '../../../shared/ui/page-header.component';

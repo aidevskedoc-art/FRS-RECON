@@ -48,6 +48,9 @@ function runQuery(sql, params = []) {
   let m;
 
   if (text === 'SELECT * FROM locations WHERE id = $1') return { rows: one(state.locations, params[0]) };
+  if (text === 'SELECT * FROM locations WHERE active AND his_loc_code IS NOT NULL ORDER BY name') {
+    return { rows: state.locations.filter((l) => l.active && l.his_loc_code !== null).sort((a, b) => a.name.localeCompare(b.name)) };
+  }
   if (text === 'SELECT * FROM api_configs WHERE id = ANY($1::int[]) ORDER BY id') return { rows: state.api_configs.filter((c) => params[0].includes(c.id)) };
   if (text === 'SELECT * FROM api_configs WHERE active ORDER BY id') return { rows: state.api_configs.filter((c) => c.active) };
   if (text === 'SELECT * FROM api_configs ORDER BY id') return { rows: [...state.api_configs] };
@@ -229,7 +232,7 @@ const { groupForBatches, batchName, monthOf, storeOf } = require('../src/api-syn
 const { mapRows } = require('../src/api-sync/apply-mapping');
 const { SEEDS, seedApiConfigs } = require('../src/api-sync/seed-configs');
 const XLSX = require('xlsx');
-const { fetchResponses, buildResponseWorkbook, sheetName } = require('../src/api-sync/response-export');
+const { fetchResponses, fetchAllUnitsResponses, buildResponseWorkbook, buildAllUnitsWorkbook, sheetName } = require('../src/api-sync/response-export');
 const { buildHistoryFilter, historyRowToApi } = require('../src/api-sync/history');
 
 // ---- configs -----------------------------------------------------------------
@@ -857,6 +860,49 @@ async function testResponseDownload() {
   // The key is in the request, never in the file.
   assert.ok(!JSON.stringify(book.SheetNames.map((n) => grid(book, n))).includes('SECRET-1'));
   assert.ok(XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }).length > 0);
+
+  // "All units": every active unit with a HIS Loc Code, one after another, in name order, into one workbook.
+  state.locations.push(
+    { id: 2, name: 'Hitech City', active: true, his_loc_code: 9 },
+    { id: 3, name: 'Closed unit', active: false, his_loc_code: 4 },
+    { id: 4, name: 'No code', active: true, his_loc_code: null },
+  );
+  const everyUnit = fakeHis();
+  const all = await fetchAllUnitsResponses({ date: '2026-09-15', transport: everyUnit });
+  assert.deepStrictEqual(all.units.map((u) => u.location.name), ['Hitech City', 'Secunderabad']);
+  assert.deepStrictEqual(everyUnit.calls.map((c) => c.body.match(/<loc>(\d+)<\/loc>/)[1]), ['9', '1']);
+  assert.deepStrictEqual([state.api_sync_runs.length, Object.keys(tables).length], [0, 0]);
+  const allBook = buildAllUnitsWorkbook({ ...all, downloadedBy: 'tester', downloadedAt: '2026-10-07 09:00' });
+  assert.deepStrictEqual(allBook.SheetNames, ['Hitech City - IP', 'Secunderabad - IP', 'Info']);
+  assert.deepStrictEqual(grid(allBook, 'Hitech City - IP')[0], Object.keys(row({})));
+  const allInfo = grid(allBook, 'Info');
+  assert.deepStrictEqual(allInfo.find((r) => r[0] === 'Units')[1], 'Hitech City, Secunderabad');
+  assert.deepStrictEqual(
+    allInfo.filter((r) => r[3] === 'IpCollection').map((r) => r.slice(0, 7)),
+    [
+      ['Hitech City', 9, 'Hitech City - IP', 'IpCollection', 'loc = 9, trandate = 15/09/2026', 8, 8],
+      ['Secunderabad', 1, 'Secunderabad - IP', 'IpCollection', 'loc = 1, trandate = 15/09/2026', 8, 8],
+    ],
+  );
+  assert.ok(!JSON.stringify(allBook.SheetNames.map((n) => grid(allBook, n))).includes('SECRET-1'));
+  // One unit the HIS does not answer for: the other is still there, the failure a line on Info.
+  const notNine = async (url, body) => {
+    if (body.includes('<loc>9</loc>')) throw new Error('socket hang up');
+    return everyUnit(url, body);
+  };
+  const half = buildAllUnitsWorkbook(await fetchAllUnitsResponses({ date: '2026-09-15', transport: notNine }));
+  assert.deepStrictEqual(half.SheetNames, ['Secunderabad - IP', 'Info']);
+  const hitechLine = grid(half, 'Info').find((r) => r[0] === 'Hitech City');
+  assert.ok(hitechLine[2] === '' && /^Failed: Could not reach the API/.test(hitechLine[8]));
+  // No unit answers at all: the failure itself, no workbook.
+  await assert.rejects(
+    fetchAllUnitsResponses({ date: '2026-09-15', transport: async () => { throw new Error('socket hang up'); } }),
+    (err) => err.status === 502 && /Could not reach the API/.test(err.message),
+  );
+  // No unit to ask.
+  state.locations = [];
+  await assert.rejects(fetchAllUnitsResponses({ date: '2026-09-15', transport: everyUnit }), (err) => err.status === 422 && /No active unit has a HIS Loc Code/.test(err.message));
+  state.locations = [{ id: 1, name: 'Secunderabad', active: true, his_loc_code: 1 }];
 
   // A total that disagrees with the rows is still downloaded — it is what there is to look at — and said so.
   const short = await fetchResponses({ locationId: 1, date: '2026-09-15', transport: fakeHis((r) => ({ Total: '99', IPcollectionv: r })) });

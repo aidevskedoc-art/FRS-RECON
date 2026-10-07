@@ -24,13 +24,6 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, RouteTitle]> = [
   ['/reconciliation/folder-watch', { title: 'Automation', subtitle: 'Reconciliation' }],
   ['/reconciliation/go-live-settings', { title: 'Go-Live Settings', subtitle: 'Reconciliation' }],
 
-  ['/insurance-policy/dashboard', { title: 'Insurance Dashboard', subtitle: 'Automation Insurance' }],
-  ['/insurance-policy/upload', { title: 'Upload', subtitle: 'Policy documents' }],
-  ['/insurance-policy/processing', { title: 'Processing', subtitle: 'AI extraction' }],
-  ['/insurance-policy/excel-preview', { title: 'Excel Export', subtitle: 'Preview' }],
-  ['/insurance-policy/history', { title: 'History', subtitle: 'Processed documents' }],
-  ['/insurance-policy/documents', { title: 'Document', subtitle: 'Workspace' }],
-
   // Off-nav archive: the pre-migration online_upload_batches rows. Nothing
   // writes to that table any more, so this is reachable by URL only.
   ['/upload-online/payments', { title: 'Legacy MIS Batches', subtitle: 'Archive' }],

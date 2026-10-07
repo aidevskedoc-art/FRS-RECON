@@ -8,7 +8,7 @@ import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { BankStatementService } from '../../../core/services/bank-statement.service';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { BankStatementRecord, BankStatementUpload, MatchStatus } from '../../../core/models';
 
 interface ColumnDef {

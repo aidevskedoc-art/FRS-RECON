@@ -11,7 +11,7 @@ const { isHisWorkbook, hisChequeUpload } = require('../online-upload/his-mis-row
 const { CHEQUE_COLLECTION } = require('../online-upload/mis-identities');
 const { chequeCollectionBatchRowToApi, chequeCollectionRecordRowToApi } = require('../mappers');
 const { columnSheet, writeXlsx } = require('../excel/write-xlsx');
-const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, settlementCutoffs, cutoffClause } = require('../scope-filters');
+const { locationPatterns, parseDepartment, batchLocationClause, parseUpTo, coverageCutoffs, upToClause } = require('../scope-filters');
 const { assertNotPastGoLive } = require('../go-live');
 const { pendingChangeColumn, auditDetailColumn } = require('../pending-change');
 const { realChequeSql, YASHODA_REFUND_CHEQUE } = require('../reconciliation/status-tone');
@@ -145,9 +145,10 @@ router.delete('/batches/:id', async (req, res, next) => {
  * that also have `batch_id` and `id` columns.
  *
  * `bankCutoffs` (AC-12 "till bank upload") is resolved by the caller — it needs
- * a query of its own — and applied here, each row at its branch's bank date.
+ * a query of its own — and applied here, each row at its branch's bank date:
+ * `upTo` 'BANK' keeps the rows on or before it, 'AWAITING' the rows after it.
  */
-function buildRecordsFilter(query, { bankCutoffs = null } = {}) {
+function buildRecordsFilter(query, { bankCutoffs = null, upTo = null } = {}) {
   const clauses = [];
   const params = [];
 
@@ -235,7 +236,7 @@ function buildRecordsFilter(query, { bankCutoffs = null } = {}) {
   if (department === 'IP') clauses.push(`r.collection_kind = 'IP'`);
   if (department === 'DIAG') clauses.push(`r.collection_kind = 'OP'`);
   if (department === 'OPD') clauses.push('FALSE');
-  const cutoff = cutoffClause('cheque_collection_upload_batches', bankCutoffs, params);
+  const cutoff = bankCutoffs ? upToClause(upTo || 'BANK', 'cheque_collection_upload_batches', bankCutoffs, params) : null;
   if (cutoff) clauses.push(cutoff);
 
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
@@ -341,8 +342,9 @@ router.get('/records/filter-options', async (req, res, next) => {
 // GET /api/cheque-collections/records?batchId=&search=&matchStatus=&location=&department=&upTo=BANK&page=&pageSize=
 router.get('/records', async (req, res, next) => {
   try {
-    const bankCutoffs = parseUpTo(req.query.upTo) === 'BANK' ? await settlementCutoffs('BANK') : null;
-    const { where, params } = buildRecordsFilter(req.query, { bankCutoffs });
+    const upTo = parseUpTo(req.query.upTo);
+    const bankCutoffs = upTo ? await coverageCutoffs('BANK') : null;
+    const { where, params } = buildRecordsFilter(req.query, { bankCutoffs, upTo });
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize) || 50));
 

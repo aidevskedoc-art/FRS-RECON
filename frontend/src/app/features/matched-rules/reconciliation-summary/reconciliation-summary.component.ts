@@ -7,7 +7,7 @@ import { TableModule } from 'primeng/table';
 import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { ReconciliationSummary } from '../../../core/models';
 import { SummaryPanelComponent } from '../../reconciliation/summary-panel/summary-panel.component';
 

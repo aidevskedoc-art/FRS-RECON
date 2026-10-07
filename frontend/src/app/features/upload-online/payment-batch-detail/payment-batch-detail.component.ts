@@ -6,7 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { InputTextModule } from 'primeng/inputtext';
 import { OnlineUploadService } from '../../../core/services/online-upload.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { OnlinePaymentRecord, OnlineUploadBatch } from '../../../core/models';
 
 interface ColumnDef {

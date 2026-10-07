@@ -6,7 +6,7 @@ import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { MatchedRulesService } from '../../../core/services/matched-rules.service';
 import { MasterDataService } from '../../../core/services/master-data.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { AuditDateBasis, AuditPeriodType, AuditReportPreview, AuditReportQuery } from '../../../core/models';
 
 /**

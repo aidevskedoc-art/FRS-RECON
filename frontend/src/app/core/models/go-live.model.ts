@@ -17,3 +17,14 @@ export interface GoLiveConfigDraft {
   cutoffDate: string;
   active: boolean;
 }
+
+/**
+ * "Awaiting statement" allowance: a receipt dated within this many days of the
+ * last date its bank / gateway statement reaches (or after it) is waiting for
+ * its statement, not a mismatch — card and UPI money lands a day or two later.
+ */
+export interface AwaitingStatementSetting {
+  awaitingStatementDays: number;
+  updatedAt: string | null;
+  updatedByName: string | null;
+}

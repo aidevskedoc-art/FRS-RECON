@@ -11,7 +11,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { RuleDetailsComponent } from '../rule-details/rule-details.component';
 import { explainGatewayRule } from '../rule-details/explain-gateway-rule';
 import { GatewayRulesService } from '../../../core/services/gateway-rules.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import {
   GATEWAY_AMBIGUITY_OPTIONS,
   GATEWAY_GROUP_MISMATCH_OPTIONS,

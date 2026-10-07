@@ -2,16 +2,11 @@
   "name": "frs-recon-backend",
   "version": "0.0.0",
   "private": true,
-  "description": "Node.js + PostgreSQL API for insurance policy PDF extraction (FRS - Recon)",
+  "description": "Node.js + PostgreSQL API for Collection and Bank Deposit Reconciliation",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "init-db": "node -e \"require('dotenv').config(); const db = require('./src/db'); db.ensureDatabase().then(() => db.ensureSchema()).then(() => { console.log('schema ready'); process.exit(0); }).catch((e) => { console.error(e); process.exit(1); })\"",
-    "test-extraction": "node scripts/test-extraction.js",
-    "test-care": "node scripts/test-care.js",
-    "smoke-test": "node scripts/smoke-test.js",
-    "verify": "node scripts/verify-against-expected.js",
-    "build-fixtures": "node scripts/build-test-fixtures.js",
     "test-unit-rule": "node scripts/test-unit-rule.js",
     "verify-unit-rule": "node scripts/verify-unit-rule.js",
     "test-unit-pass": "node scripts/test-unit-pass.js",
@@ -50,7 +45,6 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -58,12 +52,8 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.4.0",
-    "pdfjs-dist": "^4.2.67",
     "pg": "^8.13.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
-  },
-  "devDependencies": {
-    "pdfkit": "^0.19.1"
   },
   "overrides": {
     "uuid": "^11.1.1"

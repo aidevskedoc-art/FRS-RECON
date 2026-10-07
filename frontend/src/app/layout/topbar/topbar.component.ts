@@ -59,8 +59,8 @@ export class TopbarComponent {
   protected readonly menuOpen = signal(false);
 
   // ---- notification bell ------------------------------------------------
-  // Two signals a person actually needs to act on, not Insurance paperwork:
-  // match approvals waiting on them, and shared-folder automation runs that
+  // Two signals a person actually needs to act on: match approvals waiting
+  // on them, and shared-folder automation runs that
   // need a look. Each loads only if the user could possibly have any.
   protected readonly notifPanelOpen = signal(false);
   protected readonly pendingApprovalsCount = signal(0);

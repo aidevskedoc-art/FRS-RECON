@@ -23,10 +23,6 @@ export const SCREENS: readonly ScreenDef[] = [
   { key: 'manage-rules', label: 'Manage Rules' },
   { key: 'division-bank-accounts', label: 'Division & Bank A/C' },
   { key: 'how-to-use', label: 'How to Use' },
-  { key: 'insurance-dashboard', label: 'Insurance: Dashboard' },
-  { key: 'insurance-upload', label: 'Insurance: Upload Documents' },
-  { key: 'insurance-excel-export', label: 'Insurance: Excel Export' },
-  { key: 'insurance-history', label: 'Insurance: Processing History' },
 ];
 
 /** Auditor default on user creation — mirrors backend/src/screen-catalogue.js's AUDITOR_DEFAULT_SCREENS exactly. */

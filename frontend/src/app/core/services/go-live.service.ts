@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
-import { GoLiveConfig, GoLiveConfigDraft } from '../models';
+import { AwaitingStatementSetting, GoLiveConfig, GoLiveConfigDraft } from '../models';
 import { API_BASE_URL } from '../config/api.config';
 
 /** The shared go-live switch (client mail items 8 & 15) — see backend/src/go-live.js. */
@@ -31,5 +31,15 @@ export class GoLiveService {
     return this.http
       .put<GoLiveConfig>(`${API_BASE_URL}/go-live/config`, draft)
       .pipe(tap((config) => this._config.set(config)));
+  }
+
+  /** GET /api/go-live/awaiting-statement — the settlement days behind "Awaiting statement". Admin only. */
+  fetchAwaitingSetting(): Observable<AwaitingStatementSetting> {
+    return this.http.get<AwaitingStatementSetting>(`${API_BASE_URL}/go-live/awaiting-statement`);
+  }
+
+  /** PUT /api/go-live/awaiting-statement — takes effect on the next screen load; nothing is recomputed or stored. */
+  saveAwaitingSetting(awaitingStatementDays: number): Observable<AwaitingStatementSetting> {
+    return this.http.put<AwaitingStatementSetting>(`${API_BASE_URL}/go-live/awaiting-statement`, { awaitingStatementDays });
   }
 }

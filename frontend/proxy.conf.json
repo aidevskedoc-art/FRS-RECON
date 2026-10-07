@@ -4,11 +4,5 @@
     "secure": false,
     "changeOrigin": true,
     "xfwd": true
-  },
-  "/uploads": {
-    "target": "http://localhost:4000",
-    "secure": false,
-    "changeOrigin": true,
-    "xfwd": true
   }
 }

@@ -7,7 +7,7 @@ import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
 import { MasterDataService } from '../../../core/services/master-data.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { ApiConfigMeta, ApiFieldMapping, ApiFilterOp, ApiTestResult, ApiTransform, isSourcelessTransform } from '../../../core/models';
 import { PageHeaderComponent } from '../../../shared/ui/page-header.component';
 

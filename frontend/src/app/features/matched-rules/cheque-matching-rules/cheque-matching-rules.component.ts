@@ -11,7 +11,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { RuleDetailsComponent } from '../rule-details/rule-details.component';
 import { explainMatchingRule } from '../rule-details/explain-matching-rule';
 import { MatchingRulesService } from '../../../core/services/matching-rules.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import {
   BANK_STATEMENT_FIELD_OPTIONS,
   LEAF_KIND_OPTIONS,

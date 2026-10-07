@@ -51,6 +51,7 @@
 .tally--grouped-matched { color: var(--status-info-fg); }
 .tally--mismatch { color: var(--status-warning-fg); }
 .tally--unmatched { color: var(--status-danger-fg); }
+.tally--awaiting { color: var(--text-muted); font-style: italic; }
 .tally--sep { color: var(--border); }
 .tally--gap { color: var(--status-warning-fg); font-weight: 600; }
 .tally--gap-zero { color: var(--status-success-fg); }
@@ -119,6 +120,11 @@
 
 .status-pill--unmatched {
   @include mixins.status-chip(var(--status-danger-fg), var(--status-danger-bg), var(--status-danger-border));
+}
+
+// No gateway file covers its date yet: waiting, not wrong — neutral grey.
+.status-pill--awaiting {
+  @include mixins.status-chip(var(--status-neutral-fg), var(--status-neutral-bg), var(--status-neutral-border));
 }
 
 .empty {

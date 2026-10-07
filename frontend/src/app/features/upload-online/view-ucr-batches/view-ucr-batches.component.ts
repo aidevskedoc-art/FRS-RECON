@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { TableModule } from 'primeng/table';
 import { TooltipModule } from 'primeng/tooltip';
 import { UcrUploadService } from '../../../core/services/ucr-upload.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { UcrBatch } from '../../../core/models';
 
 type UcrBatchTabId = 'ucr-ip' | 'ucr-op' | 'ucr-diag' | 'card-mpr' | 'card-pinelabs' | 'upi-mpr';

@@ -9,7 +9,7 @@ import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { FolderWatchService } from '../../core/services/folder-watch.service';
-import { errorMessage } from '../../core/services/policy-document.service';
+import { errorMessage } from '../../core/utils/error-message.util';
 import { FolderWatchConfig, FolderWatchConfigDraft, FolderWatchConnectionTest, FolderWatchReconcileStep, FolderWatchRun, FolderWatchRunFile } from '../../core/models';
 import { PageHeaderComponent } from '../../shared/ui/page-header.component';
 import { HisAutoPullComponent } from './his-auto-pull.component';

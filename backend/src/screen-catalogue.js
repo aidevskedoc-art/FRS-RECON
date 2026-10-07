@@ -23,15 +23,11 @@ const SCREEN_KEYS = [
   'manage-rules',
   'division-bank-accounts',
   'how-to-use',
-  'insurance-dashboard',
-  'insurance-upload',
-  'insurance-excel-export',
-  'insurance-history',
 ];
 
 const SCREEN_KEY_SET = new Set(SCREEN_KEYS);
 
-/** Auditor default on user creation — the day-to-day reconciliation set, none of the specialised/admin-adjacent or Insurance screens. */
+/** Auditor default on user creation — the day-to-day reconciliation set, none of the specialised/admin-adjacent screens. */
 const AUDITOR_DEFAULT_SCREENS = ['upload-run', 'mismatch-review', 'match-approvals', 'statements', 'reconciliation-results', 'how-to-use'];
 
 function isValidScreenKey(key) {

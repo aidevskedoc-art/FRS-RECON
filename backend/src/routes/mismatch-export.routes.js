@@ -22,7 +22,7 @@ const { buildMismatchWorkbook } = require('../excel/mismatch-export');
 const { writeXlsx } = require('../excel/write-xlsx');
 const { onlineMismatchRowToApi, chequeCollectionRecordRowToApi } = require('../mappers');
 const { ucrIpRecordRowToApi } = require('../ucr-mappers');
-const { parseUpTo, settlementCutoffs } = require('../scope-filters');
+const { parseUpTo, coverageCutoffs } = require('../scope-filters');
 const { MATCHED_STATUSES, YASHODA_REFUND_CHEQUE } = require('../reconciliation/status-tone');
 
 const router = express.Router();
@@ -66,7 +66,9 @@ const ONLINE_CLEAN = ['MATCHED', 'EASEBUZZ_MATCHED', 'CONTRA_ENTRY', YASHODA_REF
 const ONLINE_MISMATCH = ['UNMATCHED', 'AMOUNT_MISMATCH', 'PARTIAL_MATCH', 'AMBIGUOUS_MATCH'];
 const UCR_CLEAN = ['MATCHED', 'GROUPED_MATCHED'];
 const UCR_MISMATCH = ['UNMATCHED', 'AMOUNT_MISMATCH'];
-const VIEW_MODES = ['mismatches', 'all', 'matched', 'matched_by_auditor'];
+// 'awaiting' is the mismatch set of the rows no statement covers yet — the
+// caller sends upTo=AWAITING with it, exactly as the screen's Awaiting view lists.
+const VIEW_MODES = ['mismatches', 'all', 'matched', 'matched_by_auditor', 'awaiting'];
 
 const ONLINE_VOCAB = new Set([...ONLINE_CLEAN, ...ONLINE_MISMATCH]);
 const UCR_VOCAB = new Set([...UCR_CLEAN, ...UCR_MISMATCH]);
@@ -127,8 +129,9 @@ async function loadOnline(query) {
 
 async function loadCheque(query) {
   // The cheque list resolves its own bank cut-off; mirror that exactly.
-  const bankCutoffs = parseUpTo(query.upTo) === 'BANK' ? await settlementCutoffs('BANK') : null;
-  const { where, params } = buildRecordsFilter(query, { bankCutoffs });
+  const upTo = parseUpTo(query.upTo);
+  const bankCutoffs = upTo ? await coverageCutoffs('BANK') : null;
+  const { where, params } = buildRecordsFilter(query, { bankCutoffs, upTo });
   const { rows } = await db.query(
     `${RECORDS_WITH_MATCH_SQL} ${where} ORDER BY r.receipt_date DESC NULLS LAST, r.id DESC LIMIT ${MAX_ROWS_PER_SHEET + 1}`,
     params,
@@ -167,8 +170,10 @@ function describeFilters(query) {
   // does not state the period it covers is the easiest kind to misread later.
   if (parseUpTo(query.upTo) === 'BANK') {
     lines.push(query.dateFrom
-      ? `Period: ${query.dateFrom} up to the date the bank / settlement file reaches`
-      : 'Period: everything, up to the date the bank / settlement file reaches');
+      ? `Period: ${query.dateFrom} up to the date the bank / settlement file covers`
+      : 'Period: everything, up to the date the bank / settlement file covers');
+  } else if (parseUpTo(query.upTo) === 'AWAITING') {
+    lines.push('Awaiting statement — receipts no bank / settlement file covers yet, not mismatches');
   } else if (query.dateFrom && query.dateTo) {
     lines.push(`Period: ${query.dateFrom} to ${query.dateTo}`);
   } else if (query.dateTo) {
@@ -220,11 +225,12 @@ router.get('/mismatch-export.xlsx', async (req, res, next) => {
     // thing and overwrite each other in the browser's Downloads folder.
     const clean = (v) => String(v).trim().replace(/[\\/?*[\]:"<>|]/g, '-');
     const from = req.query.dateFrom ? clean(req.query.dateFrom) : null;
-    const to = parseUpTo(req.query.upTo) === 'BANK' ? null : (req.query.dateTo ? clean(req.query.dateTo) : null);
+    const to = parseUpTo(req.query.upTo) ? null : (req.query.dateTo ? clean(req.query.dateTo) : null);
     const period = from && to ? `${from} to ${to}` : from ? `${from} onwards` : to ? `up to ${to}` : new Date().toISOString().slice(0, 10);
     const unit = req.query.location ? ` - ${clean(req.query.location)}` : '';
+    const title = parseUpTo(req.query.upTo) === 'AWAITING' ? 'Awaiting Statement' : 'Mismatch Review';
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Mismatch Review - ${period}${unit}.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${title} - ${period}${unit}.xlsx"`);
     res.send(buffer);
   } catch (err) {
     next(err);

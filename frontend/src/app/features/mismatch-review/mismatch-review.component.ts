@@ -15,7 +15,7 @@ import { ChequeCollectionService } from '../../core/services/cheque-collection.s
 import { UcrMatchedService } from '../../core/services/ucr-matched.service';
 import { MatchApprovalService } from '../../core/services/match-approval.service';
 import { AuthService } from '../../core/services/auth.service';
-import { errorMessage } from '../../core/services/policy-document.service';
+import { errorMessage } from '../../core/utils/error-message.util';
 import {
   AppliedMatch,
   ApprovalEntityType,
@@ -68,11 +68,12 @@ const TAB_NOUN: Record<TabId, string> = {
  * Matched report without first switching the screen to Matched, which is a
  * reasonable thing to want when the screen is a review worklist.
  */
-type ExportReport = 'mismatches' | 'matched' | 'all' | 'matched_by_auditor';
+type ExportReport = 'mismatches' | 'matched' | 'all' | 'matched_by_auditor' | 'awaiting';
 const EXPORT_REPORTS: readonly { mode: ExportReport; label: string; hint: string }[] = [
   { mode: 'mismatches', label: 'Mismatched', hint: 'Everything short of a clean match, all four tabs, in one file' },
   { mode: 'matched', label: 'Matched', hint: 'Every clean match, all four tabs, in one file' },
   { mode: 'all', label: 'All Report', hint: 'Matched and mismatched together, all four tabs, in one file' },
+  { mode: 'awaiting', label: 'Awaiting Statement', hint: 'Receipts no bank / gateway statement covers yet, all four tabs, in one file' },
 ];
 
 const PAGE_SIZE = 25;
@@ -104,7 +105,7 @@ function statusTone(status: string | null, matchedByAuditor: boolean): StatusTon
  * whether green/system or orange/auditor-locked per the AC-16 legend) rather
  * than a disjoint slice of it — 'All' drops the status filter entirely.
  */
-type ViewMode = 'all' | 'mismatches' | 'matched' | 'matched_by_auditor';
+type ViewMode = 'all' | 'mismatches' | 'awaiting' | 'matched' | 'matched_by_auditor';
 const UCR_CLEAN_STATUSES = ['MATCHED', 'GROUPED_MATCHED'];
 
 interface ViewModeOption {
@@ -113,9 +114,19 @@ interface ViewModeOption {
   readonly icon: string;
 }
 
+/**
+ * 'Awaiting Statement' (2026-10-07) is the other side of "till last bank
+ * upload": receipts dated after what their bank / gateway statement covers
+ * (its last date less the settlement days — backend scope-filters.js
+ * coverageCutoffs). Every other view stops at that line, so these rows are in
+ * none of them; here they are listed on their own, as waiting rather than
+ * wrong, until the next statement arrives and they move to Matched or
+ * Mismatches by themselves.
+ */
 const VIEW_MODES: readonly ViewModeOption[] = [
   { id: 'all', label: 'All', icon: 'pi pi-list' },
   { id: 'mismatches', label: 'Mismatches', icon: 'pi pi-exclamation-triangle' },
+  { id: 'awaiting', label: 'Awaiting Statement', icon: 'pi pi-hourglass' },
   { id: 'matched', label: 'Matched', icon: 'pi pi-check-circle' },
   { id: 'matched_by_auditor', label: 'Matched by Auditor', icon: 'pi pi-shield' },
 ];
@@ -123,6 +134,7 @@ const VIEW_MODES: readonly ViewModeOption[] = [
 const VIEW_MODE_COUNT_LABEL: Record<ViewMode, string> = {
   all: 'Total Transactions',
   mismatches: 'Mismatch Transactions',
+  awaiting: 'Awaiting Statement',
   matched: 'Matched Transactions',
   matched_by_auditor: 'Matched by Auditor',
 };
@@ -130,20 +142,23 @@ const VIEW_MODE_COUNT_LABEL: Record<ViewMode, string> = {
 const VIEW_MODE_COUNT_ICON: Record<ViewMode, string> = {
   all: 'pi pi-list',
   mismatches: 'pi pi-exclamation-circle',
+  awaiting: 'pi pi-hourglass',
   matched: 'pi pi-check-circle',
   matched_by_auditor: 'pi pi-shield',
 };
 
 const VIEW_MODE_EMPTY: Record<Exclude<ViewMode, 'mismatches'>, { title: string; hint: string }> = {
   all: { title: 'Nothing here', hint: 'No transactions in this range.' },
+  awaiting: { title: 'Nothing waiting', hint: 'Every receipt in this range is covered by a bank / gateway statement.' },
   matched: { title: 'No matches yet', hint: 'Nothing is a clean system match yet in this range.' },
   matched_by_auditor: { title: 'No auditor matches', hint: 'No auditor-approved matches in this range.' },
 };
 
-/** Badge colour per view, matching the AC-16 legend (green/red/orange) — 'All' is neutral, it has no verdict of its own. */
+/** Badge colour per view, matching the AC-16 legend (green/red/orange) — 'All' and 'Awaiting' are neutral, neither is a verdict. */
 const VIEW_MODE_TONE: Record<ViewMode, 'neutral' | 'red' | 'green' | 'orange'> = {
   all: 'neutral',
   mismatches: 'red',
+  awaiting: 'neutral',
   matched: 'green',
   matched_by_auditor: 'orange',
 };
@@ -169,6 +184,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 function calendarDateText(ymd: string | null): string | null {
   const m = ymd ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd) : null;
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : null;
+}
+
+/** 'YYYY-MM-DD' less `days`, as 'YYYY-MM-DD' — calendar arithmetic in UTC only, so no timezone can shift it (the backend's minusDays). */
+function minusDays(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d - days));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
 }
 
 /**
@@ -538,7 +560,7 @@ export class MismatchReviewComponent {
   });
   // ---- top-of-page breakdown: every view's count against the active tab's total ----
   private readonly viewModeCounts = signal<Record<ViewMode, number | null>>({
-    all: null, mismatches: null, matched: null, matched_by_auditor: null,
+    all: null, mismatches: null, awaiting: null, matched: null, matched_by_auditor: null,
   });
 
   // ---- top-of-page highlight: every collection type's own grand total, regardless of tab/view open ----
@@ -580,6 +602,8 @@ export class MismatchReviewComponent {
         return `${tab} transactions the system has matched — click one to see the full record, or flag it as wrong.`;
       case 'matched_by_auditor':
         return `Locked by an auditor's approval — click one to see who approved it and when.`;
+      case 'awaiting':
+        return `${tab} transactions no bank / gateway statement covers yet — not mismatches; they reconcile on their own when it arrives.`;
       case 'mismatches':
       default:
         return `Click one to see the full record and why it didn't tally.`;
@@ -661,7 +685,8 @@ export class MismatchReviewComponent {
    */
   protected readonly cutoffNote = computed<string | null>(() => {
     const f = this.filters();
-    if (f.upTo === 'AS_ON') {
+    const awaiting = this.viewMode() === 'awaiting';
+    if (f.upTo === 'AS_ON' && !awaiting) {
       // Says the range in full, both ends, because that is what the download
       // will contain — and a partial-period file with no stated period is the
       // easiest kind to misread later.
@@ -672,24 +697,32 @@ export class MismatchReviewComponent {
     }
     const bank = this.activeDates()?.bank;
     if (!bank) return null;
+    // The list stops at the statement's last date LESS the settlement days
+    // (backend scope-filters.js coverageCutoffs); the rest is Awaiting statement.
+    const days = this.dates()?.awaitingDays ?? 0;
+    const covered = (ymd: string | null | undefined): string | null => (ymd ? calendarDateText(days ? minusDays(ymd, days) : ymd) : null);
+    const why = days ? `, ${days} settlement day${days === 1 ? '' : 's'} before the last ${bank.locationScoped ? 'bank' : bank.source} date` : '';
+    const lead = awaiting ? 'Showing receipts dated after' : 'Showing receipts up to';
+    const after = awaiting ? ' — no statement covers them yet.' : '.';
     if (!bank.locationScoped) {
       return bank.dataUpTo
-        ? `Showing mismatches up to the last ${bank.source} date: ${calendarDateText(bank.dataUpTo)}.`
-        : `No ${bank.source} uploaded yet — showing every date.`;
+        ? `${lead} ${covered(bank.dataUpTo)}${why} (${calendarDateText(bank.dataUpTo)})${after}`
+        : `No ${bank.source} uploaded yet — ${awaiting ? 'nothing can be checked yet' : 'showing every date'}.`;
     }
-    const overall = calendarDateText(bank.overallDataUpTo ?? null);
-    if (!overall) return 'No bank statement uploaded yet — showing every date.';
+    const overall = bank.overallDataUpTo ?? null;
+    if (!overall) return `No bank statement uploaded yet — ${awaiting ? 'nothing can be checked yet' : 'showing every date'}.`;
     const branches = (bank.byLocation ?? []).filter((b) => !this.branchRestricted() || this.availableLocations().includes(b.location));
     if (f.location) {
       const own = branches.find((b) => b.location === f.location);
       return own
-        ? `Showing mismatches up to ${f.location}'s last bank date: ${calendarDateText(own.dataUpTo)}.`
-        : `No bank statement for ${f.location} yet — showing up to the latest bank date, ${overall}.`;
+        ? `${lead} ${covered(own.dataUpTo)} for ${f.location}${why} (${calendarDateText(own.dataUpTo)})${after}`
+        : `No bank statement for ${f.location} yet — using the latest bank date, ${calendarDateText(overall)}: ${lead.toLowerCase()} ${covered(overall)}${after}`;
     }
     if (new Set(branches.map((b) => b.dataUpTo)).size > 1) {
-      return `Showing mismatches up to each branch's last bank date — ${branches.map((b) => `${b.location} ${calendarDateText(b.dataUpTo)}`).join(' · ')}.`;
+      return `${lead} each branch's own date${why} — ${branches.map((b) => `${b.location} ${covered(b.dataUpTo)}`).join(' · ')}${after}`;
     }
-    return `Showing mismatches up to the last bank date: ${calendarDateText(branches[0]?.dataUpTo ?? null) ?? overall}.`;
+    const date = branches[0]?.dataUpTo ?? overall;
+    return `${lead} ${covered(date)}${why} (${calendarDateText(date)})${after}`;
   });
 
   constructor() {
@@ -818,7 +851,8 @@ export class MismatchReviewComponent {
         statuses: f.statuses.length ? f.statuses.join(',') : undefined,
         search: f.search.trim() || undefined,
         dateFrom: toDateOnly(f.dateFrom),
-        upTo: f.upTo === 'BANK' ? 'BANK' : undefined,
+        // The Awaiting report is the rows past the statements' coverage, whatever the up-to box says.
+        upTo: report === 'awaiting' ? 'AWAITING' : f.upTo === 'BANK' ? 'BANK' : undefined,
         dateTo: f.upTo === 'AS_ON' ? toDateOnly(f.asOn) : undefined,
         location: this.locationParam(),
         department: f.department ?? undefined,
@@ -879,7 +913,8 @@ export class MismatchReviewComponent {
       search: f.search.trim() || undefined,
       dateFrom: toDateOnly(f.dateFrom),
       // AC-12: till bank upload (server cuts each row at its branch's bank date), or as on a picked date.
-      upTo: f.upTo === 'BANK' ? ('BANK' as const) : undefined,
+      // The Awaiting view is the other side of that cut, whatever the up-to box says.
+      upTo: mode === 'awaiting' ? ('AWAITING' as const) : f.upTo === 'BANK' ? ('BANK' as const) : undefined,
       dateTo: f.upTo === 'AS_ON' ? toDateOnly(f.asOn) : undefined,
       location: this.locationParam(),
       // A tab without this department can't have been asked for it (see selectTab),
@@ -896,9 +931,11 @@ export class MismatchReviewComponent {
     const wantsClean = mode === 'matched' || mode === 'matched_by_auditor';
     // The cheque API splits CONTRA_ENTRY by cheque number, so "every clean
     // match" has to ask for the Yashoda-refund half too (the online API ignores it).
+    // Awaiting lists what is not a clean match — the same set as Mismatches, past the cut.
+    const wantsOpen = mode === 'mismatches' || mode === 'awaiting';
     let onlineChequeStatuses =
-      mode === 'mismatches' ? MISMATCH_STATUSES : wantsClean ? [...CLEAN_MATCH_STATUSES, 'YASHODA_REFUND_CHEQUE'] : null;
-    let ucrStatuses = mode === 'mismatches' ? UCR_MISMATCH_STATUSES : wantsClean ? UCR_CLEAN_STATUSES : null;
+      wantsOpen ? MISMATCH_STATUSES : wantsClean ? [...CLEAN_MATCH_STATUSES, 'YASHODA_REFUND_CHEQUE'] : null;
+    let ucrStatuses = wantsOpen ? UCR_MISMATCH_STATUSES : wantsClean ? UCR_CLEAN_STATUSES : null;
     // An explicit Status pick NARROWS the view, it does not replace it — the
     // same rule the Excel export follows (backend mismatch-export.routes.js
     // statusesFor). It used to replace it, so picking "Grouped Matched" listed
@@ -981,7 +1018,7 @@ export class MismatchReviewComponent {
   private refreshViewModeCounts(): void {
     const seq = ++this.viewModeCountSeq;
     if (this.noBranches()) {
-      this.viewModeCounts.set({ all: 0, mismatches: 0, matched: 0, matched_by_auditor: 0 });
+      this.viewModeCounts.set({ all: 0, mismatches: 0, awaiting: 0, matched: 0, matched_by_auditor: 0 });
       return;
     }
     const tab = this.activeTab();
@@ -1026,11 +1063,16 @@ export class MismatchReviewComponent {
     return totals.some((n) => n === null) ? null : totals.reduce<number>((sum, n) => sum + (n ?? 0), 0);
   });
 
-  /** 'All' shows its own total; every other view shows count/total against it. Null while either is still loading. */
+  /**
+   * 'All' shows its own total; every other view shows count/total against it.
+   * 'Awaiting' shows its count alone — those rows lie past the line 'All' stops
+   * at, so they are not part of its total. Null while still loading.
+   */
   protected viewModeBadge(mode: ViewMode): string | null {
     const counts = this.viewModeCounts();
     const total = counts.all;
     const n = counts[mode];
+    if (mode === 'awaiting') return n === null ? null : String(n);
     if (total === null || n === null) return null;
     return mode === 'all' ? String(total) : `${n}/${total}`;
   }
@@ -1457,7 +1499,7 @@ export class MismatchReviewComponent {
    * One propose call per selected row, sequential (not parallel) so the
    * dialog can show real "N of M" progress and a per-row failure — e.g. a
    * row someone else already proposed a change on (409) — doesn't stop the
-   * rest of the batch, same principle as the insurance module's bulk AI fill.
+   * rest of the batch.
    */
   protected submitBulkPropose(): void {
     const reason = this.bulkReason().trim();

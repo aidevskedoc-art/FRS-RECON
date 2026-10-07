@@ -13,7 +13,7 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { logAction } = require('../audit-log');
 const { writeXlsx } = require('../excel/write-xlsx');
 const { syncUnitDay, syncOptions, resultToApi } = require('../api-sync/sync-unit-day');
-const { fetchResponses, buildResponseWorkbook } = require('../api-sync/response-export');
+const { fetchResponses, fetchAllUnitsResponses, buildResponseWorkbook, buildAllUnitsWorkbook } = require('../api-sync/response-export');
 const { fetchHistory } = require('../api-sync/history');
 const {
   LIMITS, runAutoPull, loadSchedule, saveSchedule, scheduleRowToApi, listPullRuns, pullRunRowToApi,
@@ -87,22 +87,30 @@ router.post('/run', async (req, res, next) => {
 // sheet per call — for seeing the API's own format. Calls the HIS, stores
 // nothing. Admin only: the raw answer holds every field of every receipt that
 // day (cash and refunds included), more than any screen shows.
+// locationId=all: every unit with a HIS Loc Code, one after another, in one workbook.
 router.get('/response.xlsx', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { locationId, date } = req.query;
-    const answer = await fetchResponses({ locationId, date });
-    const buffer = await writeXlsx(buildResponseWorkbook({ ...answer, downloadedBy: uploaderOf(req) }));
-    await logAction({
-      actorUserId: req.user.sub, entityType: 'location', entityId: answer.location.id,
-      action: 'API_RESPONSE_DOWNLOADED',
-      details: {
-        unit: answer.location.name, date,
-        calls: answer.calls.map((c) => ({ method: c.method, rows: c.rows.length, failed: !!c.error })),
-      },
-      req,
-    });
+    const downloadedBy = uploaderOf(req);
+    const allUnits = String(locationId) === 'all';
+    const answers = allUnits ? (await fetchAllUnitsResponses({ date })).units : [await fetchResponses({ locationId, date })];
+    const buffer = await writeXlsx(
+      allUnits ? buildAllUnitsWorkbook({ date, units: answers, downloadedBy }) : buildResponseWorkbook({ ...answers[0], date, downloadedBy }),
+    );
+    // One entry per unit, so the fetch history shows each unit's calls on its own lines.
+    for (const answer of answers) {
+      await logAction({
+        actorUserId: req.user.sub, entityType: 'location', entityId: answer.location.id,
+        action: 'API_RESPONSE_DOWNLOADED',
+        details: {
+          unit: answer.location.name, date, ...(allUnits ? { allUnits: true } : {}),
+          calls: answer.calls.map((c) => ({ method: c.method, rows: c.rows.length, failed: !!c.error })),
+        },
+        req,
+      });
+    }
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="his-response-${date}.xlsx"`);
+    res.setHeader('Content-Disposition', `attachment; filename="his-response-${allUnits ? 'all-units-' : ''}${date}.xlsx"`);
     res.send(buffer);
   } catch (err) {
     next(err);

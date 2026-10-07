@@ -6,7 +6,7 @@ import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
-import { errorMessage } from '../../../core/services/policy-document.service';
+import { errorMessage } from '../../../core/utils/error-message.util';
 import { ApiFetchHistoryItem, ApiFetchHistoryPage } from '../../../core/models';
 
 const STATUS_LABEL: Record<ApiFetchHistoryItem['status'], string> = {

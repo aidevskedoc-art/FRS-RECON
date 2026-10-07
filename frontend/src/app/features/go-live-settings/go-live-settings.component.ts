@@ -2,10 +2,11 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DatePickerModule } from 'primeng/datepicker';
+import { InputNumberModule } from 'primeng/inputnumber';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { GoLiveService } from '../../core/services/go-live.service';
-import { errorMessage } from '../../core/services/policy-document.service';
-import { GoLiveConfig, GoLiveConfigDraft } from '../../core/models';
+import { errorMessage } from '../../core/utils/error-message.util';
+import { AwaitingStatementSetting, GoLiveConfig, GoLiveConfigDraft } from '../../core/models';
 import { PageHeaderComponent } from '../../shared/ui/page-header.component';
 
 /** Local calendar date -> 'YYYY-MM-DD' (see frs-date-timezone-trap — never through toISOString). */
@@ -44,7 +45,7 @@ function emptyDraft(): Draft {
 @Component({
   selector: 'app-go-live-settings',
   standalone: true,
-  imports: [DatePipe, FormsModule, DatePickerModule, ToggleSwitchModule, PageHeaderComponent],
+  imports: [DatePipe, FormsModule, DatePickerModule, InputNumberModule, ToggleSwitchModule, PageHeaderComponent],
   templateUrl: './go-live-settings.component.html',
   styleUrl: './go-live-settings.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -67,10 +68,45 @@ export class GoLiveSettingsComponent {
     return todayYmd >= toDateOnly(cutoff)!;
   });
 
+  // ---- Awaiting statement allowance ----------------------------------------------------
+  protected readonly awaiting = signal<AwaitingStatementSetting | null>(null);
+  protected readonly awaitingDays = signal<number>(3);
+  protected readonly awaitingError = signal<string | null>(null);
+  protected readonly awaitingSaving = signal(false);
+  protected readonly awaitingSaved = signal(false);
+
   constructor() {
     this.goLive.refreshConfig().subscribe({
       next: (config) => { if (config) this.draft.set(this.toDraft(config)); },
       error: (err) => this.loadError.set(errorMessage(err)),
+    });
+    this.goLive.fetchAwaitingSetting().subscribe({
+      next: (s) => {
+        this.awaiting.set(s);
+        this.awaitingDays.set(s.awaitingStatementDays);
+      },
+      error: (err) => this.awaitingError.set(errorMessage(err)),
+    });
+  }
+
+  protected setAwaitingDays(value: number | null): void {
+    this.awaitingDays.set(value ?? 0);
+    this.awaitingSaved.set(false);
+  }
+
+  protected saveAwaiting(): void {
+    this.awaitingSaving.set(true);
+    this.awaitingError.set(null);
+    this.goLive.saveAwaitingSetting(this.awaitingDays()).subscribe({
+      next: (s) => {
+        this.awaiting.set(s);
+        this.awaitingSaving.set(false);
+        this.awaitingSaved.set(true);
+      },
+      error: (err) => {
+        this.awaitingSaving.set(false);
+        this.awaitingError.set(errorMessage(err));
+      },
     });
   }
 

@@ -357,10 +357,14 @@ const auditorCell = (r) => AUDITOR_BY_LOCATION[locationCell(r)] || '';
 // status-tone.js — one map for the screen, this report and the payment
 // exports, which previously each kept their own and had drifted apart.
 
+/** No statement covers the row's date yet (set by the route — matched-rules markAwaitingStatement). Waiting, not a verdict: no colour. */
+const AWAITING_LABEL = 'Awaiting Statement';
+
 const statusCell = (r) => {
   if (!r.__result) return '';
   if (r.__result.excluded) return 'Excluded';
   if (r.__result.matchedByAuditor) return AUDITOR_MATCHED_LABEL;
+  if (r.__awaiting) return AWAITING_LABEL;
   // Cheque rows name a contra entry by cheque number ("Yashoda refund Cheque"),
   // matching DATE OF REALIZATION, and read "Grouped Matched" when several
   // receipts cleared on one cheque. The group is this run's own (__result),
@@ -371,7 +375,7 @@ const statusCell = (r) => {
 
 // AC-17 colour for the RECONCILIATION STATUS cell — see reconciliation/status-tone.js.
 const statusToneCell = (r) => {
-  if (!r.__result || r.__result.excluded) return null;
+  if (!r.__result || r.__result.excluded || r.__awaiting) return null;
   return statusTone(r.__result.status, { matchedByAuditor: !!r.__result.matchedByAuditor });
 };
 
@@ -623,9 +627,9 @@ const UCR_COLUMNS = [
   // --- reconciliation ---
   {
     header: 'RECONCILIATION STATUS',
-    get: (r) => (r.matchedByAuditor ? AUDITOR_MATCHED_LABEL : statusLabel(r.matchStatus)),
+    get: (r) => (r.matchedByAuditor ? AUDITOR_MATCHED_LABEL : r.__awaiting ? AWAITING_LABEL : statusLabel(r.matchStatus)),
     total: 'count',
-    tone: (r) => statusTone(r.matchStatus, { matchedByAuditor: !!r.matchedByAuditor }),
+    tone: (r) => (r.__awaiting ? null : statusTone(r.matchStatus, { matchedByAuditor: !!r.matchedByAuditor })),
   },
   // Both are GROUP figures: several receipts can share one reference, and the
   // verdict is decided on their sum. Repeated on every member row, so `total`
@@ -781,6 +785,7 @@ const SHEETS = [
       for (const r of rows) {
         out.totalMisAmount += Number(r.amount) || 0;
         if (r.matchStatus === 'MATCHED' || r.matchStatus === 'GROUPED_MATCHED') out.matched += 1;
+        else if (r.__awaiting) out.awaiting += 1;
         else out.unmatched += 1;
 
         const g = r.matchedSource;
@@ -838,7 +843,7 @@ function computeTotals(columns, rows) {
 /** Cheap per-sheet rollup for the screen's pre-download preview — no workbook built. */
 function summariseSheet(key, rows) {
   const def = SHEET_BY_KEY.get(key);
-  const out = { name: def ? def.sheetName : key, key, rowCount: rows.length, matched: 0, contra: 0, unmatched: 0, totalMisAmount: 0, totalRealizationAmount: 0, totalDifference: 0 };
+  const out = { name: def ? def.sheetName : key, key, rowCount: rows.length, matched: 0, contra: 0, unmatched: 0, awaiting: 0, totalMisAmount: 0, totalRealizationAmount: 0, totalDifference: 0 };
   // A sheet whose rows carry a persisted verdict rather than a live `__result`
   // (the CARD AND UPI sheet) supplies its own summariser.
   if (def.summarise) {
@@ -855,7 +860,8 @@ function summariseSheet(key, rows) {
     out.totalMisAmount += Number(misRaw) || 0;
     out.totalRealizationAmount += Number(realRaw) || 0;
     out.totalDifference += differenceCell(realRaw, misRaw);
-    if (res.status === 'CONTRA_ENTRY') out.contra += 1;
+    if (r.__awaiting) out.awaiting += 1;
+    else if (res.status === 'CONTRA_ENTRY') out.contra += 1;
     else if (res.status === 'MATCHED' || res.status === 'EASEBUZZ_MATCHED' || res.status === 'PARTIAL_MATCH') out.matched += 1;
     else out.unmatched += 1;
   }

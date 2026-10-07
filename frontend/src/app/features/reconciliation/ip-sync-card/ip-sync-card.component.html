@@ -5,7 +5,8 @@
       Sync from HIS
     </h3>
     <span class="sync-card__hint">
-      Pulls a day's IP, Diagnostics and OP collections for one unit straight from HIS — no file needed. Then press Run Reconciliation below.
+      Pulls a day's IP, Diagnostics and OP collections for one unit, or all units, straight from HIS — no file needed. Then press Run
+      Reconciliation below.
       For a day the automatic pull missed, or today so far.
     </span>
   </div>
@@ -93,14 +94,19 @@
           appendTo="body"
         >
           <ng-template #item let-u>
-            <span>{{ u.label }}</span>
-            <span class="loc-code">loc {{ u.code }}</span>
+            @if (u.code === null) {
+              <strong>{{ u.label }}</strong>
+              <span class="loc-code">{{ unitCount() }} units, one after another</span>
+            } @else {
+              <span>{{ u.label }}</span>
+              <span class="loc-code">loc {{ u.code }}</span>
+            }
           </ng-template>
         </p-select>
       </label>
       <div class="sync-card__actions">
         <p-button
-          label="Sync from HIS"
+          [label]="syncLabel()"
           icon="pi pi-sync"
           [loading]="syncing()"
           [disabled]="!canSync()"
@@ -116,7 +122,11 @@
             [loading]="downloading()"
             [disabled]="!canDownload()"
             (onClick)="download()"
-            pTooltip="Excel of everything HIS sends for this unit and day, exactly as received. Nothing is stored."
+            [pTooltip]="
+              allUnits()
+                ? 'One Excel file for every unit — a sheet per unit and API, exactly as HIS sends it. Nothing is stored.'
+                : 'Excel of everything HIS sends for this unit and day, exactly as received. Nothing is stored.'
+            "
           />
         }
         <p-button
@@ -130,17 +140,35 @@
       </div>
     </div>
 
+    @if (progress(); as p) {
+      <div class="notice notice--busy">
+        <i class="pi pi-spin pi-spinner"></i>
+        Syncing {{ p.unitName }} — unit {{ p.current }} of {{ p.total }}. Keep this page open until all units are done.
+      </div>
+    }
+    @if (downloading() && allUnits()) {
+      <div class="notice notice--busy">
+        <i class="pi pi-spin pi-spinner"></i>
+        Asking HIS for all {{ unitCount() }} units, one after another — usually under a minute. The file downloads when every unit has answered.
+      </div>
+    }
     @if (error(); as err) {
       <div class="notice notice--danger">
         <i class="pi pi-times-circle"></i>
         {{ err }}
       </div>
     }
-    @if (emptyAnswer()) {
+    @for (u of unitErrors(); track u.unitName) {
+      <div class="notice notice--danger">
+        <i class="pi pi-times-circle"></i>
+        <span><strong>{{ u.unitName }}:</strong> {{ u.message }} — nothing stored for this unit; sync it on its own to try again.</span>
+      </div>
+    }
+    @if (emptyUnits().length) {
       <div class="notice notice--warning">
         <i class="pi pi-exclamation-triangle"></i>
-        HIS sent no rows at all for this unit and day. On a working day that usually means HIS did not accept the request (key, unit code or
-        date), not that nothing was collected. Nothing was stored — try again, and check the API key if it repeats.
+        HIS sent no rows at all for {{ emptyUnits().join(', ') }} on this day. On a working day that usually means HIS did not accept the
+        request (key, unit code or date), not that nothing was collected. Nothing was stored — try again, and check the API key if it repeats.
       </div>
     }
     @if (unreconciled() > 0 && !syncing()) {
@@ -150,7 +178,7 @@
         Reconciliation below.
       </div>
     }
-    @if (result(); as res) {
+    @for (res of results(); track res.unitName) {
       <div class="results">
         <div class="results__head">
           <strong>{{ res.unitName }} · {{ res.date | date: 'dd-MMM-yyyy' }}</strong>

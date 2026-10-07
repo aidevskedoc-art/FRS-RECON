@@ -100,7 +100,7 @@
 
 // ---------------------------------------------------------------------
 // Module strip — reads as tabs, but static. States the platform framing:
-// FRS is the reconciliation system; Insurance is one module of several.
+// the parts of the reconciliation platform.
 // ---------------------------------------------------------------------
 .login__modules {
   margin-top: var(--space-7);
@@ -307,7 +307,7 @@
 .login__footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: var(--space-3);
   margin-top: var(--space-7);
   padding-top: var(--space-5);

@@ -7,8 +7,7 @@
 }
 
 // ---------------------------------------------------------------------
-// Bulk propose — client ask, 2026-09-23: same convention as the insurance
-// module's history.component.scss bulk-bar.
+// Bulk propose — client ask, 2026-09-23: same bulk-bar as Match Approvals.
 // ---------------------------------------------------------------------
 .bulk-bar {
   display: flex;
@@ -77,8 +76,8 @@
 
 // ---------------------------------------------------------------------
 // Client ask: Online/Cheque/Card/UPI's own record totals, highlighted at
-// the very top — the brand gradient tint used app-wide for stat tiles
-// (see insurance-policy/dashboard), not the plain hub-picker below it.
+// the very top — the brand gradient tint used app-wide for stat tiles,
+// not the plain hub-picker below it.
 // ---------------------------------------------------------------------
 .tab-totals {
   display: grid;
@@ -552,6 +551,11 @@
 
 .status-pill--orange {
   @include mixins.status-chip(var(--status-warning-fg), var(--status-warning-bg), var(--status-warning-border));
+}
+
+// Awaiting statement: waiting, not wrong.
+.status-pill--info {
+  @include mixins.status-chip(var(--status-info-fg), var(--status-info-bg), var(--status-info-border));
 }
 
 // ---------------------------------------------------------------------

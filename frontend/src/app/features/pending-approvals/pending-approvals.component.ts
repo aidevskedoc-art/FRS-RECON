@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DialogModule } from 'primeng/dialog';
 import { MatchApprovalService } from '../../core/services/match-approval.service';
-import { errorMessage } from '../../core/services/policy-document.service';
+import { errorMessage } from '../../core/utils/error-message.util';
 import { MatchChangeRequest } from '../../core/models';
 import { PageHeaderComponent } from '../../shared/ui/page-header.component';
 

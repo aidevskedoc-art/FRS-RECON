@@ -168,6 +168,14 @@ export interface PaymentTypeSummary {
   unmatched: number;
   ambiguous: number;
   excluded: number;
+  /**
+   * Receipts no statement covers yet — dated after (or within the settlement
+   * allowance of) the last date their bank / gateway file reaches. Not a
+   * verdict: they turn Matched or Unmatched once the statement arrives.
+   * Absent from a backend that has not been restarted since this was added.
+   */
+  awaiting?: number;
+  awaitingAmount?: number;
 }
 
 /** Bank statement's own verdict totals, from its persisted match_status (see POST /api/matched-rules/bank-statements/generate). notGenerated counts rows no batch's Generate has ever touched. */
@@ -355,6 +363,9 @@ export interface ReconciliationSummary {
     totalUnmatched: number;
     totalAmbiguous: number;
     totalExcluded: number;
+    /** Awaiting statement across every payment type (see PaymentTypeSummary.awaiting). */
+    totalAwaiting?: number;
+    awaitingAmount?: number;
     onlyInBankStatement: number;
     onlyInPaymentStatements: number;
     /** Rupee value of every transaction counted in totalTransactions. */
@@ -363,6 +374,8 @@ export interface ReconciliationSummary {
     balanceAmount: number;
   };
   amountDifferences: AmountDifference[];
+  /** The settlement allowance behind `awaiting`, in days (Go-Live Settings). */
+  awaitingDays?: number;
   generatedAt: string;
 }
 

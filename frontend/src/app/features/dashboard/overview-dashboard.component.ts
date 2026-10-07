@@ -1,10 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { ChartModule } from 'primeng/chart';
 import { TooltipModule } from 'primeng/tooltip';
-import { forkJoin, of } from 'rxjs';
+import { of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
+import { AnimatedCounterComponent } from '../../shared/ui/animated-counter.component';
 import { MatchedRulesService } from '../../core/services/matched-rules.service';
 import { MismatchReviewService } from '../../core/services/mismatch-review.service';
 import { MatchApprovalService } from '../../core/services/match-approval.service';
@@ -12,7 +13,7 @@ import { FolderWatchService } from '../../core/services/folder-watch.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeStore } from '../../core/state/theme.store';
 import { CHART_PALETTES, resolveTheme } from '../../core/config/palette';
-import { errorMessage } from '../../core/services/policy-document.service';
+import { errorMessage } from '../../core/utils/error-message.util';
 import {
   CollectionFreshness,
   FolderWatchRun,
@@ -35,6 +36,8 @@ interface Verdicts {
   notGenerated: number;
   /** Of `reconciled`: Card / UPI receipts matched as a group against one gateway row. */
   grouped: number;
+  /** Not checkable yet — their statement has not arrived (no verdict either way). */
+  awaiting: number;
 }
 
 interface FlowStep {
@@ -79,6 +82,7 @@ function verdicts(s: PaymentTypeSummary & { notGenerated?: number; groupedMatche
     excluded: s.excluded,
     notGenerated: s.notGenerated ?? 0,
     grouped: s.groupedMatched ?? 0,
+    awaiting: s.awaiting ?? 0,
   };
 }
 
@@ -91,14 +95,63 @@ function addVerdicts(a: Verdicts, b: Verdicts): Verdicts {
     excluded: a.excluded + b.excluded,
     notGenerated: a.notGenerated + b.notGenerated,
     grouped: a.grouped + b.grouped,
+    awaiting: a.awaiting + b.awaiting,
   };
 }
 
-/** Reconciled share of what is actually in scope (excluded rows don't count either way). */
+/** What could be reconciled by now: excluded rows don't count either way, and rows awaiting their statement can't be checked yet. */
+function checkable(v: Verdicts): number {
+  return v.total - v.excluded - v.awaiting;
+}
+
+/** Reconciled share of what is actually in scope. */
 function rate(v: Verdicts): number | null {
-  const inScope = v.total - v.excluded;
+  const inScope = checkable(v);
   return inScope > 0 ? Math.round((v.reconciled / inScope) * 1000) / 10 : null;
 }
+
+/**
+ * The last figures this browser saw, so the page opens on numbers instead of
+ * an empty wait; they are marked "updating" until the fresh ones land.
+ * Aggregates only — the per-receipt amount-difference list (patient names) is
+ * never stored. Per-viewer convenience: if storage is unavailable the page
+ * simply loads as before.
+ */
+const CACHE_KEY = 'cbdr-dashboard-last-v1';
+
+interface DashboardCache {
+  at: string;
+  summary: ReconciliationSummary | null;
+  dates: ReconciliationDates | null;
+}
+
+function readCache(): DashboardCache | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as DashboardCache) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(cache: DashboardCache): void {
+  try {
+    const summary = cache.summary ? { ...cache.summary, amountDifferences: [] } : null;
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...cache, summary }));
+  } catch {
+    /* storage full or blocked — the cache is only a convenience */
+  }
+}
+
+/** What the page says while the figures are on their way — the steps the server really takes. */
+const LOADING_STEPS = [
+  'Reading IP receipts…',
+  'Reading Diagnostics & OP receipts…',
+  'Reading cheques and refunds…',
+  'Checking Card & UPI against the gateway files…',
+  'Adding up bank statements and settlements…',
+  'Counting what is waiting for statements…',
+];
 
 const LANES: readonly { key: FlowKey; label: string; icon: string }[] = [
   { key: 'online', label: 'Online (IP + Diag/OP)', icon: 'pi pi-globe' },
@@ -126,7 +179,7 @@ const LANES: readonly { key: FlowKey; label: string; icon: string }[] = [
 @Component({
   selector: 'app-overview-dashboard',
   standalone: true,
-  imports: [DatePipe, RouterLink, ChartModule, TooltipModule, PageHeaderComponent, SummaryPanelComponent],
+  imports: [DatePipe, RouterLink, ChartModule, TooltipModule, PageHeaderComponent, SummaryPanelComponent, AnimatedCounterComponent],
   templateUrl: './overview-dashboard.component.html',
   styleUrl: './overview-dashboard.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -146,6 +199,13 @@ export class OverviewDashboardComponent {
   protected readonly pendingApprovals = signal<number | null>(null);
   protected readonly recentRuns = signal<FolderWatchRun[] | null>(null);
   protected readonly loadedAt = signal<Date | null>(null);
+  /** Showing the last figures this browser saw while fresh ones load. */
+  protected readonly fromCache = signal(false);
+  /** The fresh figures are on their way while older ones are on screen. */
+  protected readonly refreshing = computed(() => this.loading() && this.summary() !== null);
+  /** The step line shown while there is nothing on screen yet. */
+  protected readonly loadingStep = signal(LOADING_STEPS[0]);
+  private stepTimer: ReturnType<typeof setInterval> | null = null;
 
   protected readonly lanes = LANES;
 
@@ -165,6 +225,7 @@ export class OverviewDashboardComponent {
       excluded: c.totalExcluded,
       notGenerated: s.cardPayments.notGenerated + s.upiGatewayPayments.notGenerated,
       grouped: (s.cardPayments.groupedMatched ?? 0) + (s.upiGatewayPayments.groupedMatched ?? 0),
+      awaiting: c.totalAwaiting ?? 0,
     };
   });
 
@@ -175,6 +236,38 @@ export class OverviewDashboardComponent {
 
   protected readonly attention = computed(() => this.overall()?.attention ?? null);
   protected readonly totalTransactions = computed(() => this.overall()?.total ?? null);
+  /** The transactions the Reconciled % is OF — everything except excluded rows and those awaiting their statement. */
+  protected readonly checkableTransactions = computed(() => {
+    const v = this.overall();
+    return v ? checkable(v) : null;
+  });
+
+  // ---- waiting for statements ---------------------------------------------------------
+
+  protected readonly awaitingTotal = computed(() => this.overall()?.awaiting ?? 0);
+  protected readonly awaitingValue = computed(() => compactRupees(this.summary()?.combined.awaitingAmount ?? 0));
+  protected readonly awaitingDays = computed(() => this.summary()?.awaitingDays ?? this.dates()?.awaitingDays ?? null);
+  /** Per collection type, the rows waiting and how far that type's statement reaches. */
+  protected readonly awaitingByType = computed(() => {
+    const types = this.perType();
+    const dates = this.dates();
+    if (!types) return [];
+    return LANES.map((lane) => {
+      const bank = dates?.[lane.key]?.bank;
+      return {
+        key: lane.key,
+        label: lane.label,
+        icon: lane.icon,
+        count: types[lane.key].awaiting,
+        source: bank?.source ?? 'Statement',
+        upTo: calendarDateText(bank?.overallDataUpTo ?? bank?.dataUpTo ?? null),
+      };
+    });
+  });
+  /** Each branch's own bank statement date — the bank side does not arrive in step. */
+  protected readonly bankByBranch = computed(() =>
+    (this.dates()?.online.bank.byLocation ?? []).map((b) => ({ location: b.location, upTo: calendarDateText(b.dataUpTo) })),
+  );
   protected readonly collectionValue = computed(() => compactRupees(this.summary()?.combined.totalAmount));
   protected readonly balanceValue = computed(() => compactRupees(this.summary()?.combined.balanceAmount));
 
@@ -228,8 +321,9 @@ export class OverviewDashboardComponent {
           // gateway row are reconciled, and said so — a bare "1,031 of 1,417" left
           // the rest looking unaccounted for.
           sub: v
-            ? `${v.reconciled.toLocaleString('en-IN')} of ${(v.total - v.excluded).toLocaleString('en-IN')}` +
-              (v.grouped > 0 ? ` · ${v.grouped.toLocaleString('en-IN')} grouped` : '')
+            ? `${v.reconciled.toLocaleString('en-IN')} of ${checkable(v).toLocaleString('en-IN')}` +
+              (v.grouped > 0 ? ` · ${v.grouped.toLocaleString('en-IN')} grouped` : '') +
+              (v.awaiting > 0 ? ` · ${v.awaiting.toLocaleString('en-IN')} awaiting statement` : '')
             : '',
           state: r === null ? 'missing' : r >= 95 ? 'ok' : 'warn',
         },
@@ -255,11 +349,16 @@ export class OverviewDashboardComponent {
     return {
       // Same wording as the screens and the Excel files (STATUS_LABELS) — a chart
       // slice that says something different from the table under it invites a query.
-      labels: ['Matched', 'Gateway Matched', 'Contra', 'Partial Match', 'Amount Mismatch', 'Unmatched', 'Multiple Matches Found'],
+      // "Awaiting statement" is not a verdict, so it gets the neutral grey, lighter
+      // than Multiple Matches Found — it is waiting, not wrong.
+      labels: ['Matched', 'Gateway Matched', 'Contra', 'Partial Match', 'Amount Mismatch', 'Unmatched', 'Multiple Matches Found', 'Awaiting Statement'],
       datasets: [
         {
-          data: [c.totalMatched, c.totalEasebuzzMatched, c.totalContra, c.totalPartialMatch, c.totalMismatched, c.totalUnmatched, c.totalAmbiguous],
-          backgroundColor: [p.matched, lighten(p.matched), lighten(p.matched, 0.55), p.mismatch, lighten(p.mismatch, 0.2), p.unmatched, p.neutral],
+          data: [
+            c.totalMatched, c.totalEasebuzzMatched, c.totalContra, c.totalPartialMatch, c.totalMismatched, c.totalUnmatched, c.totalAmbiguous,
+            c.totalAwaiting ?? 0,
+          ],
+          backgroundColor: [p.matched, lighten(p.matched), lighten(p.matched, 0.55), p.mismatch, lighten(p.mismatch, 0.2), p.unmatched, p.neutral, lighten(p.neutral, 0.45)],
           borderWidth: 0,
           hoverOffset: 6,
         },
@@ -286,6 +385,7 @@ export class OverviewDashboardComponent {
         { label: 'Reconciled', data: rows.map(([, d]) => d.matched + d.easebuzzMatched + d.contra), backgroundColor: p.matched, borderRadius: 4 },
         { label: 'Mismatch / partial', data: rows.map(([, d]) => d.mismatched + d.partialMatch + d.ambiguous), backgroundColor: p.mismatch, borderRadius: 4 },
         { label: 'Unmatched', data: rows.map(([, d]) => d.unmatched), backgroundColor: p.unmatched, borderRadius: 4 },
+        { label: 'Awaiting statement', data: rows.map(([, d]) => d.awaiting ?? 0), backgroundColor: lighten(p.neutral, 0.45), borderRadius: 4 },
       ],
     };
   });
@@ -362,33 +462,78 @@ export class OverviewDashboardComponent {
   });
 
   constructor() {
+    // Open on the last figures this browser saw — counted up to, then replaced.
+    const cached = readCache();
+    if (cached?.summary) {
+      this.summary.set(cached.summary);
+      this.dates.set(cached.dates);
+      this.loadedAt.set(new Date(cached.at));
+      this.fromCache.set(true);
+    }
+    inject(DestroyRef).onDestroy(() => this.stopSteps());
     this.load();
   }
 
+  /**
+   * Each part lands on its own: the dates, approvals and automation runs are
+   * quick and appear at once; the counts follow. Nothing waits for the slowest.
+   */
   protected load(): void {
     this.loading.set(true);
     this.error.set(null);
+    this.startSteps();
     const isAdmin = this.auth.isFrsAdmin();
-    forkJoin({
-      summary: this.matchedRules.fetchSummary({}),
-      dates: this.mismatchReview.fetchReconciliationDates({}).pipe(catchError(() => of(null))),
-      approvals: this.matchApproval.refreshToReview('PENDING').pipe(catchError(() => of(null))),
-      // The automation's API is Admin-only; an Auditor just doesn't get this panel.
-      runs: isAdmin ? this.folderWatch.refreshRuns(1, 5).pipe(catchError(() => of(null))) : of(null),
-    }).subscribe({
-      next: ({ summary, dates, approvals, runs }) => {
+
+    this.mismatchReview
+      .fetchReconciliationDates({})
+      .pipe(catchError(() => of(null)))
+      .subscribe((dates) => {
+        if (dates) this.dates.set(dates);
+      });
+    this.matchApproval
+      .refreshToReview('PENDING')
+      .pipe(catchError(() => of(null)))
+      .subscribe((approvals) => this.pendingApprovals.set(approvals ? approvals.length : null));
+    // The automation's API is Admin-only; an Auditor just doesn't get this panel.
+    if (isAdmin) {
+      this.folderWatch
+        .refreshRuns(1, 5)
+        .pipe(catchError(() => of(null)))
+        .subscribe((runs) => this.recentRuns.set(runs ? runs.runs : null));
+    } else {
+      this.recentRuns.set(null);
+    }
+
+    this.matchedRules.fetchSummary({}).subscribe({
+      next: (summary) => {
         this.summary.set(summary);
-        this.dates.set(dates);
-        this.pendingApprovals.set(approvals ? approvals.length : null);
-        this.recentRuns.set(runs ? runs.runs : null);
         this.loadedAt.set(new Date());
+        this.fromCache.set(false);
         this.loading.set(false);
+        this.stopSteps();
+        writeCache({ at: new Date().toISOString(), summary, dates: this.dates() });
       },
       error: (err) => {
         this.error.set(errorMessage(err));
         this.loading.set(false);
+        this.stopSteps();
       },
     });
+  }
+
+  private startSteps(): void {
+    this.stopSteps();
+    let i = 0;
+    this.loadingStep.set(LOADING_STEPS[0]);
+    this.stepTimer = setInterval(() => {
+      i = Math.min(i + 1, LOADING_STEPS.length - 1);
+      this.loadingStep.set(LOADING_STEPS[i]);
+    }, 900);
+  }
+
+  private stopSteps(): void {
+    if (this.stepTimer) clearInterval(this.stepTimer);
+    this.stepTimer = null;
   }
 
   protected can(screenKey: string): boolean {

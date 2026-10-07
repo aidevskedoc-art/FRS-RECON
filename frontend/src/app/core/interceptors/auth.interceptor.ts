@@ -7,10 +7,10 @@ import { AuthService } from '../services/auth.service';
 import { ScanStatusService } from '../services/scan-status.service';
 
 /**
- * Attaches the JWT to every /api call and to /uploads (the insurance policy
- * PDFs) — the backend requires a signed-in user on both. Also catches an
- * expired/invalid token (401 with a token set) and bounces to /login rather
- * than leaving the screen stuck on a silently-failing request.
+ * Attaches the JWT to every /api call — the backend requires a signed-in user
+ * on all of them. Also catches an expired/invalid token (401 with a token set)
+ * and bounces to /login rather than leaving the screen stuck on a
+ * silently-failing request.
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
@@ -18,7 +18,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const scanStatus = inject(ScanStatusService);
 
   const token = auth.token();
-  const isApiCall = req.url.startsWith(API_BASE_URL) || req.url.startsWith('/api') || req.url.startsWith('/uploads');
+  const isApiCall = req.url.startsWith(API_BASE_URL) || req.url.startsWith('/api');
   const authedReq = isApiCall && token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
 
   return next(authedReq).pipe(
