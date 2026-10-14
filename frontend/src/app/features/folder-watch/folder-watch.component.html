@@ -158,15 +158,6 @@
             <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
           }
 
-          <button type="button" class="btn btn-ghost" [disabled]="testing() || !folderWatch.config()" (click)="testConnection()" pTooltip="Log in to the share and list the folder with the saved settings — reads and stores nothing">
-            @if (testing()) {
-              <span class="btn-spinner btn-spinner--dark"></span>
-            } @else {
-              <i class="pi pi-link"></i>
-            }
-            <span>Test Connection</span>
-          </button>
-
           <button
             type="button"
             class="btn btn-ghost"
@@ -182,20 +173,6 @@
             <span>Run Now</span>
           </button>
         </div>
-
-        @if (testResult(); as t) {
-          @if (t.ok) {
-            <div class="notice notice--info">
-              <i class="pi pi-check-circle"></i>
-              Connected{{ t.usedLogin ? ' with the saved user ID' : '' }} — {{ t.spreadsheets }} spreadsheet(s) in the folder ({{ t.filesInFolder }} item(s) in total).
-            </div>
-          } @else {
-            <div class="notice notice--danger">
-              <i class="pi pi-times-circle"></i>
-              {{ t.error }}
-            </div>
-          }
-        }
 
         @if (runNowError(); as err) {
           <div class="modal-error">{{ err }}</div>

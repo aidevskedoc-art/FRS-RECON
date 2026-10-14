@@ -41,14 +41,6 @@ export interface AutomationControl {
   running: { scan: boolean; pull: boolean };
 }
 
-export interface FolderWatchConnectionTest {
-  ok: boolean;
-  error?: string;
-  usedLogin?: boolean;
-  filesInFolder?: number;
-  spreadsheets?: number;
-}
-
 export type FolderWatchRunStatus = 'RUNNING' | 'COMPLETED' | 'FAILED';
 
 export interface FolderWatchRun {

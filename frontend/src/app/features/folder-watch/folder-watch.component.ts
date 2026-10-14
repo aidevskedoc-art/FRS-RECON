@@ -10,7 +10,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { FolderWatchService } from '../../core/services/folder-watch.service';
 import { errorMessage } from '../../core/utils/error-message.util';
-import { FolderWatchConfig, FolderWatchConfigDraft, FolderWatchConnectionTest, FolderWatchReconcileStep, FolderWatchRun, FolderWatchRunFile } from '../../core/models';
+import { FolderWatchConfig, FolderWatchConfigDraft, FolderWatchReconcileStep, FolderWatchRun, FolderWatchRunFile } from '../../core/models';
 import { PageHeaderComponent } from '../../shared/ui/page-header.component';
 import { HisAutoPullComponent } from './his-auto-pull.component';
 
@@ -80,9 +80,6 @@ export class FolderWatchComponent {
   protected readonly formError = signal<string | null>(null);
   protected readonly saving = signal(false);
   protected readonly saved = signal(false);
-
-  protected readonly testing = signal(false);
-  protected readonly testResult = signal<FolderWatchConnectionTest | null>(null);
 
   protected readonly runningNow = signal(false);
   protected readonly runNowError = signal<string | null>(null);
@@ -213,21 +210,6 @@ export class FolderWatchComponent {
       error: (err) => {
         this.saving.set(false);
         this.formError.set(errorMessage(err));
-      },
-    });
-  }
-
-  protected testConnection(): void {
-    this.testing.set(true);
-    this.testResult.set(null);
-    this.folderWatch.testConnection().subscribe({
-      next: (result) => {
-        this.testing.set(false);
-        this.testResult.set(result);
-      },
-      error: (err) => {
-        this.testing.set(false);
-        this.testResult.set({ ok: false, error: errorMessage(err) });
       },
     });
   }
