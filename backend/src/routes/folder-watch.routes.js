@@ -14,7 +14,34 @@ const fs = require('fs/promises');
 const path = require('path');
 
 const router = express.Router();
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth);
+
+// POST /api/folder-watch/run-now — triggers a scan immediately. Runs inline
+// (not fired-and-forgotten) so the caller gets the real outcome back; a scan
+// normally takes seconds to low minutes, not long enough to justify a
+// separate job-status-polling design for a person-triggered action.
+//
+// Any signed-in user, not only an Admin (2026-10-07): it is also the Run Now
+// on Upload & Run's Sync from HIS card, used by Auditors. A scan stores the
+// folder's new files and reconciles — what that screen's uploads and Run
+// Reconciliation already let them do. Registered ABOVE the Admin gate below,
+// so this one route never reaches it; everything after the gate stays Admin-only.
+// Refused while automation is stopped on the Automation screen (scanner.js).
+router.post('/run-now', async (req, res, next) => {
+  try {
+    await logAction({
+      actorUserId: req.user.sub, entityType: 'folder_watch_run',
+      action: 'FOLDER_WATCH_RUN_NOW_TRIGGERED', req,
+    });
+    const run = await runScan({ triggeredBy: req.user.sub });
+    res.json(folderWatchRunRowToApi(run));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Everything below: the folder's settings, its history and files — Admin only.
+router.use(requireAdmin);
 
 // GET /api/folder-watch/config
 router.get('/config', async (req, res, next) => {
@@ -265,23 +292,6 @@ router.post('/files/retry', async (req, res, next) => {
       action: 'FOLDER_WATCH_FILE_RETRY', details: { fileName, rowsSuperseded: rowCount }, req,
     });
     res.json({ fileName, rowsSuperseded: rowCount });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/folder-watch/run-now — triggers a scan immediately. Runs inline
-// (not fired-and-forgotten) so the caller gets the real outcome back; a scan
-// normally takes seconds to low minutes, not long enough to justify a
-// separate job-status-polling design for an admin-triggered action.
-router.post('/run-now', async (req, res, next) => {
-  try {
-    await logAction({
-      actorUserId: req.user.sub, entityType: 'folder_watch_run',
-      action: 'FOLDER_WATCH_RUN_NOW_TRIGGERED', req,
-    });
-    const run = await runScan({ triggeredBy: req.user.sub });
-    res.json(folderWatchRunRowToApi(run));
   } catch (err) {
     next(err);
   }

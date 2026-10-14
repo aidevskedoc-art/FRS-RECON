@@ -6,12 +6,17 @@ import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiSyncHistoryComponent } from './api-sync-history.component';
 import { ApiConfigService, toYmd } from '../../../core/services/api-config.service';
 import { AuthService } from '../../../core/services/auth.service';
+import { FolderWatchService } from '../../../core/services/folder-watch.service';
+import { ScanStatusService } from '../../../core/services/scan-status.service';
 import { errorMessage } from '../../../core/utils/error-message.util';
-import { ApiPullRunStatus, ApiPullStatus, ApiSyncOptions, ApiSyncResult, ApiSyncResultStatus, ApiSyncRun, ApiSyncRunResult } from '../../../core/models';
+import {
+  ApiPullRunStatus, ApiPullStatus, ApiSyncOptions, ApiSyncResult, ApiSyncResultStatus, ApiSyncRun, ApiSyncRunResult, FolderWatchRun,
+} from '../../../core/models';
 
 const PULL_STATUS_LABEL: Record<ApiPullRunStatus, string> = {
   RUNNING: 'running now',
@@ -52,11 +57,15 @@ const ALL_UNITS = 'all';
  *
  * "All units" syncs every unit in turn — one unit's request after another, as
  * the HIS is never asked twice at once — and downloads them all as one workbook.
+ *
+ * "Run Now" (client, 2026-10-07) is the Automation screen's own shared-folder
+ * Run Now, here too: check the folder for new statements, store them and run
+ * the reconciliation — what the daily folder check does, without waiting for it.
  */
 @Component({
   selector: 'app-ip-sync-card',
   standalone: true,
-  imports: [FormsModule, DatePipe, ButtonModule, SelectModule, DatePickerModule, TooltipModule, DialogModule, ApiSyncHistoryComponent],
+  imports: [FormsModule, DatePipe, RouterLink, ButtonModule, SelectModule, DatePickerModule, TooltipModule, DialogModule, ApiSyncHistoryComponent],
   templateUrl: './ip-sync-card.component.html',
   styleUrl: './ip-sync-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -64,6 +73,8 @@ const ALL_UNITS = 'all';
 export class IpSyncCardComponent {
   private readonly api = inject(ApiConfigService);
   private readonly auth = inject(AuthService);
+  private readonly folder = inject(FolderWatchService);
+  private readonly scan = inject(ScanStatusService);
 
   /** True while the parent's Run, or the shared-folder scan, is in progress. */
   readonly disabled = input(false);
@@ -146,6 +157,21 @@ export class IpSyncCardComponent {
   /** The automatic morning pull: on or off, and how the last one went — so nobody syncs by hand what it already brought. */
   protected readonly pullStatus = signal<ApiPullStatus | null>(null);
   protected readonly pullStatusLabel = PULL_STATUS_LABEL;
+
+  // ---- Run Now — the shared-folder check, as on the Automation screen -------------------
+  protected readonly folderRunning = signal(false);
+  protected readonly folderResult = signal<FolderWatchRun | null>(null);
+  protected readonly folderError = signal<string | null>(null);
+  /** Stopped on the Automation screen: the folder check is refused, so the button says so instead. */
+  protected readonly automationStopped = computed(() => this.pullStatus()?.automationStopped === true);
+  protected readonly canRunFolder = computed(
+    () => !this.disabled() && !this.syncing() && !this.folderRunning() && !this.automationStopped(),
+  );
+  protected readonly runNowTooltip = computed(() => {
+    if (this.automationStopped()) return 'Automation is stopped — an Admin can resume it on the Automation screen';
+    if (this.disabled() && !this.folderRunning()) return 'Wait for the current run / folder check to finish';
+    return 'Check the shared folder now for new statements, store them, and run the reconciliation — what the daily folder check does, without waiting for its time';
+  });
 
   private wasDisabled = false;
 
@@ -233,6 +259,52 @@ export class IpSyncCardComponent {
     this.syncing.set(false);
     if (lastStored) this.synced.emit(lastStored);
     this.loadOptions();
+  }
+
+  /**
+   * The shared-folder check, now: new files in the folder are stored and the
+   * reconciliation runs — including over rows synced from HIS that have not
+   * been reconciled yet. The request stays open until the check ends (a minute
+   * or two); meanwhile the screen's uploads and Run are paused, as for the daily one.
+   */
+  protected runFolderCheck(): void {
+    if (!this.canRunFolder()) return;
+    this.folderRunning.set(true);
+    this.folderError.set(null);
+    this.folderResult.set(null);
+    // The scan has taken its lock by now: let the page show it (Run Reconciliation waits) without its next poll.
+    const lockSeen = setTimeout(() => this.scan.refreshNow(), 1500);
+    this.folder.runNow().subscribe({
+      next: (run) => {
+        clearTimeout(lockSeen);
+        this.folderRunning.set(false);
+        this.folderResult.set(run);
+        this.scan.refreshNow();
+        this.loadOptions(); // what is left to reconcile has changed
+      },
+      error: (err) => {
+        clearTimeout(lockSeen);
+        this.folderRunning.set(false);
+        this.folderError.set(errorMessage(err));
+        this.scan.refreshNow();
+        this.loadOptions();
+      },
+    });
+  }
+
+  /**
+   * "11 files in the folder · 2 stored · 9 skipped — reconciliation run". Found
+   * counts every file in the folder, skipped the ones already taken on an
+   * earlier check (found = stored + skipped + failed, scanner.js).
+   */
+  protected folderSummary(run: FolderWatchRun): string {
+    const n = (value: number) => value.toLocaleString('en-IN');
+    const parts = [`${n(run.filesFound)} file${run.filesFound === 1 ? '' : 's'} in the folder`];
+    if (run.filesIngested) parts.push(`${n(run.filesIngested)} stored`);
+    if (run.filesSkipped) parts.push(`${n(run.filesSkipped)} skipped (already taken or nothing new)`);
+    if (run.filesFailed) parts.push(`${n(run.filesFailed)} failed`);
+    const reconciled = run.generateSummary ? 'reconciliation run' : 'nothing new, so the reconciliation was not re-run';
+    return `${parts.join(' · ')} — ${reconciled}`;
   }
 
   /** Saves what the HIS sends for the chosen unit (or every unit) and day, as received. Stores nothing. */

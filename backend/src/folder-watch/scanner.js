@@ -19,6 +19,7 @@ const { connectShare } = require('./share-credentials');
 const { beginScan, endScan } = require('./scan-lock');
 const { pullIdle } = require('../api-sync/auto-pull');
 const { unreconciledApiBatches } = require('../api-sync/sync-unit-day');
+const { assertAutomationRunning } = require('../automation-control');
 
 const SPREADSHEET_EXT = /\.(xlsx|xls)$/i;
 // A file whose mtime is inside this window might still be mid-copy —
@@ -84,6 +85,8 @@ async function runScan(opts = {}) {
     // skips a disabled config entirely (see scheduler.js).
     throw new Error('Folder automation is turned off.');
   }
+  // The Automation screen's Stop switch — scheduled and Run Now alike (automation-control.js).
+  await assertAutomationRunning('the shared-folder check');
 
   let run;
   try {

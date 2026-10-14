@@ -12,6 +12,7 @@
 const db = require('../db');
 const { runScan } = require('./scanner');
 const { runScheduledPull, pulledSince } = require('../api-sync/auto-pull');
+const { isAutomationStopped } = require('../automation-control');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -57,7 +58,7 @@ function dailyTimer({ tag, what, loadRunTime, run }) {
     // set a timer after the other's clear, leaving two alive; only the latest arms.
     if (generation !== armGeneration) return null;
     if (!runTime) {
-      console.log(`[${tag}] scheduler idle — no active configuration`);
+      console.log(`[${tag}] scheduler idle — switched off, not set up, or automation stopped`);
       return null;
     }
 
@@ -91,7 +92,13 @@ function dailyTimer({ tag, what, loadRunTime, run }) {
   return arm;
 }
 
+/**
+ * The job's IST time, or null while it is switched off — or while the
+ * Automation screen's Stop switch is on, so a stopped job has no timer at all
+ * (automation-control.js; Resume re-arms both).
+ */
 const activeRunTime = (table) => async () => {
+  if (await isAutomationStopped()) return null;
   const { rows } = await db.query(`SELECT run_time, active FROM ${table} ORDER BY id LIMIT 1`);
   return rows[0] && rows[0].active ? rows[0].run_time : null;
 };

@@ -3,7 +3,43 @@
     icon="pi pi-cloud-download"
     title="Automation"
     subtitle="Each day: pull the day before from HIS, then check the shared folder, ingest what's new, and run the reconciliation — no manual upload."
-  />
+  >
+    <!-- One switch over both jobs, for server maintenance and the like. -->
+    <div actions class="automation-switch">
+      @if (folderWatch.control()) {
+        @if (automationStopped()) {
+          <button type="button" class="btn btn-resume" (click)="askToggle()" pTooltip="Start the HIS Data Pull and the Shared Folder Check again, at their set times">
+            <i class="pi pi-play-circle"></i>
+            <span>Resume Automation</span>
+          </button>
+        } @else {
+          <button type="button" class="btn btn-stop" (click)="askToggle()" pTooltip="Stop the HIS Data Pull and the Shared Folder Check — e.g. for server maintenance">
+            <i class="pi pi-stop-circle"></i>
+            <span>Stop Automation</span>
+          </button>
+        }
+      }
+    </div>
+  </app-page-header>
+
+  @if (folderWatch.control(); as c) {
+    @if (c.stopped) {
+      <div class="automation-stopped" role="status">
+        <i class="pi pi-ban"></i>
+        <div class="automation-stopped__text">
+          <strong>Automation is stopped.</strong>
+          Neither the HIS Data Pull nor the Shared Folder Check runs — not on schedule, not by Pull Now or Run Now — until it is resumed.
+          Their settings below are kept as they are.
+          <span class="automation-stopped__meta">
+            Stopped
+            @if (c.changedByName) { by {{ c.changedByName }} }
+            @if (c.changedAt) { on {{ c.changedAt | date: 'd MMM y, h:mm a' }} }
+            @if (c.reason) { — {{ c.reason }} }
+          </span>
+        </div>
+      </div>
+    }
+  }
 
   <!-- In the order the day runs: the HIS pull first, then the folder check. -->
   <div class="hub-picker" role="tablist">
@@ -131,7 +167,13 @@
             <span>Test Connection</span>
           </button>
 
-          <button type="button" class="btn btn-ghost" [disabled]="runningNow()" (click)="runNow()" pTooltip="Check the folder right now, without waiting for the scheduled time">
+          <button
+            type="button"
+            class="btn btn-ghost"
+            [disabled]="runningNow() || automationStopped()"
+            (click)="runNow()"
+            [pTooltip]="automationStopped() ? 'Automation is stopped — resume it (top right) to check the folder' : 'Check the folder right now, without waiting for the scheduled time'"
+          >
             @if (runningNow()) {
               <span class="btn-spinner btn-spinner--dark"></span>
             } @else {
@@ -329,6 +371,72 @@
         <p class="field-hint">Nothing new was stored on this run, so the reconciliation was not re-run.</p>
       }
     </p-dialog>
+  }
+
+  <!-- Stop / Resume Automation — never from a single click. -->
+  @if (confirmToggle(); as action) {
+    <div class="modal-overlay" (click)="cancelToggle()">
+      <div class="modal" role="alertdialog" aria-modal="true" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h2>{{ action === 'stop' ? 'Stop all automation?' : 'Resume automation?' }}</h2>
+          <button type="button" class="modal-close" (click)="cancelToggle()" aria-label="Close">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          @if (action === 'stop') {
+            <p class="confirm-copy">
+              The <strong>HIS Data Pull</strong> and the <strong>Shared Folder Check</strong> will not run — not on schedule, not as a
+              retry, and not by Pull Now or Run Now — until someone resumes them here. Their settings stay as they are.
+            </p>
+            @if (runningNote(); as note) {
+              <p class="confirm-copy confirm-copy--warn"><i class="pi pi-info-circle"></i> {{ note }}; nothing new starts after it.</p>
+            }
+            <label class="field">
+              <span class="field-label">Reason (optional)</span>
+              <input
+                pInputText
+                type="text"
+                maxlength="500"
+                placeholder="e.g. Server maintenance"
+                [ngModel]="stopReason()"
+                (ngModelChange)="stopReason.set($event)"
+              />
+              <span class="field-hint">Shown on this screen while automation is stopped, and kept in the Audit Log.</span>
+            </label>
+          } @else {
+            <p class="confirm-copy">
+              The <strong>HIS Data Pull</strong> and the <strong>Shared Folder Check</strong> run again at their set times.
+            </p>
+            <p class="confirm-copy">
+              If a pull time went by while it was stopped, that pull runs about a minute after you resume — it asks HIS only for what is
+              still missing. The folder check waits for its next time; use <strong>Run Now</strong> to check the folder sooner.
+            </p>
+          }
+          @if (toggleError(); as err) {
+            <div class="modal-error">{{ err }}</div>
+          }
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" [disabled]="toggling()" (click)="cancelToggle()">Cancel</button>
+          <button
+            type="button"
+            class="btn"
+            [class.btn-stop]="action === 'stop'"
+            [class.btn-resume]="action === 'resume'"
+            [disabled]="toggling()"
+            (click)="confirmToggleNow()"
+          >
+            @if (toggling()) {
+              <span class="btn-spinner"></span>
+            } @else {
+              <i class="pi" [class.pi-stop-circle]="action === 'stop'" [class.pi-play-circle]="action === 'resume'"></i>
+            }
+            <span>{{ action === 'stop' ? 'Stop Automation' : 'Resume Automation' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   }
 
   <!-- Destructive actions never fire from a single click. -->

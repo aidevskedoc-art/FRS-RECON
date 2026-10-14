@@ -19,6 +19,7 @@ const {
   LIMITS, runAutoPull, loadSchedule, saveSchedule, scheduleRowToApi, listPullRuns, pullRunRowToApi,
 } = require('../api-sync/auto-pull');
 const { armPull, nextRunAt } = require('../folder-watch/scheduler');
+const { isAutomationStopped } = require('../automation-control');
 
 const router = express.Router();
 
@@ -31,9 +32,12 @@ const router = express.Router();
 async function scheduleView(row) {
   const { units, sources } = await syncOptions();
   const { rows: folder } = await db.query('SELECT run_time, active FROM folder_watch_config ORDER BY id LIMIT 1');
+  // Stopped on the Automation screen: nothing runs next, whatever the pull's own switch says.
+  const automationStopped = await isAutomationStopped();
   return {
     ...scheduleRowToApi(row),
-    nextRunAt: row.active ? nextRunAt(row.run_time).toISOString() : null,
+    automationStopped,
+    nextRunAt: row.active && !automationStopped ? nextRunAt(row.run_time).toISOString() : null,
     limits: LIMITS,
     units: units.map((u) => u.name),
     sources,
@@ -126,10 +130,12 @@ router.get('/pull/status', async (req, res, next) => {
     const row = await loadSchedule();
     const { runs } = await listPullRuns({ pageSize: 1 });
     const last = runs[0];
+    const automationStopped = await isAutomationStopped();
     res.json({
       active: row.active,
+      automationStopped,
       runTime: row.run_time,
-      nextRunAt: row.active ? nextRunAt(row.run_time).toISOString() : null,
+      nextRunAt: row.active && !automationStopped ? nextRunAt(row.run_time).toISOString() : null,
       lastRun: last
         ? { startedAt: last.startedAt, status: last.status, dayFrom: last.dayFrom, dayTo: last.dayTo, rowsStored: last.rowsStored, apisFailed: last.apisFailed }
         : null,
@@ -181,7 +187,8 @@ router.get('/pull/runs', requireAuth, requireAdmin, async (req, res, next) => {
 // The pull, now: every unit, whatever is still missing — for the day named, or
 // (none named) the days the schedule itself would look at. Runs inline so the
 // caller gets the real outcome back, like the folder's Run Now; works while the
-// schedule is switched off, which is how it is tried before being trusted.
+// schedule is switched off, which is how it is tried before being trusted —
+// but not while automation is stopped on the Automation screen (409).
 router.post('/pull/run-now', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const date = req.body?.date ? String(req.body.date) : undefined;

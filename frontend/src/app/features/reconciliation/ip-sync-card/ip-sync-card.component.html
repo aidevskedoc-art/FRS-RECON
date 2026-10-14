@@ -35,9 +35,11 @@
     }
 
     @if (pullStatus(); as p) {
-      <div class="auto-pull" [class.auto-pull--off]="!p.active">
-        <i class="pi" [class.pi-clock]="p.active" [class.pi-pause-circle]="!p.active"></i>
-        @if (p.active) {
+      <div class="auto-pull" [class.auto-pull--off]="!p.active || p.automationStopped">
+        <i class="pi" [class.pi-clock]="p.active && !p.automationStopped" [class.pi-pause-circle]="!p.active && !p.automationStopped" [class.pi-ban]="p.automationStopped"></i>
+        @if (p.automationStopped) {
+          <span>Automation is stopped by an Admin — nothing is pulled on its own. Sync each unit and day here by hand.</span>
+        } @else if (p.active) {
           <span>
             Automatic pull is on — every unit, the day before, daily at <strong>{{ p.runTime.slice(0, 5) }} IST</strong>.
           </span>
@@ -113,6 +115,17 @@
           (onClick)="sync()"
           [pTooltip]="disabled() ? 'Wait for the current run / folder scan to finish' : ''"
         />
+        <!-- The Automation screen's shared-folder Run Now: statements in, then the reconciliation. -->
+        <p-button
+          label="Run Now"
+          icon="pi pi-play"
+          severity="secondary"
+          [outlined]="true"
+          [loading]="folderRunning()"
+          [disabled]="!canRunFolder()"
+          (onClick)="runFolderCheck()"
+          [pTooltip]="runNowTooltip()"
+        />
         @if (isAdmin()) {
           <p-button
             label="Download HIS data"
@@ -144,6 +157,31 @@
       <div class="notice notice--busy">
         <i class="pi pi-spin pi-spinner"></i>
         Syncing {{ p.unitName }} — unit {{ p.current }} of {{ p.total }}. Keep this page open until all units are done.
+      </div>
+    }
+    @if (folderRunning()) {
+      <div class="notice notice--busy">
+        <i class="pi pi-spin pi-spinner"></i>
+        Checking the shared folder and running the reconciliation — usually a minute or two. Uploads and Run Reconciliation wait until it
+        finishes.
+      </div>
+    }
+    @if (folderError(); as err) {
+      <div class="notice notice--danger">
+        <i class="pi pi-times-circle"></i>
+        <span><strong>Run Now:</strong> {{ err }}</span>
+      </div>
+    }
+    @if (folderResult(); as run) {
+      <div class="notice" [class.notice--danger]="run.status === 'FAILED' || run.filesFailed > 0" [class.notice--ok]="run.status !== 'FAILED' && !run.filesFailed">
+        <i class="pi" [class.pi-check-circle]="run.status !== 'FAILED' && !run.filesFailed" [class.pi-times-circle]="run.status === 'FAILED' || run.filesFailed > 0"></i>
+        <span>
+          <strong>Folder check {{ run.status === 'FAILED' ? 'failed' : 'finished' }}:</strong>
+          {{ run.status === 'FAILED' && run.errorMessage ? run.errorMessage : folderSummary(run) }}.
+          @if (isAdmin()) {
+            <a routerLink="/reconciliation/folder-watch" [queryParams]="{ tab: 'folder' }">See each file</a>
+          }
+        </span>
       </div>
     }
     @if (downloading() && allUnits()) {

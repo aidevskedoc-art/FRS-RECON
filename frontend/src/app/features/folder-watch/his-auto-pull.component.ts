@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableLazyLoadEvent, TableModule } from 'primeng/table';
@@ -7,6 +7,7 @@ import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 import { ApiConfigService, toYmd } from '../../core/services/api-config.service';
+import { FolderWatchService } from '../../core/services/folder-watch.service';
 import { errorMessage } from '../../core/utils/error-message.util';
 import { ApiPullRun, ApiPullRunsPage, ApiPullRunStatus, ApiPullSchedule, ApiPullScheduleDraft, ApiPullUnitDay } from '../../core/models';
 
@@ -46,6 +47,11 @@ function yesterdayYmd(): string {
 })
 export class HisAutoPullComponent {
   private readonly api = inject(ApiConfigService);
+  private readonly automation = inject(FolderWatchService);
+
+  /** The red Stop at the top of the Automation screen: nothing is pulled, Pull Now included. */
+  protected readonly automationStopped = computed(() => this.automation.control()?.stopped === true);
+  private stoppedSeen: boolean | undefined;
 
   protected readonly schedule = signal<ApiPullSchedule | null>(null);
   protected readonly draft = signal<ApiPullScheduleDraft>({ active: false, runTime: '08:00', catchUpDays: 3, retryCount: 2, retryMinutes: 15 });
@@ -96,13 +102,21 @@ export class HisAutoPullComponent {
   constructor() {
     this.loadSchedule();
     this.loadRuns(1, 10);
+    // Stop / Resume changes when (whether) the next pull is — read it again, keeping any unsaved edits.
+    effect(() => {
+      const stopped = this.automationStopped();
+      untracked(() => {
+        if (this.stoppedSeen !== undefined && stopped !== this.stoppedSeen) this.loadSchedule({ keepDraft: true });
+        this.stoppedSeen = stopped;
+      });
+    });
   }
 
-  private loadSchedule(): void {
+  private loadSchedule({ keepDraft = false } = {}): void {
     this.api.fetchPullSchedule().subscribe({
       next: (s) => {
         this.schedule.set(s);
-        this.draft.set(this.toDraft(s));
+        if (!keepDraft) this.draft.set(this.toDraft(s));
         this.loadError.set(null);
       },
       error: (err) => this.loadError.set(errorMessage(err)),
@@ -168,7 +182,7 @@ export class HisAutoPullComponent {
   /** Every unit, whatever is still missing for the chosen day. Works while the schedule is off. */
   protected pullNow(): void {
     const day = this.pullDay();
-    if (this.pulling() || !day) return;
+    if (this.pulling() || !day || this.automationStopped()) return;
     this.pulling.set(true);
     this.pullError.set(null);
     this.pullNote.set(null);

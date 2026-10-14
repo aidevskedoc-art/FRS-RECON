@@ -361,15 +361,7 @@ END $$;
 -- Matched on BOTH name and action so only the rule this file created is
 -- removed; a hand-written rule that merely shares the name is left alone.
 -- Superseded by the UNIT_AGGREGATION rule kind below.
--- ---------------------------------------------------------------------------
-DELETE FROM ip_payment_matching_rules
- WHERE name = 'Transaction Amount Match on Same Unit'
-   AND action = 'FORCE_MATCHED_TXN_AMOUNT_SAME_UNIT';
-
-DELETE FROM diag_payment_matching_rules
- WHERE name = 'Transaction Amount Match on Same Unit'
-   AND action = 'FORCE_MATCHED_TXN_AMOUNT_SAME_UNIT';
-
+--
 -- ...and clear the numbers it wrote. The match_group_* columns now hold the
 -- UNIT the row was aggregated into, but they still contain values computed by
 -- the deleted rule under its inverted semantics. Left in place they would be
@@ -378,19 +370,45 @@ DELETE FROM diag_payment_matching_rules
 -- the columns read blank until the next Generate recomputes them honestly.
 -- Only the aggregation columns are touched; match_status and the rest of the
 -- verdict are left exactly as they were.
-UPDATE ip_payment_records
-   SET match_group_base_ref = NULL, match_group_member_count = NULL,
-       match_group_total = NULL, match_group_difference = NULL
- WHERE match_group_base_ref IS NOT NULL
-    OR match_group_member_count IS NOT NULL
-    OR match_group_total IS NOT NULL;
+--
+-- ONLY while the old rule is still there (2026-10-07). As plain statements the
+-- clearing ran on every backend start, so every restart blanked the units
+-- Generate had stored, and after go-live a locked row's unit was never
+-- recomputed at all. It also named match_group_* before the ALTERs further
+-- down add them, so this file failed on an empty database. Inside the IF, a
+-- database without the old rule (every one since it was deleted, and every new
+-- one) runs neither statement.
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ip_payment_matching_rules
+              WHERE name = 'Transaction Amount Match on Same Unit'
+                AND action = 'FORCE_MATCHED_TXN_AMOUNT_SAME_UNIT') THEN
+    DELETE FROM ip_payment_matching_rules
+     WHERE name = 'Transaction Amount Match on Same Unit'
+       AND action = 'FORCE_MATCHED_TXN_AMOUNT_SAME_UNIT';
+    UPDATE ip_payment_records
+       SET match_group_base_ref = NULL, match_group_member_count = NULL,
+           match_group_total = NULL, match_group_difference = NULL
+     WHERE match_group_base_ref IS NOT NULL
+        OR match_group_member_count IS NOT NULL
+        OR match_group_total IS NOT NULL;
+  END IF;
 
-UPDATE diag_op_payment_records
-   SET match_group_base_ref = NULL, match_group_member_count = NULL,
-       match_group_total = NULL, match_group_difference = NULL
- WHERE match_group_base_ref IS NOT NULL
-    OR match_group_member_count IS NOT NULL
-    OR match_group_total IS NOT NULL;
+  IF EXISTS (SELECT 1 FROM diag_payment_matching_rules
+              WHERE name = 'Transaction Amount Match on Same Unit'
+                AND action = 'FORCE_MATCHED_TXN_AMOUNT_SAME_UNIT') THEN
+    DELETE FROM diag_payment_matching_rules
+     WHERE name = 'Transaction Amount Match on Same Unit'
+       AND action = 'FORCE_MATCHED_TXN_AMOUNT_SAME_UNIT';
+    UPDATE diag_op_payment_records
+       SET match_group_base_ref = NULL, match_group_member_count = NULL,
+           match_group_total = NULL, match_group_difference = NULL
+     WHERE match_group_base_ref IS NOT NULL
+        OR match_group_member_count IS NOT NULL
+        OR match_group_total IS NOT NULL;
+  END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- "Transaction Amount Match on Same Unit" lives in the SAME tables as every
@@ -1887,3 +1905,22 @@ CREATE TABLE IF NOT EXISTS reconciliation_settings (
 );
 INSERT INTO reconciliation_settings (awaiting_statement_days)
   SELECT 3 WHERE NOT EXISTS (SELECT 1 FROM reconciliation_settings);
+
+-- ---------------------------------------------------------------------------
+-- Automation stop switch — one row (src/automation-control.js). The red "Stop
+-- Automation" button on the Automation screen, for server maintenance and the
+-- like: while `stopped`, neither the daily pull from the HIS nor the
+-- shared-folder check starts — not on schedule, not as a retry, not made up at
+-- startup, not by Run Now / Pull Now. Each job's own settings (time, Enabled)
+-- are left as they are, so Resume brings back exactly what was there.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS automation_control (
+  id          SERIAL PRIMARY KEY,
+  stopped     BOOLEAN NOT NULL DEFAULT false,
+  -- Why it was stopped ("server maintenance"), shown on the screen while stopped.
+  reason      TEXT,
+  changed_at  TIMESTAMP,
+  changed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+INSERT INTO automation_control (stopped)
+  SELECT false WHERE NOT EXISTS (SELECT 1 FROM automation_control);

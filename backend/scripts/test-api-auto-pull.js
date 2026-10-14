@@ -42,6 +42,8 @@ function reset() {
     api_sync_runs: [],
     api_pull_runs: [],
     audit_logs: [],
+    // The Automation screen's Stop switch (src/automation-control.js).
+    automationStopped: false,
     schedule: {
       id: 1, active: false, run_time: '08:00:00', catch_up_days: 3, retry_count: 2, retry_minutes: 15,
       uploaded_by_label: 'Automated (HIS pull)', active_since: null, updated_by: null, updated_at: null,
@@ -55,6 +57,7 @@ function runQuery(sql, params = []) {
   const text = sql.replace(/\s+/g, ' ').trim();
 
   if (text.startsWith('SELECT s.*, u.full_name AS updated_by_name FROM api_pull_schedule s')) return { rows: [{ ...state.schedule }] };
+  if (text === 'SELECT stopped FROM automation_control ORDER BY id LIMIT 1') return { rows: [{ stopped: state.automationStopped }] };
   if (text.startsWith('UPDATE api_pull_schedule SET active = $2, run_time = $3, catch_up_days = $4, retry_count = $5, retry_minutes = $6, active_since = $7')) {
     const [, active, runTime, catchUp, retryCount, retryMinutes, activeSince, userId] = params;
     Object.assign(state.schedule, {
@@ -136,7 +139,7 @@ stub('../src/folder-watch/share-credentials.js', { encryptSecret: (plain) => `en
 
 const {
   istToday, addDays, pullWindow, planPull, summariseUnitDay, pullStatus, pullIdle,
-  runAutoPull, runScheduledPull, pulledSince, saveSchedule, scheduleRowToApi, listPullRuns, pullRunRowToApi,
+  runAutoPull, runScheduledPull, cancelPullRetry, pulledSince, saveSchedule, scheduleRowToApi, listPullRuns, pullRunRowToApi,
 } = require('../src/api-sync/auto-pull');
 const { beginScan, endScan } = require('../src/folder-watch/scan-lock');
 
@@ -511,6 +514,52 @@ async function testScheduledPullAndRetries() {
   assert.strictEqual(await pulledSince(ist('2026-10-06', '08:01')), false);
 }
 
+/** The Automation screen's red Stop: nothing of the pull starts, and Resume brings back the schedule as it was. */
+async function testAutomationStopped() {
+  reset();
+  clock = ist('2026-10-06', '08:00');
+  Object.assign(state.schedule, { active: true, active_since: '2026-10-06', retry_count: 2, retry_minutes: 15 });
+  state.automationStopped = true;
+
+  // The scheduled pull does nothing, and queues no retry either.
+  const queued = [];
+  const later = (fn, ms) => {
+    queued.push({ fn, ms });
+    return null;
+  };
+  const attempts = [];
+  const fakePull = async ({ attempt }) => {
+    attempts.push(attempt);
+    return { status: 'PARTIAL', unit_days: 1, rows_stored: 0, apis_failed: 1 };
+  };
+  assert.strictEqual(await runScheduledPull({ pull: fakePull, later }), null);
+  assert.deepStrictEqual([attempts, queued.length], [[], 0]);
+
+  // Pull Now is refused with a 409 that says why — and the HIS is never asked, no run row is written.
+  const sync = fakeSync();
+  await assert.rejects(pull(sync, { triggeredBy: 42, waitForScan: false }), (err) => err.status === 409 && /Automation is stopped/.test(err.message));
+  assert.deepStrictEqual([sync.calls, state.api_pull_runs], [[], []]);
+  // A day named by hand is refused the same way; a bad day is still a 400 first.
+  await assert.rejects(pull(sync, { triggeredBy: 42, date: '2026-10-05', waitForScan: false }), (err) => err.status === 409);
+  await assert.rejects(pull(sync, { triggeredBy: 42, date: '2026-10-06', waitForScan: false }), (err) => err.status === 400);
+
+  // A retry queued before Stop: dropped by Stop, or — if it still fires — skipped.
+  state.automationStopped = false;
+  await runScheduledPull({ pull: fakePull, later });
+  assert.deepStrictEqual([attempts, queued.length], [[1], 1]);
+  state.automationStopped = true;
+  queued[0].fn();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepStrictEqual(attempts, [1]);
+  assert.strictEqual(cancelPullRetry(), false); // nothing left waiting
+
+  // Resumed: the schedule's own settings were never touched, and the pull runs as before.
+  state.automationStopped = false;
+  assert.deepStrictEqual([state.schedule.active, state.schedule.run_time, state.schedule.active_since], [true, '08:00:00', '2026-10-06']);
+  const run = await pull(fakeSync());
+  assert.strictEqual(run.status, 'COMPLETED');
+}
+
 async function testSettings() {
   reset();
   clock = ist('2026-10-06', '13:00');
@@ -539,7 +588,7 @@ async function testSettings() {
 }
 
 (async () => {
-  const tests = [testDays, testPureParts, testTheMorningPull, testRetryAsksOnlyForWhatFailed, testSyncedByHand, testCatchUp, testPullNow, testOneAtATime, testScheduledPullAndRetries, testSettings];
+  const tests = [testDays, testPureParts, testTheMorningPull, testRetryAsksOnlyForWhatFailed, testSyncedByHand, testCatchUp, testPullNow, testOneAtATime, testScheduledPullAndRetries, testAutomationStopped, testSettings];
   const { log, error } = console;
   for (const test of tests) {
     console.log = () => {}; // the pull's own progress lines

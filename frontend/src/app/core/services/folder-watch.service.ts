@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, catchError, from, switchMap, tap, throwError } from 'rxjs';
 import {
+  AutomationControl,
   FolderWatchConfig,
   FolderWatchConfigDraft,
   FolderWatchConnectionTest,
@@ -24,6 +25,25 @@ export class FolderWatchService {
 
   private readonly _loading = signal(false);
   readonly loading = this._loading.asReadonly();
+
+  /** The Stop / Resume switch — shared, so the HIS Data Pull tab sees it too. */
+  private readonly _control = signal<AutomationControl | null>(null);
+  readonly control = this._control.asReadonly();
+
+  /** GET /api/automation/control */
+  refreshControl(): Observable<AutomationControl> {
+    return this.http.get<AutomationControl>(`${API_BASE_URL}/automation/control`).pipe(tap((c) => this._control.set(c)));
+  }
+
+  /**
+   * PUT /api/automation/control — Admin. Stop: neither the HIS pull nor the
+   * folder check starts (scheduled, retried, Run Now, Pull Now) until resumed.
+   */
+  setAutomationStopped(stopped: boolean, reason?: string): Observable<AutomationControl> {
+    return this.http
+      .put<AutomationControl>(`${API_BASE_URL}/automation/control`, { stopped, reason: reason?.trim() || undefined })
+      .pipe(tap((c) => this._control.set(c)));
+  }
 
   /** GET /api/folder-watch/config — null if never configured yet. */
   refreshConfig(): Observable<FolderWatchConfig | null> {

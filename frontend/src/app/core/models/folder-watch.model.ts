@@ -26,6 +26,21 @@ export interface FolderWatchConfigDraft {
   sharePassword: string;
 }
 
+/**
+ * The Automation screen's red Stop / Resume switch over both daily jobs — the
+ * HIS Data Pull and the Shared Folder Check (backend/src/automation-control.js).
+ */
+export interface AutomationControl {
+  stopped: boolean;
+  /** Why it was stopped ("Server maintenance") — only while stopped. */
+  reason: string | null;
+  /** When it was last stopped or resumed, and by whom. */
+  changedAt: string | null;
+  changedByName?: string;
+  /** Under way right now: a job running when Stop is pressed finishes. */
+  running: { scan: boolean; pull: boolean };
+}
+
 export interface FolderWatchConnectionTest {
   ok: boolean;
   error?: string;

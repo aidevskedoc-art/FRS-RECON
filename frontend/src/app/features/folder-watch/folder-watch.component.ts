@@ -89,6 +89,20 @@ export class FolderWatchComponent {
 
   protected readonly listError = signal<string | null>(null);
 
+  // ---- Stop / Resume Automation (top right) — never one click ---------------------------
+  protected readonly automationStopped = computed(() => this.folderWatch.control()?.stopped === true);
+  protected readonly confirmToggle = signal<'stop' | 'resume' | null>(null);
+  protected readonly stopReason = signal('');
+  protected readonly toggling = signal(false);
+  protected readonly toggleError = signal<string | null>(null);
+
+  /** "A HIS pull is under way" — what will still finish after Stop. */
+  protected readonly runningNote = computed(() => {
+    const running = this.folderWatch.control()?.running;
+    const jobs = [running?.pull ? 'a HIS pull' : null, running?.scan ? 'a shared-folder check' : null].filter(Boolean);
+    return jobs.length ? `${jobs.join(' and ')} ${jobs.length === 1 ? 'is' : 'are'} running right now and will finish` : null;
+  });
+
   // ---- delete a run from the history -------------------------------------------------
   protected readonly pendingDelete = signal<FolderWatchRun | null>(null);
   protected readonly deleting = signal(false);
@@ -131,6 +145,40 @@ export class FolderWatchComponent {
       error: (err) => this.listError.set(errorMessage(err)),
     });
     this.folderWatch.refreshRuns().subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
+    this.folderWatch.refreshControl().subscribe({ error: (err) => this.listError.set(errorMessage(err)) });
+  }
+
+  /** Opens the confirmation; fetches the switch first so "will finish" is about now, not page load. */
+  protected askToggle(): void {
+    const action = this.automationStopped() ? 'resume' : 'stop';
+    this.toggleError.set(null);
+    this.stopReason.set('');
+    this.confirmToggle.set(action);
+    this.folderWatch.refreshControl().subscribe({ error: () => {} });
+  }
+
+  protected cancelToggle(): void {
+    if (this.toggling()) return;
+    this.confirmToggle.set(null);
+  }
+
+  /** Only reachable from the confirm modal. */
+  protected confirmToggleNow(): void {
+    const action = this.confirmToggle();
+    if (!action || this.toggling()) return;
+    this.toggling.set(true);
+    this.toggleError.set(null);
+    this.folderWatch.setAutomationStopped(action === 'stop', action === 'stop' ? this.stopReason() : undefined).subscribe({
+      next: () => {
+        this.toggling.set(false);
+        this.confirmToggle.set(null);
+        this.runNowError.set(null);
+      },
+      error: (err) => {
+        this.toggling.set(false);
+        this.toggleError.set(errorMessage(err));
+      },
+    });
   }
 
   private toDraft(config: FolderWatchConfig): FolderWatchConfigDraft {

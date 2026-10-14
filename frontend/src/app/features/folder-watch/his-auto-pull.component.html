@@ -121,7 +121,9 @@
           <span class="saved-note"><i class="pi pi-check-circle"></i> Saved</span>
         }
         <span class="next-pull">
-          @if (s.active && s.nextRunAt) {
+          @if (automationStopped()) {
+            Automation is stopped — nothing is pulled until it is resumed (top right).
+          } @else if (s.active && s.nextRunAt) {
             Next pull: <strong>{{ s.nextRunAt | date: 'd MMM y, h:mm a' }}</strong> — for {{ nextPullDay() | date: 'dd-MMM-yyyy' }}
           } @else {
             Switched off — nothing is pulled on its own.
@@ -138,9 +140,9 @@
       <button
         type="button"
         class="btn btn-ghost"
-        [disabled]="pulling() || !pullDay()"
+        [disabled]="pulling() || !pullDay() || automationStopped()"
         (click)="pullNow()"
-        pTooltip="Pull this day for every unit right now — only what is not already pulled. Works while the schedule is switched off."
+        [pTooltip]="automationStopped() ? 'Automation is stopped — resume it (top right) to pull' : 'Pull this day for every unit right now — only what is not already pulled. Works while the schedule is switched off.'"
       >
         @if (pulling()) {
           <span class="btn-spinner btn-spinner--dark"></span>

@@ -23,6 +23,7 @@ const usersRouter = require('./routes/users.routes');
 const auditLogsRouter = require('./routes/audit-logs.routes');
 const matchApprovalsRouter = require('./routes/match-approvals.routes');
 const folderWatchRouter = require('./routes/folder-watch.routes');
+const automationRouter = require('./routes/automation.routes');
 const { arm: armFolderWatchScheduler, armPullAtStartup } = require('./folder-watch/scheduler');
 const { pauseWritesDuringScan, scanStatus } = require('./folder-watch/scan-lock');
 const goLiveRouter = require('./routes/go-live.routes');
@@ -93,6 +94,8 @@ app.use('/api/users', usersRouter);
 app.use('/api/audit-logs', auditLogsRouter);
 app.use('/api/match-approvals', matchApprovalsRouter);
 app.use('/api/folder-watch', folderWatchRouter);
+// The Automation screen's Stop / Resume switch over the HIS pull and the folder check.
+app.use('/api/automation', automationRouter);
 app.use('/api/go-live', goLiveRouter);
 // HIS API connections + field mapping (Master Data → API Config / API Field Mapping).
 app.use('/api/api-configs', apiConfigsRouter);

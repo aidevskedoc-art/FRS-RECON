@@ -24,6 +24,8 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  * management, file-type detection (reads the file, stores nothing), testing
  * the share connection, and Run Now — whose request stays open until its own
  * scan finishes, so counting it as "in progress" would make the scan wait for itself.
+ * Also the Automation screen's Stop / Resume: Stop is pressed precisely while a
+ * scan may be running, and it changes no data the scan touches.
  */
 const NEVER_PAUSED = [
   '/api/auth/',
@@ -31,6 +33,7 @@ const NEVER_PAUSED = [
   '/api/uploads/detect',
   '/api/folder-watch/test-connection',
   '/api/folder-watch/run-now',
+  '/api/automation/',
 ];
 
 /** A scan older than this no longer blocks anyone, whatever happened to it. */

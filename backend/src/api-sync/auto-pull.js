@@ -23,6 +23,7 @@
 const db = require('../db');
 const { logAction } = require('../audit-log');
 const { isPaused } = require('../folder-watch/scan-lock');
+const { assertAutomationRunning, isAutomationStopped } = require('../automation-control');
 const { syncUnitDay, SOURCE_LABELS, validateDate, displayDate, httpError } = require('./sync-unit-day');
 const { toYmd } = require('./config-store');
 
@@ -230,6 +231,11 @@ async function pullIdle({ maxWaitMs = MAX_PULL_WAIT_MS, pollMs = 500 } = {}) {
   while (pulling && Date.now() < until) await sleep(pollMs);
 }
 
+/** For the Automation screen: a pull under way finishes even after Stop is pressed. */
+function isPulling() {
+  return pulling;
+}
+
 // ---- api_pull_runs --------------------------------------------------------------
 
 async function openPullRun({ triggeredBy, attempt, window }) {
@@ -329,6 +335,8 @@ async function runAutoPull({ triggeredBy = null, attempt = 1, date, uploadedBy, 
       throw httpError(400, 'Pull now is for a day that has ended. For today, use "Sync from HIS" on Upload & Run.');
     }
   }
+  // The Automation screen's Stop switch: scheduled, retried and Pull Now alike (automation-control.js).
+  await assertAutomationRunning('the pull from HIS');
   const schedule = await loadSchedule();
   const window = pullWindow({ now, schedule, date: date || undefined });
   const runId = await openPullRun({ triggeredBy, attempt, window });
@@ -407,6 +415,11 @@ async function runScheduledPull({ attempt = 1, pull = runAutoPull, later = setTi
   }
   const schedule = await loadSchedule();
   if (!schedule.active) return null; // switched off since the timer was armed, or since a retry was queued
+  // Stopped on the Automation screen: no pull and no retry. Resume re-arms the schedule.
+  if (await isAutomationStopped()) {
+    console.log(`[his-pull] attempt ${attempt} skipped — automation is stopped`);
+    return null;
+  }
 
   let run = null;
   try {
@@ -426,6 +439,14 @@ async function runScheduledPull({ attempt = 1, pull = runAutoPull, later = setTi
     retryTimer?.unref?.(); // never keeps the process alive on its own
   }
   return run;
+}
+
+/** Drops a same-morning retry that is waiting — Stop must not leave one queued for later. */
+function cancelPullRetry() {
+  if (!retryTimer) return false;
+  clearTimeout(retryTimer);
+  retryTimer = null;
+  return true;
 }
 
 /** Whether the schedule has run since `slot` — so a server that was off at the pull time can tell it missed it. */
@@ -511,8 +532,10 @@ module.exports = {
   summariseUnitDay,
   pullStatus,
   pullIdle,
+  isPulling,
   runAutoPull,
   runScheduledPull,
+  cancelPullRetry,
   pulledSince,
   loadSchedule,
   saveSchedule,

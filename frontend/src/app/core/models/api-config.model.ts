@@ -226,7 +226,9 @@ export interface ApiPullSchedule {
   activeSince: string | null;
   updatedAt: string | null;
   updatedByName?: string;
-  /** Null while switched off. */
+  /** Stopped on the Automation screen: nothing is pulled, whatever `active` says. */
+  automationStopped: boolean;
+  /** Null while switched off or while automation is stopped. */
   nextRunAt: string | null;
   /** [lowest, highest] each number may be set to. */
   limits: { catchUpDays: [number, number]; retryCount: [number, number]; retryMinutes: [number, number] };
@@ -295,6 +297,8 @@ export interface ApiPullRunsPage {
 /** GET /api/api-sync/pull/status — for the Sync from HIS card; any signed-in user. */
 export interface ApiPullStatus {
   active: boolean;
+  /** Stopped on the Automation screen — nothing is pulled on its own. */
+  automationStopped: boolean;
   runTime: string;
   nextRunAt: string | null;
   lastRun: Pick<ApiPullRun, 'startedAt' | 'status' | 'dayFrom' | 'dayTo' | 'rowsStored' | 'apisFailed'> | null;

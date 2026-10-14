@@ -22,6 +22,69 @@
 }
 
 // ---------------------------------------------------------------------
+// Stop / Resume Automation — top right, and the banner while stopped
+// ---------------------------------------------------------------------
+.automation-switch {
+  display: flex;
+  align-items: center;
+}
+
+// Solid red: the one control on this screen that halts everything.
+.btn-stop {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(239, 68, 68, 0.35);
+
+  &:hover:not(:disabled) {
+    background: var(--danger);
+    filter: brightness(0.92);
+  }
+}
+
+.btn-resume {
+  background: var(--success);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(22, 163, 74, 0.3);
+
+  &:hover:not(:disabled) {
+    background: var(--success);
+    filter: brightness(0.92);
+  }
+}
+
+.automation-stopped {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-xl);
+  border: 1px solid var(--status-danger-border);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+
+  > .pi {
+    margin-top: 3px;
+    font-size: 1rem;
+  }
+}
+
+.automation-stopped__meta {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  opacity: 0.85;
+}
+
+.confirm-copy--warn {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--status-warning-fg);
+}
+
+// ---------------------------------------------------------------------
 // Settings form
 // ---------------------------------------------------------------------
 .folder-watch__settings {
